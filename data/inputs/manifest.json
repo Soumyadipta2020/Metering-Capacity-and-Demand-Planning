@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-05-21T13:46:58.931255Z",
+  "files": [
+    "channel_volume.csv",
+    "booking_journey.csv",
+    "engineers.csv",
+    "engineer_availability.csv",
+    "financial_data.csv",
+    "capacity_demand.csv",
+    "smart_meter_jobs.csv"
+  ],
+  "period": "2024-01-01 to 2026-03-31 (actuals + forecast)",
+  "regions": [
+    "NW",
+    "NE",
+    "MID",
+    "SE",
+    "SW",
+    "WAL",
+    "SCO",
+    "YRK"
+  ]
+}

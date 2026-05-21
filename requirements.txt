@@ -1,0 +1,37 @@
+# IMSERV Smart Meter Field Planning Platform
+# Python 3.10+
+
+# ─── Web Framework ───────────────────────────────────────────────
+flask==3.0.3
+gunicorn==22.0.0
+flask-cors==4.0.0
+
+# ─── Data Processing ─────────────────────────────────────────────
+pandas==2.2.2
+numpy==1.26.4
+openpyxl==3.1.2
+xlsxwriter==3.2.0
+
+# ─── Forecasting & ML ────────────────────────────────────────────
+scikit-learn==1.5.0
+xgboost==2.0.3
+lightgbm==4.3.0
+statsmodels==0.14.2
+prophet==1.1.5
+
+# ─── Optimisation ────────────────────────────────────────────────
+pulp==2.8.0
+scipy==1.13.1
+
+# ─── Database (optional — for PostgreSQL persistence) ────────────
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.31
+
+# ─── Utilities ───────────────────────────────────────────────────
+python-dotenv==1.0.1
+python-dateutil==2.9.0
+pytz==2024.1
+requests==2.32.3
+
+# ─── AI / LLM (optional — for AI recommendation engine) ──────────
+openai==1.35.0

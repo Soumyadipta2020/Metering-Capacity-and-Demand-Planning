@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: imserv-platform
+    env: python
+    buildCommand: "pip install -r requirements.txt && python engine/data_generator.py"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app"
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENABLE_AI_RECOMMENDATIONS
+        value: "false"
+      - key: ENABLE_DATABASE
+        value: "false"
+      - key: PORT
+        value: "5000"
+    healthCheckPath: /api/health
+    autoDeploy: true

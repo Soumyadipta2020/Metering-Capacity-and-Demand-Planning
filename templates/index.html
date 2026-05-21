@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IMSERV — Smart Meter Field Planning Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ──────────────────────────────────────────────────────────
+       SIDEBAR NAVIGATION
+  ────────────────────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+
+    <div class="sidebar-brand" onclick="toggleSidebar()">
+      <div class="brand-logo">IM</div>
+      <div>
+        <div class="brand-name">IMSERV</div>
+        <div class="brand-tagline">Smart Meter Operations</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+
+      <div class="nav-section">
+        <div class="nav-section-label">Overview</div>
+        <div class="nav-item active" data-view="journey" onclick="switchView('journey', this)">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Bookings Journey</span>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-label">Contact Centre</div>
+        <div class="nav-item" data-view="forecasting" onclick="switchView('forecasting', this)">
+          <span class="nav-icon">📞</span>
+          <span class="nav-label">CC Forecasting</span>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-label">Operations</div>
+        <div class="nav-item" data-view="cancellations" onclick="switchView('cancellations', this)">
+          <span class="nav-icon">❌</span>
+          <span class="nav-label">Cancellations</span>
+        </div>
+        <div class="nav-item" data-view="field-ops" onclick="switchView('field-ops', this)">
+          <span class="nav-icon">🔧</span>
+          <span class="nav-label">Field Operations</span>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-label">Finance</div>
+        <div class="nav-item" data-view="financial" onclick="switchView('financial', this)">
+          <span class="nav-icon">💷</span>
+          <span class="nav-label">Financial Planning</span>
+        </div>
+      </div>
+
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="nav-item" onclick="toggleTheme()">
+        <span class="nav-icon" id="theme-icon">🌙</span>
+        <span class="nav-label">Toggle Theme</span>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ──────────────────────────────────────────────────────────
+       MAIN CONTENT
+  ────────────────────────────────────────────────────────────── -->
+  <main class="main-content">
+
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="header-title">
+        <h1 id="page-title">Bookings to Completions Journey</h1>
+        <div class="breadcrumb" id="page-breadcrumb">IMSERV / Overview / Journey Dashboard</div>
+      </div>
+      <div class="header-actions">
+        <div class="filter-bar">
+          <select class="filter-select" id="global-region" onchange="onRegionChange()">
+            <option value="">All Regions</option>
+            <option value="NW">North West</option>
+            <option value="NE">North East</option>
+            <option value="MID">Midlands</option>
+            <option value="SE">South East</option>
+            <option value="SW">South West</option>
+            <option value="WAL">Wales</option>
+            <option value="SCO">Scotland</option>
+            <option value="YRK">Yorkshire</option>
+          </select>
+          <select class="filter-select" id="global-year" onchange="onYearChange()">
+            <option value="2025" selected>2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+        <div class="btn-icon" onclick="refreshCurrentView()" title="Refresh">↻</div>
+        <div class="btn-icon" onclick="exportCurrentView()" title="Export">⬇</div>
+        <div class="btn-icon" onclick="openAiPanel()" title="AI Insights">🤖</div>
+      </div>
+    </header>
+
+    <!-- Page Content -->
+    <div class="page-content">
+
+      <!-- ════════════════════════════════════════════════════
+           MODULE 1 — BOOKINGS TO COMPLETIONS JOURNEY
+      ════════════════════════════════════════════════════════ -->
+      <div class="view active" id="view-journey">
+
+        <!-- AI Summary Bar -->
+        <div class="ai-summary-bar" id="journey-ai-summary">
+          <div class="ai-icon">🤖</div>
+          <div class="ai-text" id="journey-ai-text">Loading operational health summary...</div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="kpi-grid" id="journey-kpis">
+          <div class="kpi-card info"><div class="kpi-label">Total Requests</div><div class="kpi-value" id="kpi-requests">—</div><div class="kpi-icon">📋</div></div>
+          <div class="kpi-card info"><div class="kpi-label">Total Contacts</div><div class="kpi-value" id="kpi-contacts">—</div><div class="kpi-icon">📞</div></div>
+          <div class="kpi-card"><div class="kpi-label">Avg Contacts / Customer</div><div class="kpi-value" id="kpi-avg-contacts">—</div><div class="kpi-icon">👤</div></div>
+          <div class="kpi-card info"><div class="kpi-label">Total Bookings</div><div class="kpi-value" id="kpi-bookings">—</div><div class="kpi-icon">📅</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">Cancellations</div><div class="kpi-value" id="kpi-cancellations">—</div><div class="kpi-icon">⚠️</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">Aborts</div><div class="kpi-value" id="kpi-aborts">—</div><div class="kpi-icon">🚫</div></div>
+          <div class="kpi-card ok"><div class="kpi-label">Total Completions</div><div class="kpi-value" id="kpi-completions">—</div><div class="kpi-icon">✅</div></div>
+          <div class="kpi-card ok"><div class="kpi-label">Completion Rate</div><div class="kpi-value" id="kpi-completion-rate">—</div><div class="kpi-icon">📈</div></div>
+        </div>
+
+        <div class="grid-5-7">
+
+          <!-- Funnel Chart -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">📊 Journey Funnel</div>
+                <div class="card-subtitle">Requests → Completions pipeline</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="funnel-container" id="funnel-chart"></div>
+            </div>
+          </div>
+
+          <!-- Weekly Trend -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">📈 Weekly Trend Analysis</div>
+                <div class="card-subtitle">Bookings, completions and cancellations</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-300">
+                <canvas id="journey-trend-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Regional Heatmap -->
+        <div class="card mb-16">
+          <div class="card-header">
+            <div>
+              <div class="card-title">🗺️ Regional Operations Heatmap</div>
+              <div class="card-subtitle">Completion rate by region — RAG status</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <table class="data-table" id="regional-heatmap-table">
+              <thead>
+                <tr>
+                  <th>Region</th>
+                  <th>Total Requests</th>
+                  <th>Bookings</th>
+                  <th>Completions</th>
+                  <th>Cancellations</th>
+                  <th>Aborts</th>
+                  <th>Completion Rate</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="regional-heatmap-body">
+                <tr><td colspan="8" class="loading"><span class="spinner"></span> Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- AI Recommendations -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">🤖 AI Operational Recommendations</div>
+              <div class="card-subtitle">Intelligent alerts ranked by priority</div>
+            </div>
+            <div class="card-actions">
+              <span class="stat-chip" id="rec-counts">Loading...</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="rec-list" id="ai-rec-list">
+              <div class="loading"><span class="spinner"></span> Generating AI insights...</div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /view-journey -->
+
+
+      <!-- ════════════════════════════════════════════════════
+           MODULE 2 — CONTACT CENTRE FORECASTING
+      ════════════════════════════════════════════════════════ -->
+      <div class="view" id="view-forecasting">
+
+        <!-- Sub-tabs -->
+        <div class="tab-bar">
+          <div class="tab-item active" onclick="switchForecastTab('overview', this)">Overview</div>
+          <div class="tab-item" onclick="switchForecastTab('forecast', this)">Forecast Models</div>
+          <div class="tab-item" onclick="switchForecastTab('funnel', this)">Conversion Funnel</div>
+          <div class="tab-item" onclick="switchForecastTab('channels', this)">Channel Comparison</div>
+        </div>
+
+        <!-- Forecast KPIs -->
+        <div class="kpi-grid" id="forecast-kpis">
+          <div class="kpi-card info"><div class="kpi-label">Total Volume</div><div class="kpi-value" id="fc-kpi-volume">—</div><div class="kpi-icon">📞</div></div>
+          <div class="kpi-card ok"><div class="kpi-label">Bookings</div><div class="kpi-value" id="fc-kpi-bookings">—</div><div class="kpi-icon">📅</div></div>
+          <div class="kpi-card ok"><div class="kpi-label">Conversion Rate</div><div class="kpi-value" id="fc-kpi-conversion">—</div><div class="kpi-icon">🎯</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">Abandonment Rate</div><div class="kpi-value" id="fc-kpi-abandon">—</div><div class="kpi-icon">📵</div></div>
+        </div>
+
+        <div class="forecast-tabs-content">
+
+          <!-- Overview Tab -->
+          <div class="forecast-tab-panel active" id="ftab-overview">
+            <div class="grid-2">
+              <div class="card">
+                <div class="card-header">
+                  <div><div class="card-title">📊 Channel Volume Breakdown</div></div>
+                </div>
+                <div class="card-body">
+                  <div class="chart-wrap chart-h-300">
+                    <canvas id="channel-breakdown-chart"></canvas>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <div><div class="card-title">🎯 Agent Performance by Channel</div></div>
+                </div>
+                <div class="card-body">
+                  <table class="data-table" id="channel-table">
+                    <thead>
+                      <tr><th>Channel</th><th>Volume</th><th>Bookings</th><th>Conversion</th><th>Abandon</th></tr>
+                    </thead>
+                    <tbody id="channel-table-body">
+                      <tr><td colspan="5"><div class="loading"><span class="spinner"></span></div></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Forecast Models Tab -->
+          <div class="forecast-tab-panel" id="ftab-forecast">
+            <div class="card mb-16">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">📈 26-Week Volume Forecast — Multi-Model Ensemble</div>
+                  <div class="card-subtitle">Prophet · ARIMA · XGBoost · LightGBM with P10/P50/P90 confidence bands</div>
+                </div>
+                <div class="card-actions">
+                  <div class="filter-bar">
+                    <select class="filter-select" id="forecast-channel-filter" onchange="loadForecast()">
+                      <option value="">All Channels</option>
+                      <option value="Phone">Phone</option>
+                      <option value="Web">Web</option>
+                      <option value="App">App</option>
+                      <option value="SMS">SMS</option>
+                      <option value="IVR">IVR</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="chart-wrap chart-h-360">
+                  <canvas id="forecast-chart"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="card">
+                <div class="card-header"><div class="card-title">🔬 Model Accuracy Metrics</div></div>
+                <div class="card-body">
+                  <table class="data-table" id="model-accuracy-table">
+                    <thead><tr><th>Model</th><th>MAE</th><th>RMSE</th><th>MAPE %</th></tr></thead>
+                    <tbody id="model-accuracy-body"><tr><td colspan="4"><div class="loading"><span class="spinner"></span></div></td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header"><div class="card-title">📊 Individual Model Forecasts</div></div>
+                <div class="card-body">
+                  <div class="chart-wrap chart-h-260">
+                    <canvas id="model-comparison-chart"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Conversion Funnel Tab -->
+          <div class="forecast-tab-panel" id="ftab-funnel">
+            <div class="grid-7-5">
+              <div class="card">
+                <div class="card-header"><div class="card-title">📉 Weekly Booking Conversion Trend</div></div>
+                <div class="card-body">
+                  <div class="chart-wrap chart-h-300">
+                    <canvas id="conversion-trend-chart"></canvas>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header"><div class="card-title">🎯 Funnel Metrics</div></div>
+                <div class="card-body" id="funnel-metrics-body">
+                  <div class="loading"><span class="spinner"></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Channel Comparison Tab -->
+          <div class="forecast-tab-panel" id="ftab-channels">
+            <div class="card">
+              <div class="card-header"><div class="card-title">📊 Channel Volume Comparison</div></div>
+              <div class="card-body">
+                <div class="chart-wrap chart-h-360">
+                  <canvas id="channel-comparison-chart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /forecast-tabs-content -->
+      </div><!-- /view-forecasting -->
+
+
+      <!-- ════════════════════════════════════════════════════
+           MODULE 3 — CANCELLATIONS & ABORTS
+      ════════════════════════════════════════════════════════ -->
+      <div class="view" id="view-cancellations">
+
+        <div class="kpi-grid" id="cancel-kpis">
+          <div class="kpi-card crit"><div class="kpi-label">Total Cancellations</div><div class="kpi-value" id="can-kpi-total">—</div><div class="kpi-icon">❌</div></div>
+          <div class="kpi-card crit"><div class="kpi-label">Cancel Rate</div><div class="kpi-value" id="can-kpi-rate">—</div><div class="kpi-icon">📊</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">Total Aborts</div><div class="kpi-value" id="can-kpi-aborts">—</div><div class="kpi-icon">🚫</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">Abort Rate</div><div class="kpi-value" id="can-kpi-abort-rate">—</div><div class="kpi-icon">📉</div></div>
+        </div>
+
+        <div class="grid-2 mb-16">
+
+          <!-- Pareto Chart -->
+          <div class="card">
+            <div class="card-header">
+              <div><div class="card-title">📊 Pareto — Root Cause Analysis</div><div class="card-subtitle">Top cancellation drivers (Pareto 80/20)</div></div>
+            </div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-300">
+                <canvas id="pareto-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Category Breakdown -->
+          <div class="card">
+            <div class="card-header"><div class="card-title">🗂️ Category Breakdown</div></div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-300">
+                <canvas id="category-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="grid-2 mb-16">
+
+          <!-- Monthly Trend -->
+          <div class="card">
+            <div class="card-header"><div class="card-title">📈 Monthly Cancellation Trend + Forecast</div></div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-260">
+                <canvas id="cancel-trend-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Regional Heatmap -->
+          <div class="card">
+            <div class="card-header"><div class="card-title">🗺️ Regional Cancellation Comparison</div></div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr><th>Region</th><th>Cancel Rate</th><th>Abort Rate</th><th>Status</th></tr></thead>
+                <tbody id="cancel-regional-body">
+                  <tr><td colspan="4"><div class="loading"><span class="spinner"></span></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- AI Risk Prediction -->
+        <div class="card mb-16">
+          <div class="card-header">
+            <div><div class="card-title">🤖 AI Cancellation Risk Prediction</div><div class="card-subtitle">Predictive risk scoring with prevention recommendations</div></div>
+            <div class="card-actions">
+              <select class="filter-select" id="cancel-predict-region" onchange="loadCancellationRisk()">
+                <option value="NW">North West</option><option value="NE">North East</option>
+                <option value="MID">Midlands</option><option value="SE">South East</option>
+                <option value="SW">South West</option><option value="WAL">Wales</option>
+                <option value="SCO">Scotland</option><option value="YRK">Yorkshire</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-body" id="cancel-risk-panel">
+            <div class="loading"><span class="spinner"></span></div>
+          </div>
+        </div>
+
+        <!-- Rebooking Analytics -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">🔄 Rebooking Analytics</div></div>
+          <div class="card-body">
+            <table class="data-table">
+              <thead><tr><th>Region</th><th>Rebook Rate</th><th>Avg Lag (days)</th><th>Success Rate</th></tr></thead>
+              <tbody id="rebook-table-body">
+                <tr><td colspan="4"><div class="loading"><span class="spinner"></span></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /view-cancellations -->
+
+
+      <!-- ════════════════════════════════════════════════════
+           MODULE 4 — FIELD OPERATIONS & ENGINEER PLANNING
+      ════════════════════════════════════════════════════════ -->
+      <div class="view" id="view-field-ops">
+
+        <div class="kpi-grid" id="ops-kpis">
+          <div class="kpi-card info"><div class="kpi-label">Total Engineers</div><div class="kpi-value" id="ops-kpi-engineers">—</div><div class="kpi-icon">🔧</div></div>
+          <div class="kpi-card"><div class="kpi-label">Avg Utilisation</div><div class="kpi-value" id="ops-kpi-util">—</div><div class="kpi-icon">⚡</div></div>
+          <div class="kpi-card ok"><div class="kpi-label">Jobs Completed</div><div class="kpi-value" id="ops-kpi-jobs">—</div><div class="kpi-icon">✅</div></div>
+          <div class="kpi-card"><div class="kpi-label">Productivity (jobs/day)</div><div class="kpi-value" id="ops-kpi-productivity">—</div><div class="kpi-icon">📊</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">Absence Rate</div><div class="kpi-value" id="ops-kpi-absence">—</div><div class="kpi-icon">🏥</div></div>
+        </div>
+
+        <!-- Sub-tabs -->
+        <div class="tab-bar">
+          <div class="tab-item active" onclick="switchOpsTab('capacity', this)">Capacity Matrix</div>
+          <div class="tab-item" onclick="switchOpsTab('patch', this)">Patch Planning</div>
+          <div class="tab-item" onclick="switchOpsTab('engineers', this)">Engineer Performance</div>
+          <div class="tab-item" onclick="switchOpsTab('forecast', this)">Understaffing Forecast</div>
+          <div class="tab-item" onclick="switchOpsTab('optimise', this)">Optimisation</div>
+        </div>
+
+        <!-- Capacity Matrix -->
+        <div class="ops-tab-panel active" id="opstab-capacity">
+          <div class="card">
+            <div class="card-header">
+              <div><div class="card-title">📊 Regional Capacity vs Demand Matrix</div></div>
+            </div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-360">
+                <canvas id="capacity-matrix-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Patch Planning -->
+        <div class="ops-tab-panel" id="opstab-patch">
+          <div class="card">
+            <div class="card-header">
+              <div><div class="card-title">🗺️ Patch-Level Planning</div></div>
+              <div class="card-actions">
+                <select class="filter-select" id="patch-region-filter" onchange="loadPatchPlan()">
+                  <option value="NW">North West</option><option value="NE">North East</option>
+                  <option value="MID">Midlands</option><option value="SE">South East</option>
+                  <option value="SW">South West</option><option value="WAL">Wales</option>
+                  <option value="SCO">Scotland</option><option value="YRK">Yorkshire</option>
+                </select>
+              </div>
+            </div>
+            <div class="card-body" id="patch-plan-body">
+              <div class="loading"><span class="spinner"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Engineer Performance -->
+        <div class="ops-tab-panel" id="opstab-engineers">
+          <div class="card">
+            <div class="card-header"><div class="card-title">🏆 Engineer Performance — Top 20</div></div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr><th>Engineer</th><th>Region</th><th>Patch</th><th>Type</th><th>Days</th><th>Jobs</th><th>Avg/Day</th><th>Achievement</th></tr></thead>
+                <tbody id="engineer-perf-body">
+                  <tr><td colspan="8"><div class="loading"><span class="spinner"></span></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Understaffing Forecast -->
+        <div class="ops-tab-panel" id="opstab-forecast">
+          <div class="card">
+            <div class="card-header">
+              <div><div class="card-title">⚠️ Understaffing Prediction — 8 Week Horizon</div></div>
+              <div class="card-actions">
+                <select class="filter-select" id="understaff-region" onchange="loadUnderstaffing()">
+                  <option value="NW">North West</option><option value="NE">North East</option>
+                  <option value="MID">Midlands</option><option value="SE">South East</option>
+                  <option value="SW">South West</option><option value="WAL">Wales</option>
+                  <option value="SCO">Scotland</option><option value="YRK">Yorkshire</option>
+                </select>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-300 mb-16">
+                <canvas id="understaff-chart"></canvas>
+              </div>
+              <table class="data-table">
+                <thead><tr><th>Week</th><th>Capacity</th><th>Demand</th><th>Gap</th><th>Utilisation</th><th>Risk</th><th>Recommendation</th></tr></thead>
+                <tbody id="understaff-table-body">
+                  <tr><td colspan="7"><div class="loading"><span class="spinner"></span></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Optimisation -->
+        <div class="ops-tab-panel" id="opstab-optimise">
+          <div class="card">
+            <div class="card-header">
+              <div><div class="card-title">🎯 AI Workforce Optimisation Recommendations</div></div>
+              <div class="card-actions">
+                <button class="btn btn-primary btn-sm" onclick="loadOptimisation()">▶ Run Optimisation</button>
+              </div>
+            </div>
+            <div class="card-body" id="optimise-body">
+              <div class="empty-state">
+                <div class="empty-icon">⚡</div>
+                <div class="empty-title">Click "Run Optimisation" to generate recommendations</div>
+                <div class="empty-desc">Analyses capacity gaps and recommends workforce rebalancing</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /view-field-ops -->
+
+
+      <!-- ════════════════════════════════════════════════════
+           MODULE 5 — FINANCIAL SCENARIO PLANNING
+      ════════════════════════════════════════════════════════ -->
+      <div class="view" id="view-financial">
+
+        <div class="kpi-grid" id="fin-kpis">
+          <div class="kpi-card ok"><div class="kpi-label">Total Revenue</div><div class="kpi-value" id="fin-kpi-revenue">—</div><div class="kpi-icon">💷</div></div>
+          <div class="kpi-card"><div class="kpi-label">Total Cost</div><div class="kpi-value" id="fin-kpi-cost">—</div><div class="kpi-icon">💸</div></div>
+          <div class="kpi-card ok"><div class="kpi-label">Gross Margin</div><div class="kpi-value" id="fin-kpi-margin">—</div><div class="kpi-icon">📈</div></div>
+          <div class="kpi-card"><div class="kpi-label">Margin %</div><div class="kpi-value" id="fin-kpi-margin-pct">—</div><div class="kpi-icon">%</div></div>
+          <div class="kpi-card"><div class="kpi-label">Cost Per Completion</div><div class="kpi-value" id="fin-kpi-cpp">—</div><div class="kpi-icon">🔧</div></div>
+        </div>
+
+        <div class="grid-2 mb-16">
+          <div class="card">
+            <div class="card-header"><div class="card-title">📊 Monthly Revenue vs Cost</div></div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-300">
+                <canvas id="fin-monthly-chart"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">🎯 Margin by Job Type</div></div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-300">
+                <canvas id="fin-jobtype-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scenario Builder -->
+        <div class="card mb-16">
+          <div class="card-header">
+            <div><div class="card-title">⚙️ Financial Scenario Builder</div><div class="card-subtitle">Adjust parameters to simulate P&L outcomes</div></div>
+            <div class="card-actions">
+              <button class="btn btn-secondary btn-sm" onclick="resetScenario()">Reset</button>
+              <button class="btn btn-primary" onclick="runScenario()">▶ Run Scenario</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="scenario-input-grid">
+              <div class="form-group">
+                <label class="form-label">Scenario Name</label>
+                <input class="form-input" type="text" id="sc-name" value="Base Case 2026" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Job Volume</label>
+                <input class="form-input" type="number" id="sc-volume" value="85000" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Completion Rate %</label>
+                <div class="range-wrap">
+                  <input class="form-range" type="range" id="sc-completion" min="50" max="90" value="68" step="1" oninput="updateRangeVal('sc-completion','sc-completion-val','%')" />
+                  <span class="range-val" id="sc-completion-val">68%</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cancellation Rate %</label>
+                <div class="range-wrap">
+                  <input class="form-range" type="range" id="sc-cancel" min="0" max="35" value="15" step="1" oninput="updateRangeVal('sc-cancel','sc-cancel-val','%')" />
+                  <span class="range-val" id="sc-cancel-val">15%</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Abort Rate %</label>
+                <div class="range-wrap">
+                  <input class="form-range" type="range" id="sc-abort" min="0" max="25" value="8" step="1" oninput="updateRangeVal('sc-abort','sc-abort-val','%')" />
+                  <span class="range-val" id="sc-abort-val">8%</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Revenue Uplift %</label>
+                <div class="range-wrap">
+                  <input class="form-range" type="range" id="sc-revenue-uplift" min="-20" max="20" value="0" step="1" oninput="updateRangeVal('sc-revenue-uplift','sc-rev-val','%')" />
+                  <span class="range-val" id="sc-rev-val">0%</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cost Change %</label>
+                <div class="range-wrap">
+                  <input class="form-range" type="range" id="sc-cost-uplift" min="-20" max="20" value="0" step="1" oninput="updateRangeVal('sc-cost-uplift','sc-cost-val','%')" />
+                  <span class="range-val" id="sc-cost-val">0%</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Engineer Count</label>
+                <input class="form-input" type="number" id="sc-engineers" value="300" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scenario Results -->
+        <div class="card mb-16" id="scenario-results" style="display:none">
+          <div class="card-header">
+            <div><div class="card-title" id="sc-result-title">Scenario Results</div></div>
+          </div>
+          <div class="card-body">
+            <div class="grid-2">
+              <div>
+                <div class="kpi-grid" style="grid-template-columns:1fr 1fr; gap:10px; margin-bottom:0">
+                  <div class="kpi-card ok"><div class="kpi-label">Revenue</div><div class="kpi-value" id="sc-res-revenue">—</div></div>
+                  <div class="kpi-card"><div class="kpi-label">Total Cost</div><div class="kpi-value" id="sc-res-cost">—</div></div>
+                  <div class="kpi-card ok"><div class="kpi-label">Margin</div><div class="kpi-value" id="sc-res-margin">—</div></div>
+                  <div class="kpi-card"><div class="kpi-label">Margin %</div><div class="kpi-value" id="sc-res-margin-pct">—</div></div>
+                  <div class="kpi-card"><div class="kpi-label">Cost/Completion</div><div class="kpi-value" id="sc-res-cpp">—</div></div>
+                  <div class="kpi-card"><div class="kpi-label">Capacity Status</div><div class="kpi-value" id="sc-res-capacity">—</div></div>
+                </div>
+              </div>
+              <div class="chart-wrap chart-h-260">
+                <canvas id="waterfall-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2026 Forecast Profitability -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">🔮 2026 Forecast Profitability</div></div>
+          <div class="card-body">
+            <div class="chart-wrap chart-h-300">
+              <canvas id="forecast-profit-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /view-financial -->
+
+    </div><!-- /page-content -->
+  </main>
+</div><!-- /app-shell -->
+
+<!-- ──────────────────────────────────────────────────────────
+     AI PANEL MODAL
+────────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="ai-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">🤖 AI Operational Intelligence</div>
+      <div class="modal-close" onclick="closeAiPanel()">✕</div>
+    </div>
+    <div class="modal-body" id="ai-modal-body">
+      <div class="loading"><span class="spinner"></span> Generating insights...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────────────────────────────────────────────────
+     JAVASCRIPT MODULES
+────────────────────────────────────────────────────────────── -->
+<script src="/static/js/theme.js"></script>
+<script src="/static/js/config.js"></script>
+<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/forecasting.js"></script>
+<script src="/static/js/cancellations.js"></script>
+<script src="/static/js/field_ops.js"></script>
+<script src="/static/js/financial.js"></script>
+<script src="/static/js/app.js"></script>
+
+</body>
+</html>
