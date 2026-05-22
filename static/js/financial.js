@@ -143,7 +143,12 @@ function renderScenarioResults(data) {
   if (panel) panel.style.display = 'block';
 
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  document.getElementById('sc-result-title').textContent = `📊 Scenario: ${data.scenario_name}`;
+  const title = document.getElementById('sc-result-title');
+  if (title) {
+    title.removeAttribute('data-icon-ready');
+    title.textContent = `Scenario: ${data.scenario_name}`;
+    IMSERV.hydrateIcons(title.parentElement || document);
+  }
   set('sc-res-revenue',    IMSERV.fmt.gbpM(data.revenue_gbp));
   set('sc-res-cost',       IMSERV.fmt.gbpM(data.total_cost_gbp));
   set('sc-res-margin',     IMSERV.fmt.gbpM(data.margin_gbp));
