@@ -1,5 +1,7 @@
 /* IMSERV — Module 4: Field Operations & Engineer Planning */
 
+let _activeOpsTab = 'capacity';
+
 async function loadFieldOpsDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
@@ -8,8 +10,7 @@ async function loadFieldOpsDashboard() {
   const kpis = await IMSERV.apiFetch('/api/field-ops/kpis' + qs);
   if (kpis) renderFieldOpsKPIs(kpis);
 
-  // Default tab = capacity
-  await loadCapacityMatrix();
+  loadActiveOpsTabData();
 }
 
 function renderFieldOpsKPIs(kpis) {
@@ -218,13 +219,24 @@ async function loadOptimisation() {
 }
 
 function switchOpsTab(name, el) {
+  _activeOpsTab = name;
   document.querySelectorAll('.ops-tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('#view-field-ops .tab-item').forEach(t => t.classList.remove('active'));
   const panel = document.getElementById('opstab-' + name);
   if (panel) panel.classList.add('active');
   if (el) el.classList.add('active');
 
-  if (name === 'patch')     loadPatchPlan();
-  if (name === 'engineers') loadEngineerPerformance();
-  if (name === 'forecast')  loadUnderstaffing();
+  requestAnimationFrame(loadActiveOpsTabData);
+}
+
+function loadActiveOpsTabData() {
+  if (_activeOpsTab === 'capacity') {
+    loadCapacityMatrix();
+  } else if (_activeOpsTab === 'patch') {
+    loadPatchPlan();
+  } else if (_activeOpsTab === 'engineers') {
+    loadEngineerPerformance();
+  } else if (_activeOpsTab === 'forecast') {
+    loadUnderstaffing();
+  }
 }

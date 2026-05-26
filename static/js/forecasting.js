@@ -1,24 +1,23 @@
 /* IMSERV — Module 2: Contact Centre Forecasting */
 
 let _forecastChart = null;
+let _activeForecastTab = 'overview';
 
 async function loadForecastingDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
 
-  const [kpis, channelBreakdown, funnel] = await Promise.all([
-    IMSERV.apiFetch('/api/forecasting/channel-kpis' + qs),
+  const [kpis, funnel] = await Promise.all([
     IMSERV.apiFetch('/api/forecasting/channel-kpis' + qs),
     IMSERV.apiFetch('/api/forecasting/funnel' + qs),
   ]);
 
   if (kpis) renderForecastKPIs(kpis);
-  if (channelBreakdown) renderChannelBreakdown(channelBreakdown);
+  if (kpis) renderChannelBreakdown(kpis);
   if (funnel) renderFunnelMetrics(funnel);
 
-  await loadForecast();
-  await loadConversionTrend();
+  loadActiveForecastTabData();
 }
 
 function renderForecastKPIs(kpis) {
@@ -194,12 +193,12 @@ function renderFunnelMetrics(funnel) {
   const f = funnel.funnel || {};
   body.innerHTML = `
     <div class="kpi-grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-bottom:0">
-      <div class="kpi-card info"><div class="kpi-label">Requests</div><div class="kpi-value large">${IMSERV.fmt.num(f.requests)}</div></div>
-      <div class="kpi-card info"><div class="kpi-label">Contacts</div><div class="kpi-value large">${IMSERV.fmt.num(f.contacts)}</div></div>
-      <div class="kpi-card ok"><div class="kpi-label">Bookings</div><div class="kpi-value large">${IMSERV.fmt.num(f.bookings)}</div></div>
-      <div class="kpi-card ok"><div class="kpi-label">Completions</div><div class="kpi-value large">${IMSERV.fmt.num(f.completions)}</div></div>
-      <div class="kpi-card warn"><div class="kpi-label">Cancellations</div><div class="kpi-value large">${IMSERV.fmt.num(f.cancellations)}</div></div>
-      <div class="kpi-card warn"><div class="kpi-label">Aborts</div><div class="kpi-value large">${IMSERV.fmt.num(f.aborts)}</div></div>
+      <div class="kpi-card info"><div class="kpi-label">Requests</div><div class="kpi-value large">${IMSERV.fmt.num(f.requests)}</div><div class="kpi-icon">📋</div></div>
+      <div class="kpi-card info"><div class="kpi-label">Contacts</div><div class="kpi-value large">${IMSERV.fmt.num(f.contacts)}</div><div class="kpi-icon">📞</div></div>
+      <div class="kpi-card ok"><div class="kpi-label">Bookings</div><div class="kpi-value large">${IMSERV.fmt.num(f.bookings)}</div><div class="kpi-icon">📅</div></div>
+      <div class="kpi-card ok"><div class="kpi-label">Completions</div><div class="kpi-value large">${IMSERV.fmt.num(f.completions)}</div><div class="kpi-icon">✅</div></div>
+      <div class="kpi-card warn"><div class="kpi-label">Cancellations</div><div class="kpi-value large">${IMSERV.fmt.num(f.cancellations)}</div><div class="kpi-icon">❌</div></div>
+      <div class="kpi-card warn"><div class="kpi-label">Aborts</div><div class="kpi-value large">${IMSERV.fmt.num(f.aborts)}</div><div class="kpi-icon">🚫</div></div>
     </div>
     <div class="mt-12">
       <div class="stat-chip">Booking Rate: <strong>${IMSERV.fmt.pct(funnel.booking_rate)}</strong></div>
@@ -214,7 +213,7 @@ function renderFunnelMetrics(funnel) {
 async function loadConversionTrend() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
-  const funnel = await IMSERV.apiFetch(`/api/forecasting/funnel?region=${region}&year=${year}`);
+  const funnel = await IMSERV.apiFetch('/api/forecasting/funnel?region=' + region + '&year=' + year);
   if (!funnel) return;
 
   const ctx = document.getElementById('conversion-trend-chart');
@@ -251,23 +250,34 @@ async function loadConversionTrend() {
 }
 
 function switchForecastTab(name, el) {
+  _activeForecastTab = name;
   document.querySelectorAll('.forecast-tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('#view-forecasting .tab-item').forEach(t => t.classList.remove('active'));
   const panel = document.getElementById('ftab-' + name);
   if (panel) panel.classList.add('active');
   if (el) el.classList.add('active');
-  // lazy-load channel comparison
-  if (name === 'channels') loadChannelComparison();
+  requestAnimationFrame(loadActiveForecastTabData);
+}
+
+function loadActiveForecastTabData() {
+  if (_activeForecastTab === 'forecast') {
+    loadForecast();
+  } else if (_activeForecastTab === 'funnel') {
+    loadConversionTrend();
+  } else if (_activeForecastTab === 'channels') {
+    loadChannelComparison();
+  }
 }
 
 async function loadChannelComparison() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
-  const kpis = await IMSERV.apiFetch(`/api/forecasting/channel-kpis?region=${region}&year=${year}`);
+  const kpis = await IMSERV.apiFetch('/api/forecasting/channel-kpis?region=' + region + '&year=' + year);
   if (!kpis) return;
   const ctx = document.getElementById('channel-comparison-chart');
   if (!ctx) return;
   const channels = kpis.channel_breakdown || [];
+  if (!channels.length) return;
   IMSERV.registerChart('channel-comparison', new Chart(ctx, {
     type: 'bar',
     data: {

@@ -991,6 +991,16 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+.forecast-tab-panel,
+.ops-tab-panel {
+  display: none;
+}
+
+.forecast-tab-panel.active,
+.ops-tab-panel.active {
+  display: block;
+}
+
 /* ─── Waterfall Chart ───────────────────────────────────────── */
 .waterfall-bar {
   display: flex;
