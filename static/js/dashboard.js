@@ -8,11 +8,12 @@ async function loadJourneyDashboard() {
   const qs     = `?region=${region}&year=${year}`;
 
   // Load all first-view data in parallel.
-  const [kpis, heatmap, ai, trend] = await Promise.all([
+  const [kpis, heatmap, ai, trend, interactions] = await Promise.all([
     IMSERV.apiFetch('/api/journey/kpis' + qs),
     IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
     IMSERV.apiFetch('/api/ai/dashboard?year=' + year + '&max=8'),
     IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
+    IMSERV.apiFetch('/api/journey/interactions' + qs),
   ]);
 
   if (kpis)    renderJourneyKPIs(kpis);
@@ -21,9 +22,69 @@ async function loadJourneyDashboard() {
   if (ai?.summary) document.getElementById('journey-ai-text').textContent = ai.summary || '';
 
   if (trend) renderJourneyTrend(trend);
+  if (interactions) renderCustomerInteractions(interactions);
 
   // Render funnel (uses KPI data)
   if (kpis) renderFunnel(kpis);
+}
+
+function renderCustomerInteractions(data) {
+  const routeList = document.getElementById('interaction-map-body');
+  const total = document.getElementById('interaction-total');
+  const summary = document.getElementById('interaction-type-summary');
+  const insight = document.getElementById('interaction-insight');
+  if (!routeList || !summary) return;
+
+  const routes = data.routes || [];
+  if (total) {
+    total.innerHTML = `<strong>${IMSERV.fmt.num(data.total_interactions)}</strong> interactions`;
+  }
+
+  if (!routes.length) {
+    routeList.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-title">No interaction data available</div></div>';
+    summary.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-title">No interaction mix available</div></div>';
+    return;
+  }
+
+  routeList.innerHTML = routes.map(r => `
+    <div class="interaction-route-card">
+      <div class="interaction-route-main">
+        <div class="interaction-source">
+          <strong>${r.source_interaction_channel}</strong>
+          <span>${(r.source_channels || []).join(', ')}</span>
+        </div>
+        <span class="interaction-pill ${r.customer_interaction_type === 'Chat' ? 'chat' : 'voice'}">${r.customer_interaction_type}</span>
+      </div>
+      <div class="interaction-stage">${r.journey_stage}</div>
+      <div class="interaction-route-metrics">
+        <div><span>Interactions</span><strong>${IMSERV.fmt.num(r.interactions)}</strong></div>
+        <div><span>Bookings</span><strong>${IMSERV.fmt.num(r.bookings)}</strong></div>
+        <div><span>Conversion</span><strong>${IMSERV.fmt.pct(r.conversion_pct)}</strong></div>
+      </div>
+    </div>
+  `).join('');
+
+  summary.innerHTML = (data.type_summary || []).map(t => `
+    <div class="interaction-type-card ${t.customer_interaction_type === 'Chat' ? 'chat' : 'voice'}">
+      <div>
+        <div class="interaction-type-name">${t.customer_interaction_type}</div>
+        <div class="interaction-type-meta">${IMSERV.fmt.pct(t.share_pct)} of interactions</div>
+      </div>
+      <div class="interaction-type-values">
+        <strong>${IMSERV.fmt.num(t.interactions)}</strong>
+        <span>${IMSERV.fmt.num(t.bookings)} bookings</span>
+      </div>
+    </div>
+  `).join('');
+
+  if (insight) {
+    const best = data.highest_conversion;
+    const top = data.top_route;
+    insight.innerHTML = best && top ? `
+      <div class="stat-chip">Top source: <strong>${top.source_interaction_channel}</strong></div>
+      <div class="stat-chip">Best conversion: <strong>${best.source_interaction_channel} ${IMSERV.fmt.pct(best.conversion_pct)}</strong></div>
+    ` : '';
+  }
 }
 
 function renderJourneyKPIs(kpis) {

@@ -20,6 +20,57 @@ _FORECAST_CACHE = {}
 
 MODELS = ["Prophet", "ARIMA", "XGBoost", "LightGBM"]
 
+INTERACTION_ROUTE_RULES = [
+    {
+        "source_interaction_channel": "Inbound",
+        "customer_interaction_type": "Voice Call",
+        "source_channels": {"Phone": 0.65},
+        "journey_stage": "Initial contact",
+    },
+    {
+        "source_interaction_channel": "Web Chat",
+        "customer_interaction_type": "Chat",
+        "source_channels": {"Web": 0.75, "App": 1.0},
+        "journey_stage": "Digital support",
+    },
+    {
+        "source_interaction_channel": "CALLBACK",
+        "customer_interaction_type": "Voice Call",
+        "source_channels": {"Agent Callback": 1.0},
+        "journey_stage": "Follow-up",
+    },
+    {
+        "source_interaction_channel": "TRANSFER",
+        "customer_interaction_type": "Chat",
+        "source_channels": {"Web": 0.25},
+        "journey_stage": "Specialist handoff",
+    },
+    {
+        "source_interaction_channel": "Outbound",
+        "customer_interaction_type": "Voice Call",
+        "source_channels": {"Phone": 0.20},
+        "journey_stage": "Proactive contact",
+    },
+    {
+        "source_interaction_channel": "CONSULT",
+        "customer_interaction_type": "Voice Call",
+        "source_channels": {"IVR": 0.55},
+        "journey_stage": "Advisor support",
+    },
+    {
+        "source_interaction_channel": "TRANSFER",
+        "customer_interaction_type": "Voice Call",
+        "source_channels": {"Phone": 0.15, "IVR": 0.45},
+        "journey_stage": "Voice handoff",
+    },
+    {
+        "source_interaction_channel": "Outbound",
+        "customer_interaction_type": "Chat",
+        "source_channels": {"SMS": 1.0},
+        "journey_stage": "Reminder",
+    },
+]
+
 # ─── Seasonal Helpers ─────────────────────────────────────────────────────────
 
 def _seasonal_index(week: int, amplitude: float = 0.18) -> float:
@@ -245,6 +296,93 @@ def get_channel_kpis(region_code: str = None, year: int = 2025) -> dict:
         "conversion_rate":   safe_pct(total_bookings, total_volume),
         "abandon_rate":      safe_pct(total_abandon, total_volume),
         "channel_breakdown": channel_breakdown,
+    }
+
+
+def get_customer_interaction_map(region_code: str = None, year: int = 2025) -> dict:
+    """Classify source interaction channels into customer interaction types."""
+    rows = get_channel_volume()
+    if region_code:
+        rows = [r for r in rows if r["region_code"] == region_code]
+    rows = [
+        r for r in rows
+        if to_int(r.get("year")) == year and r.get("is_forecast", "0") == "0"
+    ]
+
+    by_channel: dict = defaultdict(lambda: defaultdict(float))
+    for r in rows:
+        ch = r["channel"]
+        by_channel[ch]["volume"]        += to_float(r["volume"])
+        by_channel[ch]["bookings"]      += to_float(r["bookings"])
+        by_channel[ch]["cancellations"] += to_float(r["cancellations"])
+        by_channel[ch]["abandoned"]     += to_float(r["abandoned"])
+
+    routes = []
+    by_type: dict = defaultdict(lambda: defaultdict(float))
+    total_interactions = 0
+    total_bookings = 0
+
+    for rule in INTERACTION_ROUTE_RULES:
+        volume = bookings = cancellations = abandoned = 0.0
+        source_names = []
+        for channel, share in rule["source_channels"].items():
+            source_names.append(channel)
+            volume        += by_channel[channel]["volume"]        * share
+            bookings      += by_channel[channel]["bookings"]      * share
+            cancellations += by_channel[channel]["cancellations"] * share
+            abandoned     += by_channel[channel]["abandoned"]     * share
+
+        volume_i = int(round(volume))
+        bookings_i = int(round(bookings))
+        cancellations_i = int(round(cancellations))
+        abandoned_i = int(round(abandoned))
+        interaction_type = rule["customer_interaction_type"]
+
+        by_type[interaction_type]["volume"]        += volume_i
+        by_type[interaction_type]["bookings"]      += bookings_i
+        by_type[interaction_type]["cancellations"] += cancellations_i
+        by_type[interaction_type]["abandoned"]     += abandoned_i
+        total_interactions += volume_i
+        total_bookings += bookings_i
+
+        routes.append({
+            "source_interaction_channel": rule["source_interaction_channel"],
+            "customer_interaction_type":  interaction_type,
+            "journey_stage":              rule["journey_stage"],
+            "source_channels":            source_names,
+            "interactions":               volume_i,
+            "bookings":                   bookings_i,
+            "cancellations":              cancellations_i,
+            "abandoned":                  abandoned_i,
+            "conversion_pct":             safe_pct(bookings_i, volume_i),
+            "abandon_pct":                safe_pct(abandoned_i, volume_i),
+        })
+
+    type_summary = []
+    for interaction_type, d in by_type.items():
+        type_summary.append({
+            "customer_interaction_type": interaction_type,
+            "interactions":             int(d["volume"]),
+            "bookings":                 int(d["bookings"]),
+            "cancellations":            int(d["cancellations"]),
+            "abandoned":                int(d["abandoned"]),
+            "share_pct":                safe_pct(d["volume"], total_interactions),
+            "conversion_pct":           safe_pct(d["bookings"], d["volume"]),
+        })
+    type_summary.sort(key=lambda x: -x["interactions"])
+    routes.sort(key=lambda x: -x["interactions"])
+
+    top_route = routes[0] if routes else None
+    highest_conversion = max(routes, key=lambda x: x["conversion_pct"]) if routes else None
+
+    return {
+        "routes":             routes,
+        "type_summary":       type_summary,
+        "total_interactions": total_interactions,
+        "total_bookings":     total_bookings,
+        "conversion_pct":     safe_pct(total_bookings, total_interactions),
+        "top_route":          top_route,
+        "highest_conversion": highest_conversion,
     }
 
 

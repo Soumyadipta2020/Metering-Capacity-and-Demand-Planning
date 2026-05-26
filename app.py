@@ -214,6 +214,18 @@ def journey_regional_heatmap():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/journey/interactions")
+def journey_interactions():
+    """Customer interaction source/type mapping for journey analytics."""
+    region = request.args.get("region")
+    year   = int(request.args.get("year", 2025))
+    try:
+        from engine.forecasting_engine import get_customer_interaction_map
+        return jsonify(get_customer_interaction_map(region, year))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MODULE 2 — CONTACT CENTRE FORECASTING
 # ─────────────────────────────────────────────────────────────────────────────
