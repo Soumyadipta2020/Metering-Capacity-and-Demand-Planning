@@ -225,7 +225,7 @@ def get_all_recommendations(year: int = 2025, max_results: int = 20) -> dict:
     }
 
 
-def get_natural_language_summary(year: int = 2025) -> str:
+def get_natural_language_summary(year: int = 2025, recommendations: dict = None) -> str:
     """
     Generate a natural language executive summary of operational health.
 
@@ -234,7 +234,7 @@ def get_natural_language_summary(year: int = 2025) -> str:
     """
     try:
         fin   = get_financial_kpis(year=year)
-        recs  = get_all_recommendations(year)
+        recs  = recommendations or get_all_recommendations(year)
 
         margin = fin["margin_pct"]
         crit   = recs["critical_count"]

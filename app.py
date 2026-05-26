@@ -27,6 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("SECRET_KEY", "imserv-dev-secret-2026")
 CORS(app)
+_DATA_READY = False
 
 # ─── After-request: no-cache for all /api/* routes (mirrors DAA pattern) ─────
 @app.after_request
@@ -478,6 +479,21 @@ def ai_summary():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/ai/dashboard")
+def ai_dashboard():
+    year        = int(request.args.get("year", 2025))
+    max_results = int(request.args.get("max", 20))
+    try:
+        get_recs, get_summary = _get_ai_engine()
+        recs = get_recs(year, max_results)
+        return jsonify({
+            "recommendations": recs,
+            "summary": get_summary(year, recs),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SYSTEM / UTILITY
 # ─────────────────────────────────────────────────────────────────────────────
@@ -499,18 +515,9 @@ def health():
 @app.route("/api/data/reload")
 def data_reload():
     """Force reload all data caches (useful after data regeneration)."""
-    from engine.ingestion import (
-        get_jobs, get_channel_volume, get_booking_journey,
-        get_engineers, get_engineer_availability, get_financial_data, get_capacity_demand
-    )
-    get_jobs(force_reload=True)
-    get_channel_volume(force_reload=True)
-    get_booking_journey(force_reload=True)
-    get_engineers(force_reload=True)
-    get_engineer_availability(force_reload=True)
-    get_financial_data(force_reload=True)
-    get_capacity_demand(force_reload=True)
-    return jsonify({"status": "ok", "message": "All data caches reloaded"})
+    from engine.ingestion import preload_all_data
+    counts = preload_all_data(force_reload=True)
+    return jsonify({"status": "ok", "message": "All data caches reloaded", "rows": counts})
 
 
 @app.route("/api/data/generate")
@@ -518,8 +525,10 @@ def data_generate():
     """Trigger synthetic data generation (dev/reset use only)."""
     try:
         from engine.data_generator import generate_all
+        from engine.ingestion import preload_all_data
         generate_all()
-        return jsonify({"status": "ok", "message": "Datasets regenerated successfully"})
+        counts = preload_all_data(force_reload=True)
+        return jsonify({"status": "ok", "message": "Datasets regenerated successfully", "rows": counts})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -541,6 +550,10 @@ def get_regions():
 # ─── Startup: generate data if missing ───────────────────────────────────────
 def _ensure_data():
     """Generate synthetic datasets on first run if not present."""
+    global _DATA_READY
+    if _DATA_READY:
+        return
+
     manifest = BASE_DIR / "data" / "inputs" / "manifest.json"
     if not manifest.exists():
         print("IMSERV: No data found — generating synthetic datasets...")
@@ -552,26 +565,19 @@ def _ensure_data():
     
     print("IMSERV: Pre-loading data caches into memory to ensure fast initial load...")
     try:
-        from engine.ingestion import (
-            get_jobs, get_channel_volume, get_booking_journey,
-            get_engineers, get_engineer_availability, get_financial_data, get_capacity_demand
-        )
-        get_jobs()
-        get_channel_volume()
-        get_booking_journey()
-        get_engineers()
-        get_engineer_availability()
-        get_financial_data()
-        get_capacity_demand()
-        print("IMSERV: Data caches pre-loaded.")
+        from engine.ingestion import preload_all_data
+        counts = preload_all_data()
+        print(f"IMSERV: Data caches pre-loaded: {counts}")
+        _DATA_READY = True
     except Exception as e:
         print(f"IMSERV: Failed to preload caches: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+_ensure_data()
+
 if __name__ == "__main__":
-    _ensure_data()
     port = int(os.getenv("PORT", 5000))
     debug = os.getenv("FLASK_ENV", "development") == "development"
     print(f"\nIMSERV Platform running on http://localhost:{port}\n")

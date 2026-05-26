@@ -7,21 +7,19 @@ async function loadJourneyDashboard() {
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
 
-  // Load KPIs and AI summary in parallel
-  const [kpis, heatmap, recs, summary] = await Promise.all([
+  // Load all first-view data in parallel.
+  const [kpis, heatmap, ai, trend] = await Promise.all([
     IMSERV.apiFetch('/api/journey/kpis' + qs),
     IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
-    IMSERV.apiFetch('/api/ai/recommendations?year=' + year + '&max=8'),
-    IMSERV.apiFetch('/api/ai/summary?year=' + year),
+    IMSERV.apiFetch('/api/ai/dashboard?year=' + year + '&max=8'),
+    IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
   ]);
 
   if (kpis)    renderJourneyKPIs(kpis);
   if (heatmap) renderRegionalHeatmap(heatmap);
-  if (recs)    renderAIRecommendations(recs);
-  if (summary) document.getElementById('journey-ai-text').textContent = summary.summary || '';
+  if (ai?.recommendations) renderAIRecommendations(ai.recommendations);
+  if (ai?.summary) document.getElementById('journey-ai-text').textContent = ai.summary || '';
 
-  // Load trend chart
-  const trend = await IMSERV.apiFetch('/api/journey/weekly-trend' + qs);
   if (trend) renderJourneyTrend(trend);
 
   // Render funnel (uses KPI data)

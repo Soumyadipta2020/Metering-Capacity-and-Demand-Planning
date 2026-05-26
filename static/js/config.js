@@ -2,6 +2,8 @@
 const IMSERV = {
   version: '1.0.0',
   charts: {},   // registered Chart.js instances
+  apiCache: new Map(),
+  apiCacheTtlMs: 60_000,
 
   // Brand colours — mirror CSS variables for Chart.js
   colors: {
@@ -66,13 +68,29 @@ const IMSERV = {
     }
   },
 
-  async apiFetch(url) {
+  clearApiCache() {
+    this.apiCache.clear();
+  },
+
+  async apiFetch(url, options = {}) {
+    const now = Date.now();
+    const cached = this.apiCache.get(url);
+    if (!options.force && cached && cached.expiresAt > now) {
+      return cached.data ?? cached.promise;
+    }
+
     try {
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      return await resp.json();
+      const promise = fetch(url).then(async resp => {
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return await resp.json();
+      });
+      this.apiCache.set(url, { promise, expiresAt: now + this.apiCacheTtlMs });
+      const data = await promise;
+      this.apiCache.set(url, { data, expiresAt: Date.now() + this.apiCacheTtlMs });
+      return data;
     } catch (e) {
       console.error('API error:', url, e);
+      this.apiCache.delete(url);
       return null;
     }
   },

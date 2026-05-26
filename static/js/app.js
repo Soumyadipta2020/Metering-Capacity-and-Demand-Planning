@@ -78,10 +78,8 @@ async function loadAiModal() {
   body.innerHTML = '<div class="loading"><span class="spinner"></span> Generating AI insights...</div>';
 
   const year = IMSERV.getYear();
-  const [recs, summary] = await Promise.all([
-    IMSERV.apiFetch('/api/ai/recommendations?year=' + year + '&max=15'),
-    IMSERV.apiFetch('/api/ai/summary?year=' + year),
-  ]);
+  const ai = await IMSERV.apiFetch('/api/ai/dashboard?year=' + year + '&max=15');
+  const recs = ai?.recommendations;
 
   if (!recs) {
     body.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-title">Could not load recommendations</div></div>';
@@ -89,10 +87,10 @@ async function loadAiModal() {
     return;
   }
 
-  const summaryHtml = summary ? `
+  const summaryHtml = ai?.summary ? `
     <div class="ai-summary-bar mb-16">
       <div class="ai-icon"></div>
-      <div class="ai-text">${summary.summary}</div>
+      <div class="ai-text">${ai.summary}</div>
     </div>
   ` : '';
 
@@ -128,13 +126,5 @@ document.getElementById('ai-modal')?.addEventListener('click', function (e) {
 });
 
 document.addEventListener('DOMContentLoaded', function () {
-  IMSERV.apiFetch('/api/health').then(async health => {
-    if (health && health.status === 'degraded') {
-      console.warn('IMSERV: Data health degraded - triggering generation...');
-      await IMSERV.apiFetch('/api/data/generate');
-      // Optionally reload current view if needed
-    }
-  });
-
   loadJourneyDashboard();
 });

@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 from datetime import date, datetime
-from functools import lru_cache
 
 # ─────────────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).resolve().parent.parent
@@ -23,14 +22,32 @@ _AVAILABILITY_CACHE      = None
 _FINANCIAL_CACHE         = None
 _CAPACITY_CACHE          = None
 
+DATASET_FILES = [
+    "smart_meter_jobs.csv",
+    "channel_volume.csv",
+    "booking_journey.csv",
+    "engineers.csv",
+    "engineer_availability.csv",
+    "financial_data.csv",
+    "capacity_demand.csv",
+]
+_DATA_HEALTH_CACHE = {}
+
 
 def _load_csv(filename: str) -> list:
     """Load a CSV from inputs directory, filter empty rows."""
     path = INPUTS_DIR / filename
     if not path.exists():
+        _DATA_HEALTH_CACHE[filename] = {"exists": False, "rows": 0, "size_bytes": 0}
         return []
     with open(path, encoding="utf-8-sig") as f:
-        return [r for r in csv.DictReader(f) if any(v and v.strip() for v in r.values())]
+        rows = [r for r in csv.DictReader(f) if any(v and v.strip() for v in r.values())]
+    _DATA_HEALTH_CACHE[filename] = {
+        "exists": True,
+        "rows": len(rows),
+        "size_bytes": path.stat().st_size,
+    }
+    return rows
 
 
 # ─── Public Accessors ─────────────────────────────────────────────────────────
@@ -84,6 +101,19 @@ def get_capacity_demand(force_reload: bool = False) -> list:
     return _CAPACITY_CACHE
 
 
+def preload_all_data(force_reload: bool = False) -> dict:
+    """Warm all CSV caches so first user requests do not pay parsing cost."""
+    return {
+        "smart_meter_jobs.csv": len(get_jobs(force_reload)),
+        "channel_volume.csv": len(get_channel_volume(force_reload)),
+        "booking_journey.csv": len(get_booking_journey(force_reload)),
+        "engineers.csv": len(get_engineers(force_reload)),
+        "engineer_availability.csv": len(get_engineer_availability(force_reload)),
+        "financial_data.csv": len(get_financial_data(force_reload)),
+        "capacity_demand.csv": len(get_capacity_demand(force_reload)),
+    }
+
+
 # ─── Filter Helpers ───────────────────────────────────────────────────────────
 
 def filter_by(rows: list, **kwargs) -> list:
@@ -128,22 +158,15 @@ def safe_pct(numerator, denominator, decimals: int = 1) -> float:
 # ─── Data Health Check ───────────────────────────────────────────────────────
 
 def data_health() -> dict:
-    """Returns record counts and file presence for all datasets."""
-    files = [
-        "smart_meter_jobs.csv", "channel_volume.csv", "booking_journey.csv",
-        "engineers.csv", "engineer_availability.csv", "financial_data.csv",
-        "capacity_demand.csv",
-    ]
+    """Return file presence plus cached row counts without scanning CSVs."""
     result = {}
-    for f in files:
+    for f in DATASET_FILES:
         path = INPUTS_DIR / f
         exists = path.exists()
-        count = 0
-        if exists:
-            try:
-                with open(path, "r", encoding="utf-8-sig") as file:
-                    count = sum(1 for _ in file) - 1 # Subtract 1 for header
-            except Exception:
-                pass
-        result[f] = {"exists": exists, "rows": max(0, count)}
+        cached = _DATA_HEALTH_CACHE.get(f, {})
+        result[f] = {
+            "exists": exists,
+            "rows": cached.get("rows"),
+            "size_bytes": path.stat().st_size if exists else 0,
+        }
     return result
