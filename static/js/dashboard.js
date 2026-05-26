@@ -7,25 +7,28 @@ async function loadJourneyDashboard() {
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
 
-  // Load all first-view data in parallel.
-  const [kpis, heatmap, ai, trend, interactions] = await Promise.all([
+  // Keep the first paint light; AI recommendations load after the main dashboard.
+  const [kpis, heatmap, trend, interactions] = await Promise.all([
     IMSERV.apiFetch('/api/journey/kpis' + qs),
     IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
-    IMSERV.apiFetch('/api/ai/dashboard?year=' + year + '&max=8'),
     IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
     IMSERV.apiFetch('/api/journey/interactions' + qs),
   ]);
 
   if (kpis)    renderJourneyKPIs(kpis);
   if (heatmap) renderRegionalHeatmap(heatmap);
-  if (ai?.recommendations) renderAIRecommendations(ai.recommendations);
-  if (ai?.summary) document.getElementById('journey-ai-text').textContent = ai.summary || '';
 
   if (trend) renderJourneyTrend(trend);
   if (interactions) renderCustomerInteractions(interactions);
 
   // Render funnel (uses KPI data)
   if (kpis) renderFunnel(kpis);
+
+  window.setTimeout(async () => {
+    const ai = await IMSERV.apiFetch('/api/ai/dashboard?year=' + year + '&max=8');
+    if (ai?.recommendations) renderAIRecommendations(ai.recommendations);
+    if (ai?.summary) document.getElementById('journey-ai-text').textContent = ai.summary || '';
+  }, 250);
 }
 
 function renderCustomerInteractions(data) {

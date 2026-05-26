@@ -2,15 +2,11 @@
 IMSERV Platform — Cancellation & Abort Analytics Engine
 Root cause analysis, trend detection, AI-driven prediction, and rebooking analytics.
 """
-import math
-import random
-import statistics
 from collections import defaultdict, Counter
-from datetime import date, timedelta
 
 from engine.ingestion import (
-    get_jobs, get_booking_journey,
-    to_int, to_float, safe_pct
+    iter_jobs, get_booking_journey,
+    to_float, safe_pct
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -41,19 +37,21 @@ def get_cancellation_kpis(region_code: str = None, year: int = 2025) -> dict:
     Returns:
         dict with rates, volumes, trends, and regional comparison
     """
-    rows = get_jobs()
-    if region_code:
-        rows = [r for r in rows if r["region_code"] == region_code]
-    rows = [
-        r for r in rows
-        if r.get("requested_date", "")[:4] == str(year)
-        and r.get("is_forecast", "0") == "0"
-    ]
-
-    total    = len(rows)
-    cancelled = len([r for r in rows if r["status"] == "Cancelled"])
-    aborted   = len([r for r in rows if r["status"] == "Aborted"])
-    completed = len([r for r in rows if r["status"] == "Completed"])
+    year_str = str(year)
+    total = cancelled = aborted = completed = 0
+    for r in iter_jobs():
+        if region_code and r.get("region_code") != region_code:
+            continue
+        if r.get("requested_date", "")[:4] != year_str or r.get("is_forecast", "0") != "0":
+            continue
+        total += 1
+        status = r.get("status")
+        if status == "Cancelled":
+            cancelled += 1
+        elif status == "Aborted":
+            aborted += 1
+        elif status == "Completed":
+            completed += 1
 
     cancel_rate = safe_pct(cancelled, total)
     abort_rate  = safe_pct(aborted, total - cancelled)
@@ -80,24 +78,21 @@ def get_cancellation_root_causes(
     Returns:
         dict with category breakdown, Pareto percentages, raw reason counts
     """
-    rows = get_jobs()
-    if region_code:
-        rows = [r for r in rows if r["region_code"] == region_code]
-    rows = [
-        r for r in rows
-        if r.get("requested_date", "")[:4] == str(year)
-        and r.get("is_forecast", "0") == "0"
-    ]
-
     reason_counter: Counter = Counter()
     category_counter: Counter = Counter()
+    year_str = str(year)
 
-    for r in rows:
-        if r["status"] == "Cancelled" and r.get("cancellation_reason"):
+    for r in iter_jobs():
+        if region_code and r.get("region_code") != region_code:
+            continue
+        if r.get("requested_date", "")[:4] != year_str or r.get("is_forecast", "0") != "0":
+            continue
+
+        if r.get("status") == "Cancelled" and r.get("cancellation_reason"):
             reason = r["cancellation_reason"]
             reason_counter[reason] += 1
             category_counter[CANCEL_CATEGORIES.get(reason, "Other")] += 1
-        elif include_aborts and r["status"] == "Aborted" and r.get("abort_reason"):
+        elif include_aborts and r.get("status") == "Aborted" and r.get("abort_reason"):
             reason = r["abort_reason"]
             reason_counter[reason] += 1
             category_counter[CANCEL_CATEGORIES.get(reason, "Other")] += 1
@@ -211,18 +206,14 @@ def get_regional_cancellation_heatmap(year: int = 2025) -> list:
     Returns:
         list of region stats sorted by cancellation rate desc
     """
-    rows = get_jobs()
-    rows = [
-        r for r in rows
-        if r.get("requested_date", "")[:4] == str(year)
-        and r.get("is_forecast", "0") == "0"
-    ]
-
     by_region: dict = defaultdict(lambda: defaultdict(int))
-    for r in rows:
-        rc = r["region_code"]
+    year_str = str(year)
+    for r in iter_jobs():
+        if r.get("requested_date", "")[:4] != year_str or r.get("is_forecast", "0") != "0":
+            continue
+        rc = r.get("region_code")
         by_region[rc]["total"]    += 1
-        by_region[rc][r["status"]] += 1
+        by_region[rc][r.get("status")] += 1
 
     result = []
     for region_code, d in by_region.items():

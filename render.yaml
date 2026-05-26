@@ -3,7 +3,7 @@ services:
     name: imserv-platform
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 app:app"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 --max-requests 150 --max-requests-jitter 30 app:app"
     envVars:
       - key: FLASK_ENV
         value: production
@@ -17,6 +17,10 @@ services:
         value: "false"
       - key: IMSERV_AUTO_GENERATE_DATA
         value: "false"
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      - key: PYTHONUNBUFFERED
+        value: "1"
       - key: PORT
         value: "5000"
     healthCheckPath: /api/health

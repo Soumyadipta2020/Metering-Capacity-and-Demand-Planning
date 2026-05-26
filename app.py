@@ -73,6 +73,21 @@ def _get_ai_engine():
     from engine.ai_recommendations import get_all_recommendations, get_natural_language_summary
     return get_all_recommendations, get_natural_language_summary
 
+def _ai_enabled() -> bool:
+    return os.getenv("ENABLE_AI_RECOMMENDATIONS", "true").lower() == "true"
+
+def _disabled_ai_payload(max_results: int = 20) -> dict:
+    return {
+        "recommendations": [],
+        "total_count": 0,
+        "critical_count": 0,
+        "high_count": 0,
+        "medium_count": 0,
+        "action_required_count": 0,
+        "disabled": True,
+        "message": "AI recommendations are disabled on this deployment.",
+    }
+
 def _get_ingestion():
     from engine.ingestion import get_booking_journey, data_health, to_int, to_float, safe_pct
     return get_booking_journey, data_health, to_int, to_float, safe_pct
@@ -475,6 +490,8 @@ def ai_recommendations():
     year        = int(request.args.get("year", 2025))
     max_results = int(request.args.get("max", 20))
     try:
+        if not _ai_enabled():
+            return jsonify(_disabled_ai_payload(max_results))
         get_recs, _ = _get_ai_engine()
         return jsonify(get_recs(year, max_results))
     except Exception as e:
@@ -485,6 +502,8 @@ def ai_recommendations():
 def ai_summary():
     year = int(request.args.get("year", 2025))
     try:
+        if not _ai_enabled():
+            return jsonify({"summary": "AI recommendations are disabled on this deployment."})
         _, get_summary = _get_ai_engine()
         return jsonify({"summary": get_summary(year)})
     except Exception as e:
@@ -496,6 +515,12 @@ def ai_dashboard():
     year        = int(request.args.get("year", 2025))
     max_results = int(request.args.get("max", 20))
     try:
+        if not _ai_enabled():
+            recs = _disabled_ai_payload(max_results)
+            return jsonify({
+                "recommendations": recs,
+                "summary": recs["message"],
+            })
         get_recs, get_summary = _get_ai_engine()
         recs = get_recs(year, max_results)
         return jsonify({

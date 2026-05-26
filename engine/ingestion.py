@@ -52,6 +52,27 @@ def _load_csv(filename: str) -> list:
     return rows
 
 
+def iter_csv(filename: str):
+    """Yield non-empty CSV rows without materializing the whole file."""
+    path = INPUTS_DIR / filename
+    if not path.exists():
+        _DATA_HEALTH_CACHE[filename] = {"exists": False, "rows": 0, "size_bytes": 0}
+        return
+
+    count = 0
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            if any(v and v.strip() for v in row.values()):
+                count += 1
+                yield row
+
+    _DATA_HEALTH_CACHE[filename] = {
+        "exists": True,
+        "rows": count,
+        "size_bytes": path.stat().st_size,
+    }
+
+
 def _count_csv_rows(filename: str) -> int:
     """Count CSV rows without materializing them as dictionaries."""
     path = INPUTS_DIR / filename
@@ -81,11 +102,23 @@ def get_jobs(force_reload: bool = False) -> list:
     return _JOBS_CACHE
 
 
+def iter_jobs():
+    """Stream the job ledger row-by-row for memory-constrained routes."""
+    master_path = INPUTS_DIR / "master_operations.csv"
+    filename = "master_operations.csv" if master_path.exists() else "smart_meter_jobs.csv"
+    yield from iter_csv(filename)
+
+
 def get_channel_volume(force_reload: bool = False) -> list:
     global _CHANNEL_CACHE
     if _CHANNEL_CACHE is None or force_reload:
         _CHANNEL_CACHE = _load_csv("channel_volume.csv")
     return _CHANNEL_CACHE
+
+
+def iter_channel_volume():
+    """Stream channel volume rows for lightweight first-page routes."""
+    yield from iter_csv("channel_volume.csv")
 
 
 def get_booking_journey(force_reload: bool = False) -> list:
@@ -109,6 +142,11 @@ def get_engineer_availability(force_reload: bool = False) -> list:
     if _AVAILABILITY_CACHE is None or force_reload:
         _AVAILABILITY_CACHE = _load_csv("engineer_availability.csv")
     return _AVAILABILITY_CACHE
+
+
+def iter_engineer_availability():
+    """Stream engineer availability without creating a large list of dicts."""
+    yield from iter_csv("engineer_availability.csv")
 
 
 def get_financial_data(force_reload: bool = False) -> list:

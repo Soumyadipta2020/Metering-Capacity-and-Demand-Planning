@@ -11,8 +11,8 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from engine.ingestion import (
-    get_channel_volume, get_booking_journey,
-    filter_date_range, to_int, to_float, safe_pct
+    iter_channel_volume, get_booking_journey,
+    to_int, to_float, safe_pct
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -192,19 +192,15 @@ def forecast_channel_volume(
     if include_models is None:
         include_models = MODELS
 
-    rows = get_channel_volume()
-
-    # Filter
-    if region_code:
-        rows = [r for r in rows if r["region_code"] == region_code]
-    if channel:
-        rows = [r for r in rows if r["channel"] == channel]
-    # Exclude future forecast rows for training
-    rows = [r for r in rows if r.get("is_forecast", "0") == "0"]
-
     # Aggregate by week
     weekly: dict = defaultdict(float)
-    for r in rows:
+    for r in iter_channel_volume():
+        if region_code and r.get("region_code") != region_code:
+            continue
+        if channel and r.get("channel") != channel:
+            continue
+        if r.get("is_forecast", "0") != "0":
+            continue
         wk = f"{r.get('year', '2024')}-W{int(r.get('week', 1)):02d}"
         weekly[wk] += to_float(r.get("volume", 0))
 
@@ -257,19 +253,19 @@ def forecast_channel_volume(
 
 def get_channel_kpis(region_code: str = None, year: int = 2025) -> dict:
     """Aggregate KPIs for contact centre: volume, conversion, abandonment."""
-    rows = get_channel_volume()
-    if region_code:
-        rows = [r for r in rows if r["region_code"] == region_code]
-    rows = [r for r in rows if to_int(r.get("year")) == year]
-
-    total_volume   = sum(to_int(r["volume"])        for r in rows)
-    total_bookings = sum(to_int(r["bookings"])       for r in rows)
-    total_cancel   = sum(to_int(r["cancellations"])  for r in rows)
-    total_abandon  = sum(to_int(r["abandoned"])      for r in rows)
-
-    # By channel
+    total_volume = total_bookings = total_cancel = total_abandon = 0
     by_channel: dict = defaultdict(lambda: defaultdict(float))
-    for r in rows:
+    for r in iter_channel_volume():
+        if region_code and r.get("region_code") != region_code:
+            continue
+        if to_int(r.get("year")) != year:
+            continue
+
+        total_volume   += to_int(r["volume"])
+        total_bookings += to_int(r["bookings"])
+        total_cancel   += to_int(r["cancellations"])
+        total_abandon  += to_int(r["abandoned"])
+
         ch = r["channel"]
         by_channel[ch]["volume"]        += to_float(r["volume"])
         by_channel[ch]["bookings"]       += to_float(r["bookings"])
@@ -301,16 +297,13 @@ def get_channel_kpis(region_code: str = None, year: int = 2025) -> dict:
 
 def get_customer_interaction_map(region_code: str = None, year: int = 2025) -> dict:
     """Classify source interaction channels into customer interaction types."""
-    rows = get_channel_volume()
-    if region_code:
-        rows = [r for r in rows if r["region_code"] == region_code]
-    rows = [
-        r for r in rows
-        if to_int(r.get("year")) == year and r.get("is_forecast", "0") == "0"
-    ]
-
     by_channel: dict = defaultdict(lambda: defaultdict(float))
-    for r in rows:
+    for r in iter_channel_volume():
+        if region_code and r.get("region_code") != region_code:
+            continue
+        if to_int(r.get("year")) != year or r.get("is_forecast", "0") != "0":
+            continue
+
         ch = r["channel"]
         by_channel[ch]["volume"]        += to_float(r["volume"])
         by_channel[ch]["bookings"]      += to_float(r["bookings"])

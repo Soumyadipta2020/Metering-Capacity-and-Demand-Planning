@@ -3,12 +3,11 @@ IMSERV Platform — AI Recommendation Engine
 Generates intelligent operational recommendations from cross-module signals.
 Produces prioritised alerts for the executive dashboard.
 """
-import random
-from datetime import date, timedelta
+from datetime import date
 
-from engine.ingestion import get_capacity_demand, get_jobs, get_financial_data, to_float, to_int, safe_pct
-from engine.cancellation_engine import get_cancellation_kpis, predict_cancellation_risk
-from engine.field_ops_engine import predict_understaffing, get_field_ops_kpis
+from engine.ingestion import get_capacity_demand, to_float, to_int
+from engine.cancellation_engine import get_regional_cancellation_heatmap
+from engine.field_ops_engine import predict_understaffing
 from engine.financial_engine import get_financial_kpis
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -56,37 +55,39 @@ def _capacity_alerts(year: int = 2025) -> list:
 def _cancellation_alerts(year: int = 2025) -> list:
     """Flag regions with high or rising cancellation rates."""
     alerts = []
-    for rc in REGIONS:
-        try:
-            kpis = get_cancellation_kpis(rc, year)
-            cr   = kpis["cancel_rate_pct"]
-            ar   = kpis["abort_rate_pct"]
-            if cr > 18:
-                alerts.append({
-                    "type":           "cancellation_risk",
-                    "priority":       "Critical",
-                    "region_code":    rc,
-                    "title":          f"High Cancellation Rate — {rc}",
-                    "body":           f"{rc} cancellation rate at {cr}% (threshold: 18%). "
-                                      f"Abort rate: {ar}%. Investigate root causes immediately.",
-                    "metric_value":   cr,
-                    "metric_label":   "Cancellation %",
-                    "action_required":True,
-                })
-            elif cr > 14:
-                alerts.append({
-                    "type":           "cancellation_risk",
-                    "priority":       "High",
-                    "region_code":    rc,
-                    "title":          f"Elevated Cancellation Rate — {rc}",
-                    "body":           f"{rc} cancellation rate at {cr}%. Monitor closely and "
-                                      f"consider pre-visit confirmation programme.",
-                    "metric_value":   cr,
-                    "metric_label":   "Cancellation %",
-                    "action_required":False,
-                })
-        except Exception:
-            continue
+    try:
+        regional = get_regional_cancellation_heatmap(year)
+    except Exception:
+        return alerts
+
+    for kpis in regional:
+        rc = kpis["region_code"]
+        cr = kpis["cancel_rate"]
+        ar = kpis["abort_rate"]
+        if cr > 18:
+            alerts.append({
+                "type":           "cancellation_risk",
+                "priority":       "Critical",
+                "region_code":    rc,
+                "title":          f"High Cancellation Rate - {rc}",
+                "body":           f"{rc} cancellation rate at {cr}% (threshold: 18%). "
+                                  f"Abort rate: {ar}%. Investigate root causes immediately.",
+                "metric_value":   cr,
+                "metric_label":   "Cancellation %",
+                "action_required":True,
+            })
+        elif cr > 14:
+            alerts.append({
+                "type":           "cancellation_risk",
+                "priority":       "High",
+                "region_code":    rc,
+                "title":          f"Elevated Cancellation Rate - {rc}",
+                "body":           f"{rc} cancellation rate at {cr}%. Monitor closely and "
+                                  f"consider pre-visit confirmation programme.",
+                "metric_value":   cr,
+                "metric_label":   "Cancellation %",
+                "action_required":False,
+            })
     return alerts
 
 

@@ -11,8 +11,8 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from engine.ingestion import (
-    get_engineers, get_engineer_availability, get_capacity_demand, get_jobs,
-    to_int, to_float, safe_pct, filter_date_range
+    get_engineers, iter_engineer_availability, get_capacity_demand,
+    to_int, to_float, safe_pct
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -29,26 +29,38 @@ def get_field_ops_kpis(region_code: str = None, year: int = 2025) -> dict:
         dict with KPI values and RAG indicators
     """
     engs = get_engineers()
-    avail = get_engineer_availability()
-
     if region_code:
         engs  = [e for e in engs  if e["region_code"] == region_code]
-        avail = [a for a in avail if a["region_code"] == region_code]
-
-    avail = [a for a in avail if a.get("year") == str(year)]
 
     total_engineers = len(engs)
-    active_days     = [a for a in avail if a["status"] == "Available"]
-    total_jobs      = sum(to_int(a["jobs_completed"]) for a in active_days)
-    target_jobs     = sum(to_int(a["jobs_target"])    for a in active_days)
+    total_jobs = target_jobs = total_available_days = 0
+    leave_days = sick_days = training_days = total_availability_days = 0
+    util_values = []
+    year_str = str(year)
 
-    util_values     = [to_float(a["utilisation_pct"]) for a in active_days if to_float(a["utilisation_pct"]) > 0]
+    for a in iter_engineer_availability():
+        if region_code and a.get("region_code") != region_code:
+            continue
+        if a.get("year") != year_str:
+            continue
+
+        total_availability_days += 1
+        status = a.get("status")
+        if status == "Available":
+            total_available_days += 1
+            total_jobs += to_int(a.get("jobs_completed"))
+            target_jobs += to_int(a.get("jobs_target"))
+            util = to_float(a.get("utilisation_pct"))
+            if util > 0:
+                util_values.append(util)
+        elif status == "Annual Leave":
+            leave_days += 1
+        elif status == "Sick":
+            sick_days += 1
+        elif status == "Training":
+            training_days += 1
+
     avg_utilisation = round(statistics.mean(util_values), 1) if util_values else 0.0
-
-    total_available_days = len(active_days)
-    leave_days  = len([a for a in avail if a["status"] == "Annual Leave"])
-    sick_days   = len([a for a in avail if a["status"] == "Sick"])
-    training_days= len([a for a in avail if a["status"] == "Training"])
 
     productivity = round(total_jobs / max(total_available_days, 1), 2)
     completion_rate = safe_pct(total_jobs, target_jobs)
@@ -71,7 +83,7 @@ def get_field_ops_kpis(region_code: str = None, year: int = 2025) -> dict:
         "leave_days":        leave_days,
         "sick_days":         sick_days,
         "training_days":     training_days,
-        "absence_rate":      safe_pct(leave_days + sick_days, len(avail)),
+        "absence_rate":      safe_pct(leave_days + sick_days, total_availability_days),
     }
 
 
@@ -162,13 +174,14 @@ def get_engineer_performance(region_code: str = None, year: int = 2025, top_n: i
     Returns:
         list of engineer performance records
     """
-    avail = get_engineer_availability()
-    if region_code:
-        avail = [a for a in avail if a["region_code"] == region_code]
-    avail = [a for a in avail if a.get("year") == str(year) and a["status"] == "Available"]
-
     by_engineer: dict = defaultdict(lambda: defaultdict(float))
-    for a in avail:
+    year_str = str(year)
+    for a in iter_engineer_availability():
+        if region_code and a.get("region_code") != region_code:
+            continue
+        if a.get("year") != year_str or a.get("status") != "Available":
+            continue
+
         eng = a["engineer_id"]
         by_engineer[eng]["days"]           += 1
         by_engineer[eng]["jobs_completed"] += to_float(a["jobs_completed"])

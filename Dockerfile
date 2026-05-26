@@ -2,13 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System dependencies for LightGBM / Prophet / psycopg2
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    libgomp1 \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+ENV MALLOC_ARENA_MAX=2 \
+    PYTHONUNBUFFERED=1
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -20,4 +15,4 @@ RUN mkdir -p data/inputs data/outputs
 
 EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "2", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "2", "--timeout", "120", "--max-requests", "150", "--max-requests-jitter", "30", "app:app"]
