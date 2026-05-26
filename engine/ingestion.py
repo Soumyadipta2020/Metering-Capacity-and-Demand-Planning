@@ -30,8 +30,7 @@ def _load_csv(filename: str) -> list:
     if not path.exists():
         return []
     with open(path, encoding="utf-8-sig") as f:
-        rows = list(csv.DictReader(f))
-    return [r for r in rows if any(v.strip() for v in r.values())]
+        return [r for r in csv.DictReader(f) if any(v and v.strip() for v in r.values())]
 
 
 # ─── Public Accessors ─────────────────────────────────────────────────────────
@@ -139,6 +138,12 @@ def data_health() -> dict:
     for f in files:
         path = INPUTS_DIR / f
         exists = path.exists()
-        count  = len(_load_csv(f)) if exists else 0
-        result[f] = {"exists": exists, "rows": count}
+        count = 0
+        if exists:
+            try:
+                with open(path, "r", encoding="utf-8-sig") as file:
+                    count = sum(1 for _ in file) - 1 # Subtract 1 for header
+            except Exception:
+                pass
+        result[f] = {"exists": exists, "rows": max(0, count)}
     return result

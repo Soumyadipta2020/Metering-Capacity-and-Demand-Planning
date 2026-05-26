@@ -127,12 +127,14 @@ document.getElementById('ai-modal')?.addEventListener('click', function (e) {
   if (e.target === this) closeAiPanel();
 });
 
-document.addEventListener('DOMContentLoaded', async function () {
-  const health = await IMSERV.apiFetch('/api/health');
-  if (health && health.status === 'degraded') {
-    console.warn('IMSERV: Data health degraded - triggering generation...');
-    await IMSERV.apiFetch('/api/data/generate');
-  }
+document.addEventListener('DOMContentLoaded', function () {
+  IMSERV.apiFetch('/api/health').then(async health => {
+    if (health && health.status === 'degraded') {
+      console.warn('IMSERV: Data health degraded - triggering generation...');
+      await IMSERV.apiFetch('/api/data/generate');
+      // Optionally reload current view if needed
+    }
+  });
 
   loadJourneyDashboard();
 });

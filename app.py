@@ -549,6 +549,23 @@ def _ensure_data():
             generate_all()
         except Exception as e:
             print(f"IMSERV: Data generation failed: {e}")
+    
+    print("IMSERV: Pre-loading data caches into memory to ensure fast initial load...")
+    try:
+        from engine.ingestion import (
+            get_jobs, get_channel_volume, get_booking_journey,
+            get_engineers, get_engineer_availability, get_financial_data, get_capacity_demand
+        )
+        get_jobs()
+        get_channel_volume()
+        get_booking_journey()
+        get_engineers()
+        get_engineer_availability()
+        get_financial_data()
+        get_capacity_demand()
+        print("IMSERV: Data caches pre-loaded.")
+    except Exception as e:
+        print(f"IMSERV: Failed to preload caches: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
