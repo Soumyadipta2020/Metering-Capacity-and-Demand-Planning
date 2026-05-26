@@ -360,53 +360,59 @@
           <div class="kpi-card warn"><div class="kpi-label">Abort Rate</div><div class="kpi-value" id="can-kpi-abort-rate">—</div><div class="kpi-icon">📉</div></div>
         </div>
 
-        <div class="grid-2 mb-16">
+        <div class="cancel-insight-grid mb-16">
 
-          <!-- Pareto Chart -->
-          <div class="card">
-            <div class="card-header">
-              <div><div class="card-title">📊 Pareto — Root Cause Analysis</div><div class="card-subtitle">Top cancellation drivers (Pareto 80/20)</div></div>
-            </div>
-            <div class="card-body">
-              <div class="chart-wrap chart-h-300">
-                <canvas id="pareto-chart"></canvas>
+          <section class="cancel-visual-panel cause-panel">
+            <div class="cancel-panel-header">
+              <div>
+                <div class="cancel-panel-title">Root Cause Constellation</div>
+                <div class="cancel-panel-subtitle">Ranked drivers with event volume, share, and cumulative Pareto pressure</div>
               </div>
             </div>
-          </div>
+            <div id="pareto-chart" class="cause-constellation">
+              <div class="loading"><span class="spinner"></span></div>
+            </div>
+          </section>
 
-          <!-- Category Breakdown -->
-          <div class="card">
-            <div class="card-header"><div class="card-title">🗂️ Category Breakdown</div></div>
-            <div class="card-body">
-              <div class="chart-wrap chart-h-300">
-                <canvas id="category-chart"></canvas>
+          <section class="cancel-visual-panel taxonomy-panel">
+            <div class="cancel-panel-header">
+              <div>
+                <div class="cancel-panel-title">Cause Taxonomy Lens</div>
+                <div class="cancel-panel-subtitle">Root causes grouped into operational failure families</div>
               </div>
             </div>
-          </div>
+            <div id="category-chart" class="category-lens">
+              <div class="loading"><span class="spinner"></span></div>
+            </div>
+          </section>
 
         </div>
 
-        <div class="grid-2 mb-16">
+        <div class="cancel-insight-grid cancel-risk-grid mb-16">
 
-          <!-- Monthly Trend -->
-          <div class="card">
-            <div class="card-header"><div class="card-title">📈 Monthly Cancellation Trend + Forecast</div></div>
-            <div class="card-body">
-              <div class="chart-wrap chart-h-300">
-                <canvas id="cancel-trend-chart"></canvas>
+          <section class="cancel-visual-panel pulse-panel">
+            <div class="cancel-panel-header">
+              <div>
+                <div class="cancel-panel-title">Cancellation Pulse</div>
+                <div class="cancel-panel-subtitle">Actual pressure current with forward risk drift</div>
               </div>
             </div>
-          </div>
+            <div id="cancel-trend-chart" class="cancel-pulse">
+              <div class="loading"><span class="spinner"></span></div>
+            </div>
+          </section>
 
-          <!-- Regional Comparison Chart -->
-          <div class="card">
-            <div class="card-header"><div class="card-title">🗺️ Regional Cancellation Comparison</div></div>
-            <div class="card-body">
-              <div class="chart-wrap chart-h-300">
-                <canvas id="cancel-regional-chart"></canvas>
+          <section class="cancel-visual-panel region-panel">
+            <div class="cancel-panel-header">
+              <div>
+                <div class="cancel-panel-title">Regional Risk Field</div>
+                <div class="cancel-panel-subtitle">Cancel and abort pressure by operating region</div>
               </div>
             </div>
-          </div>
+            <div id="cancel-regional-chart" class="regional-risk-field">
+              <div class="loading"><span class="spinner"></span></div>
+            </div>
+          </section>
 
         </div>
 

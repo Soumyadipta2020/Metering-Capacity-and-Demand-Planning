@@ -2,8 +2,8 @@ services:
   - type: web
     name: imserv-platform
     env: python
-    buildCommand: "pip install -r requirements.txt && python engine/data_generator.py"
-    startCommand: "gunicorn --preload --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 app:app"
     envVars:
       - key: FLASK_ENV
         value: production
@@ -12,6 +12,10 @@ services:
       - key: ENABLE_AI_RECOMMENDATIONS
         value: "false"
       - key: ENABLE_DATABASE
+        value: "false"
+      - key: IMSERV_CACHE_LARGE_DATASETS
+        value: "false"
+      - key: IMSERV_AUTO_GENERATE_DATA
         value: "false"
       - key: PORT
         value: "5000"

@@ -4,10 +4,8 @@ Loads and caches CSV datasets; provides typed accessor functions.
 Mirrors DAA-Project's lazy-loading cache pattern.
 """
 import csv
-import json
 import os
 from pathlib import Path
-from datetime import date, datetime
 
 # ─────────────────────────────────────────────────────────────────────────────
 BASE_DIR   = Path(__file__).resolve().parent.parent
@@ -24,7 +22,6 @@ _CAPACITY_CACHE          = None
 
 DATASET_FILES = [
     "master_operations.csv",
-    "smart_meter_jobs.csv",
     "channel_volume.csv",
     "booking_journey.csv",
     "engineers.csv",
@@ -33,6 +30,10 @@ DATASET_FILES = [
     "capacity_demand.csv",
 ]
 _DATA_HEALTH_CACHE = {}
+
+def _cache_large_datasets() -> bool:
+    """Keep large CSVs uncached by default on constrained hosts like Render."""
+    return os.getenv("IMSERV_CACHE_LARGE_DATASETS", "").lower() == "true"
 
 
 def _load_csv(filename: str) -> list:
@@ -51,13 +52,32 @@ def _load_csv(filename: str) -> list:
     return rows
 
 
+def _count_csv_rows(filename: str) -> int:
+    """Count CSV rows without materializing them as dictionaries."""
+    path = INPUTS_DIR / filename
+    if not path.exists():
+        _DATA_HEALTH_CACHE[filename] = {"exists": False, "rows": 0, "size_bytes": 0}
+        return 0
+    with open(path, encoding="utf-8-sig") as f:
+        count = max(sum(1 for _ in f) - 1, 0)
+    _DATA_HEALTH_CACHE[filename] = {
+        "exists": True,
+        "rows": count,
+        "size_bytes": path.stat().st_size,
+    }
+    return count
+
+
 # ─── Public Accessors ─────────────────────────────────────────────────────────
 
 def get_jobs(force_reload: bool = False) -> list:
     global _JOBS_CACHE
+    master_path = INPUTS_DIR / "master_operations.csv"
+    filename = "master_operations.csv" if master_path.exists() else "smart_meter_jobs.csv"
+    if not _cache_large_datasets():
+        return _load_csv(filename)
     if _JOBS_CACHE is None or force_reload:
-        master_path = INPUTS_DIR / "master_operations.csv"
-        _JOBS_CACHE = _load_csv("master_operations.csv" if master_path.exists() else "smart_meter_jobs.csv")
+        _JOBS_CACHE = _load_csv(filename)
     return _JOBS_CACHE
 
 
@@ -84,6 +104,8 @@ def get_engineers(force_reload: bool = False) -> list:
 
 def get_engineer_availability(force_reload: bool = False) -> list:
     global _AVAILABILITY_CACHE
+    if not _cache_large_datasets():
+        return _load_csv("engineer_availability.csv")
     if _AVAILABILITY_CACHE is None or force_reload:
         _AVAILABILITY_CACHE = _load_csv("engineer_availability.csv")
     return _AVAILABILITY_CACHE
@@ -104,17 +126,42 @@ def get_capacity_demand(force_reload: bool = False) -> list:
 
 
 def preload_all_data(force_reload: bool = False) -> dict:
-    """Warm all CSV caches so first user requests do not pay parsing cost."""
+    """Warm CSV caches. Large datasets are counted, not cached, by default."""
+    large_counts = {}
+    if not _cache_large_datasets():
+        large_counts = {
+            "master_operations.csv": _count_csv_rows("master_operations.csv"),
+            "engineer_availability.csv": _count_csv_rows("engineer_availability.csv"),
+        }
+    else:
+        large_counts = {
+            "master_operations.csv": len(get_jobs(force_reload)),
+            "engineer_availability.csv": len(get_engineer_availability(force_reload)),
+        }
+
     return {
-        "master_operations.csv": len(get_jobs(force_reload)),
-        "smart_meter_jobs.csv": len(get_jobs(force_reload)),
+        **large_counts,
         "channel_volume.csv": len(get_channel_volume(force_reload)),
         "booking_journey.csv": len(get_booking_journey(force_reload)),
         "engineers.csv": len(get_engineers(force_reload)),
-        "engineer_availability.csv": len(get_engineer_availability(force_reload)),
         "financial_data.csv": len(get_financial_data(force_reload)),
         "capacity_demand.csv": len(get_capacity_demand(force_reload)),
     }
+
+
+def clear_data_caches() -> dict:
+    """Drop in-memory CSV caches so constrained instances can reclaim RAM."""
+    global _JOBS_CACHE, _CHANNEL_CACHE, _JOURNEY_CACHE, _ENGINEERS_CACHE
+    global _AVAILABILITY_CACHE, _FINANCIAL_CACHE, _CAPACITY_CACHE
+
+    _JOBS_CACHE = None
+    _CHANNEL_CACHE = None
+    _JOURNEY_CACHE = None
+    _ENGINEERS_CACHE = None
+    _AVAILABILITY_CACHE = None
+    _FINANCIAL_CACHE = None
+    _CAPACITY_CACHE = None
+    return data_health()
 
 
 # ─── Filter Helpers ───────────────────────────────────────────────────────────

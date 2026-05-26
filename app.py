@@ -526,21 +526,26 @@ def health():
 
 @app.route("/api/data/reload")
 def data_reload():
-    """Force reload all data caches (useful after data regeneration)."""
-    from engine.ingestion import preload_all_data
-    counts = preload_all_data(force_reload=True)
-    return jsonify({"status": "ok", "message": "All data caches reloaded", "rows": counts})
+    """Clear in-memory data caches so the next request reloads only what it needs."""
+    from engine.ingestion import clear_data_caches
+    health_info = clear_data_caches()
+    return jsonify({"status": "ok", "message": "Data caches cleared", "data_health": health_info})
 
 
 @app.route("/api/data/generate")
 def data_generate():
     """Trigger synthetic data generation (dev/reset use only)."""
     try:
+        if os.getenv("RENDER") and os.getenv("IMSERV_ENABLE_DATA_GENERATE", "").lower() != "true":
+            return jsonify({
+                "error": "Dataset generation is disabled on Render to stay within memory limits.",
+                "hint": "Set IMSERV_ENABLE_DATA_GENERATE=true only for a one-off maintenance run.",
+            }), 403
         from engine.data_generator import generate_all
-        from engine.ingestion import preload_all_data
+        from engine.ingestion import clear_data_caches
         generate_all()
-        counts = preload_all_data(force_reload=True)
-        return jsonify({"status": "ok", "message": "Datasets regenerated successfully", "rows": counts})
+        health_info = clear_data_caches()
+        return jsonify({"status": "ok", "message": "Datasets regenerated successfully", "data_health": health_info})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -561,7 +566,7 @@ def get_regions():
 
 # ─── Startup: generate data if missing ───────────────────────────────────────
 def _ensure_data():
-    """Generate synthetic datasets on first run if not present."""
+    """Ensure required data files exist without loading them into memory."""
     global _DATA_READY
     if _DATA_READY:
         return
@@ -569,21 +574,25 @@ def _ensure_data():
     manifest = BASE_DIR / "data" / "inputs" / "manifest.json"
     master = BASE_DIR / "data" / "inputs" / "master_operations.csv"
     if not manifest.exists() or not master.exists():
-        print("IMSERV: Connected data source not found - generating synthetic datasets...")
-        try:
-            from engine.data_generator import generate_all
-            generate_all()
-        except Exception as e:
-            print(f"IMSERV: Data generation failed: {e}")
-    
-    print("IMSERV: Pre-loading data caches into memory to ensure fast initial load...")
-    try:
-        from engine.ingestion import preload_all_data
-        counts = preload_all_data()
-        print(f"IMSERV: Data caches pre-loaded: {counts}")
-        _DATA_READY = True
-    except Exception as e:
-        print(f"IMSERV: Failed to preload caches: {e}")
+        can_generate = (
+            os.getenv("IMSERV_AUTO_GENERATE_DATA", "").lower() == "true"
+            or (
+                os.getenv("FLASK_ENV", "development") == "development"
+                and not os.getenv("RENDER")
+            )
+        )
+        if can_generate:
+            print("IMSERV: Connected data source not found - generating synthetic datasets...")
+            try:
+                from engine.data_generator import generate_all
+                generate_all()
+            except Exception as e:
+                print(f"IMSERV: Data generation failed: {e}")
+        else:
+            print("IMSERV: Connected data source missing. Skipping auto-generation on constrained runtime.")
+
+    print("IMSERV: Data files verified. CSVs will be loaded lazily per request.")
+    _DATA_READY = True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

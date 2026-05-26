@@ -296,29 +296,6 @@ def _generate_master_operations(engineers_by_patch: dict, availability: dict) ->
     return rows, assigned_counts
 
 
-def _derive_smart_meter_jobs(master_rows: list) -> list:
-    fields = [
-        "job_ref",
-        "region_code",
-        "region_name",
-        "patch_code",
-        "meter_type",
-        "job_type",
-        "status",
-        "requested_date",
-        "booked_date",
-        "completed_date",
-        "engineer_id",
-        "contacts_count",
-        "cancellation_reason",
-        "abort_reason",
-        "revenue_gbp",
-        "cost_gbp",
-        "is_forecast",
-    ]
-    return [{field: row.get(field, "") for field in fields} for row in master_rows]
-
-
 def _derive_channel_volume(master_rows: list) -> list:
     daily = defaultdict(lambda: {
         "volume": 0,
@@ -520,14 +497,12 @@ def generate_all():
     availability_rows, availability_by_key = _build_availability(engineers)
     master_rows, _ = _generate_master_operations(engineers_by_patch, availability_by_key)
 
-    smart_jobs = _derive_smart_meter_jobs(master_rows)
     channel_volume = _derive_channel_volume(master_rows)
     booking_journey = _derive_booking_journey(master_rows)
     financial_data = _derive_financial_data(master_rows)
     capacity_demand = _derive_capacity_data(master_rows, availability_rows)
 
     write_csv("master_operations.csv", master_rows, list(master_rows[0].keys()))
-    write_csv("smart_meter_jobs.csv", smart_jobs, list(smart_jobs[0].keys()))
     write_csv("channel_volume.csv", channel_volume, list(channel_volume[0].keys()))
     write_csv("booking_journey.csv", booking_journey, list(booking_journey[0].keys()))
     write_csv("engineers.csv", engineers, list(engineers[0].keys()))
@@ -540,7 +515,6 @@ def generate_all():
         "source_of_truth": "master_operations.csv",
         "relationship_model": {
             "master_operations.csv": "Job-level ledger keyed by job_ref with region, patch, channel, engineer, status, dates, revenue, and cost.",
-            "smart_meter_jobs.csv": "Compatibility view derived from master_operations.csv.",
             "channel_volume.csv": "Daily region/channel aggregation derived from master_operations.csv.",
             "booking_journey.csv": "Weekly funnel aggregation derived from master_operations.csv.",
             "financial_data.csv": "Monthly region/job-type P&L aggregation derived from master_operations.csv.",
@@ -550,7 +524,6 @@ def generate_all():
         },
         "files": [
             "master_operations.csv",
-            "smart_meter_jobs.csv",
             "channel_volume.csv",
             "booking_journey.csv",
             "engineers.csv",

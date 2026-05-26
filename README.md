@@ -63,9 +63,11 @@ docker-compose up --build
 
 1. Create a new **Web Service** in Render
 2. Connect this repository
-3. Build command: `pip install -r requirements.txt && python engine/data_generator.py`
-4. Start command: `gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app`
+3. Build command: `pip install -r requirements.txt`
+4. Start command: `gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 app:app`
 5. Environment variable: `SECRET_KEY` (auto-generated)
+
+The Render config is tuned for 512MB instances: data loads lazily, large CSVs are not cached by default, and dataset generation is disabled at runtime unless explicitly enabled.
 
 The `render.yaml` file handles all configuration automatically.
 
@@ -107,7 +109,6 @@ IMSERV-Project/
 ├── data/
 │   ├── inputs/                 # CSV datasets (auto-generated)
 │   │   ├── master_operations.csv     # Source-of-truth job ledger
-│   │   ├── smart_meter_jobs.csv      # Job compatibility view from master
 │   │   ├── channel_volume.csv        # Daily channel aggregation from master
 │   │   ├── booking_journey.csv       # Weekly funnel aggregation from master
 │   │   ├── engineers.csv             # Engineer dimension
