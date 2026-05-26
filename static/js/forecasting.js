@@ -315,23 +315,134 @@ async function loadChannelComparison() {
   const year   = IMSERV.getYear();
   const kpis = await IMSERV.apiFetch('/api/forecasting/channel-kpis?region=' + region + '&year=' + year);
   if (!kpis) return;
-  const ctx = document.getElementById('channel-comparison-chart');
-  if (!ctx) return;
+  const container = document.getElementById('channel-comparison-grid');
+  if (!container) return;
   const channels = kpis.channel_breakdown || [];
-  if (!channels.length) return;
-  IMSERV.registerChart('channel-comparison', new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: channels.map(c => c.channel),
-      datasets: [
-        { label: 'Volume',     data: channels.map(c => c.volume),   backgroundColor: 'rgba(0,82,204,0.6)'   },
-        { label: 'Bookings',   data: channels.map(c => c.bookings), backgroundColor: 'rgba(16,185,129,0.6)' },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: IMSERV.chartDefaults.plugins,
-      scales: IMSERV.chartDefaults.scales,
-    },
-  }));
+  if (!channels.length) {
+     container.innerHTML = '<div class="empty-state"><div class="empty-title">No data available</div></div>';
+     return;
+  }
+
+  const sorted = [...channels].sort((a, b) => b.volume - a.volume);
+  const maxVolume = Math.max(...sorted.map(c => c.volume), 1);
+  const maxBookings = Math.max(...sorted.map(c => c.bookings), 1);
+  const totalVolume = sorted.reduce((sum, c) => sum + c.volume, 0);
+  const totalBookings = sorted.reduce((sum, c) => sum + c.bookings, 0);
+  const totalAbandoned = sorted.reduce((sum, c) => sum + c.abandon_pct * c.volume / 100, 0);
+  const blendedConversion = totalVolume ? (totalBookings / totalVolume) * 100 : 0;
+  const blendedAbandon = totalVolume ? (totalAbandoned / totalVolume) * 100 : 0;
+
+  const positions = [
+    { x: 18, y: 46 },
+    { x: 33, y: 18 },
+    { x: 68, y: 18 },
+    { x: 82, y: 48 },
+    { x: 66, y: 76 },
+    { x: 31, y: 77 },
+  ];
+  const accent = ['#38bdf8', '#22c55e', '#a78bfa', '#f59e0b', '#fb7185', '#14b8a6'];
+
+  const escapeHtml = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+  const channelCode = (name) => {
+    const clean = name.replace(/[^A-Za-z ]/g, '').trim();
+    if (clean.toLowerCase() === 'agent callback') return 'CB';
+    return clean.split(/\s+/).map(part => part[0]).join('').slice(0, 3).toUpperCase();
+  };
+
+  const ribbons = sorted.map((c, idx) => {
+    const pos = positions[idx % positions.length];
+    const stroke = Math.max(1.2, Math.min(4.2, 1.2 + (c.bookings / maxBookings) * 3));
+    const mx = (pos.x + 50) / 2;
+    const my = (pos.y + 48) / 2;
+    const bend = idx % 2 === 0 ? -8 : 8;
+    return `
+      <path
+        class="channel-ribbon"
+        d="M ${pos.x} ${pos.y} Q ${mx} ${my + bend} 50 48"
+        style="--flow-color:${accent[idx % accent.length]}; --flow-width:${stroke};"
+      />
+    `;
+  }).join('');
+
+  const nodes = sorted.map((c, idx) => {
+    const pos = positions[idx % positions.length];
+    const size = Math.round(84 + (c.volume / maxVolume) * 76);
+    const conversion = Math.max(0, Math.min(100, c.conversion_pct || 0));
+    const abandon = Math.max(0, Math.min(100, c.abandon_pct || 0));
+    const share = totalVolume ? (c.volume / totalVolume) * 100 : 0;
+    const colour = accent[idx % accent.length];
+    const safeName = escapeHtml(c.channel);
+
+    return `
+      <button
+        class="channel-orb"
+        style="--x:${pos.x}%; --y:${pos.y}%; --size:${size}px; --channel-color:${colour}; --conversion:${conversion * 3.6}deg; --abandon:${Math.max(10, abandon * 3.6)}deg;"
+        title="${safeName}: ${IMSERV.fmt.num(c.volume)} interactions, ${IMSERV.fmt.pct(conversion)} conversion"
+        aria-label="${safeName} channel signal"
+      >
+        <span class="channel-orb-ring"></span>
+        <span class="channel-orb-core">
+          <span class="channel-orb-code">${channelCode(c.channel)}</span>
+          <span class="channel-orb-name">${safeName}</span>
+          <span class="channel-orb-volume">${IMSERV.fmt.num(c.volume)}</span>
+        </span>
+        <span class="channel-orb-marker" title="${IMSERV.fmt.pct(abandon)} abandoned"></span>
+        <span class="channel-orb-metrics">
+          <strong>${IMSERV.fmt.pct(conversion)}</strong>
+          <em>${IMSERV.fmt.num(c.bookings)} bookings</em>
+          <small>${share.toFixed(1)}% of volume</small>
+        </span>
+      </button>
+    `;
+  }).join('');
+
+  const insight = sorted[0];
+  const bestConversion = [...sorted].sort((a, b) => b.conversion_pct - a.conversion_pct)[0];
+  const mostAbandoned = [...sorted].sort((a, b) => b.abandon_pct - a.abandon_pct)[0];
+
+  container.innerHTML = `
+    <div class="channel-map-stage">
+      <svg class="channel-ribbons" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        ${ribbons}
+      </svg>
+
+      <div class="booking-core">
+        <div class="booking-core-ring"></div>
+        <div class="booking-core-label">Bookings Core</div>
+        <div class="booking-core-value">${IMSERV.fmt.num(totalBookings)}</div>
+        <div class="booking-core-sub">${IMSERV.fmt.pct(blendedConversion)} conversion</div>
+      </div>
+
+      ${nodes}
+    </div>
+
+    <div class="channel-storyline">
+      <div class="channel-story-pill dominant">
+        <span>Dominant intake</span>
+        <strong>${escapeHtml(insight.channel)}</strong>
+        <em>${IMSERV.fmt.num(insight.volume)} interactions</em>
+      </div>
+      <div class="channel-story-pill efficient">
+        <span>Most efficient</span>
+        <strong>${escapeHtml(bestConversion.channel)}</strong>
+        <em>${IMSERV.fmt.pct(bestConversion.conversion_pct)} conversion</em>
+      </div>
+      <div class="channel-story-pill friction">
+        <span>Highest friction</span>
+        <strong>${escapeHtml(mostAbandoned.channel)}</strong>
+        <em>${IMSERV.fmt.pct(mostAbandoned.abandon_pct)} abandoned</em>
+      </div>
+      <div class="channel-story-pill">
+        <span>Blended abandon</span>
+        <strong>${IMSERV.fmt.pct(blendedAbandon)}</strong>
+        <em>across channels</em>
+      </div>
+    </div>
+  `;
 }

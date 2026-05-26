@@ -326,12 +326,20 @@
 
           <!-- Channel Comparison Tab -->
           <div class="forecast-tab-panel" id="ftab-channels">
-            <div class="card">
-              <div class="card-header"><div class="card-title">📊 Channel Volume Comparison</div></div>
-              <div class="card-body">
-                <div class="chart-wrap chart-h-360">
-                  <canvas id="channel-comparison-chart"></canvas>
+            <div class="channel-lab">
+              <div class="channel-lab-topline">
+                <div>
+                  <div class="channel-lab-title">Channel Signal Map</div>
+                  <div class="channel-lab-subtitle">Volume, conversion, abandonment, and booking contribution in one view</div>
                 </div>
+                <div class="channel-lab-legend">
+                  <span><i class="legend-dot volume"></i>Bubble size = volume</span>
+                  <span><i class="legend-dot conversion"></i>Ring = conversion</span>
+                  <span><i class="legend-dot abandon"></i>Marker = abandon</span>
+                </div>
+              </div>
+              <div id="channel-comparison-grid" class="channel-ecosystem">
+                <div class="loading"><span class="spinner"></span></div>
               </div>
             </div>
           </div>
