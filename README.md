@@ -106,13 +106,14 @@ IMSERV-Project/
 │
 ├── data/
 │   ├── inputs/                 # CSV datasets (auto-generated)
-│   │   ├── smart_meter_jobs.csv      # 89,913 job records
-│   │   ├── channel_volume.csv        # 52,608 contact centre rows
-│   │   ├── booking_journey.csv       # 1,256 weekly funnel snapshots
-│   │   ├── engineers.csv             # 268 engineer master records
-│   │   ├── engineer_availability.csv # 195,908 daily availability rows
-│   │   ├── financial_data.csv        # 960 monthly financial records
-│   │   └── capacity_demand.csv       # 6,594 patch capacity rows
+│   │   ├── master_operations.csv     # Source-of-truth job ledger
+│   │   ├── smart_meter_jobs.csv      # Job compatibility view from master
+│   │   ├── channel_volume.csv        # Daily channel aggregation from master
+│   │   ├── booking_journey.csv       # Weekly funnel aggregation from master
+│   │   ├── engineers.csv             # Engineer dimension
+│   │   ├── engineer_availability.csv # Engineer-day capacity and completed jobs
+│   │   ├── financial_data.csv        # Monthly P&L aggregation from master
+│   │   └── capacity_demand.csv       # Weekly patch demand joined to capacity
 │   └── outputs/                # Generated analytics cache
 │
 └── deployment/

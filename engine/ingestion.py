@@ -23,6 +23,7 @@ _FINANCIAL_CACHE         = None
 _CAPACITY_CACHE          = None
 
 DATASET_FILES = [
+    "master_operations.csv",
     "smart_meter_jobs.csv",
     "channel_volume.csv",
     "booking_journey.csv",
@@ -55,7 +56,8 @@ def _load_csv(filename: str) -> list:
 def get_jobs(force_reload: bool = False) -> list:
     global _JOBS_CACHE
     if _JOBS_CACHE is None or force_reload:
-        _JOBS_CACHE = _load_csv("smart_meter_jobs.csv")
+        master_path = INPUTS_DIR / "master_operations.csv"
+        _JOBS_CACHE = _load_csv("master_operations.csv" if master_path.exists() else "smart_meter_jobs.csv")
     return _JOBS_CACHE
 
 
@@ -104,6 +106,7 @@ def get_capacity_demand(force_reload: bool = False) -> list:
 def preload_all_data(force_reload: bool = False) -> dict:
     """Warm all CSV caches so first user requests do not pay parsing cost."""
     return {
+        "master_operations.csv": len(get_jobs(force_reload)),
         "smart_meter_jobs.csv": len(get_jobs(force_reload)),
         "channel_volume.csv": len(get_channel_volume(force_reload)),
         "booking_journey.csv": len(get_booking_journey(force_reload)),

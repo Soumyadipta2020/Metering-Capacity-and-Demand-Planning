@@ -567,8 +567,9 @@ def _ensure_data():
         return
 
     manifest = BASE_DIR / "data" / "inputs" / "manifest.json"
-    if not manifest.exists():
-        print("IMSERV: No data found — generating synthetic datasets...")
+    master = BASE_DIR / "data" / "inputs" / "master_operations.csv"
+    if not manifest.exists() or not master.exists():
+        print("IMSERV: Connected data source not found - generating synthetic datasets...")
         try:
             from engine.data_generator import generate_all
             generate_all()
