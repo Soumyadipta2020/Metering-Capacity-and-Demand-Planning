@@ -65,22 +65,34 @@ function renderCategoryChart(data) {
   const ctx = document.getElementById('category-chart');
   if (!ctx || !data.categories) return;
   const cats = data.categories;
+  // Sort categories by count descending for better horizontal bar visual
+  const sortedCats = [...cats].sort((a, b) => b.count - a.count);
   const colours = ['#EF4444','#F59E0B','#3B82F6','#10B981','#8B5CF6'];
+  
   IMSERV.registerChart('category', new Chart(ctx, {
-    type: 'doughnut',
+    type: 'bar',
     data: {
-      labels: cats.map(c => c.category),
+      labels: sortedCats.map(c => c.category),
       datasets: [{
-        data: cats.map(c => c.count),
-        backgroundColor: colours.slice(0, cats.length),
-        borderColor: '#0E1829', borderWidth: 2,
+        label: 'Count',
+        data: sortedCats.map(c => c.count),
+        backgroundColor: colours.slice(0, sortedCats.length).map(c => c + 'B3'),
+        borderColor: colours.slice(0, sortedCats.length),
+        borderWidth: 1,
+        borderRadius: 4,
       }],
     },
     options: {
+      indexAxis: 'y', // Makes it horizontal
       responsive: true, maintainAspectRatio: false,
       plugins: {
         ...IMSERV.chartDefaults.plugins,
-        legend: { position: 'right', labels: { color: '#8B9DC3', font: { size: 11 } } },
+        legend: { display: false }, // Hide legend since y-axis has labels
+      },
+      scales: {
+        ...IMSERV.chartDefaults.scales,
+        x: { ...IMSERV.chartDefaults.scales.y, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ...IMSERV.chartDefaults.scales.x, grid: { display: false } },
       },
     },
   }));
@@ -124,8 +136,8 @@ function renderCancelRegional(data) {
     data: {
       labels: data.map(r => r.region_code),
       datasets: [
-        { label: 'Cancel Rate %', data: data.map(r => r.cancel_rate), backgroundColor: 'rgba(239,68,68,0.65)' },
-        { label: 'Abort Rate %', data: data.map(r => r.abort_rate), backgroundColor: 'rgba(245,158,11,0.65)' },
+        { label: 'Cancel Rate %', data: data.map(r => r.cancel_rate), backgroundColor: 'rgba(239,68,68,0.7)', borderRadius: 4 },
+        { label: 'Abort Rate %', data: data.map(r => r.abort_rate), backgroundColor: 'rgba(245,158,11,0.7)', borderRadius: 4 },
       ],
     },
     options: {
@@ -134,7 +146,8 @@ function renderCancelRegional(data) {
       plugins: IMSERV.chartDefaults.plugins,
       scales: {
         ...IMSERV.chartDefaults.scales,
-        y: { ...IMSERV.chartDefaults.scales.y, ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => v + '%' } },
+        x: { ...IMSERV.chartDefaults.scales.x, stacked: true },
+        y: { ...IMSERV.chartDefaults.scales.y, stacked: true, ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => v + '%' } },
       },
     },
   }));
@@ -146,47 +159,69 @@ async function loadCancellationRisk() {
   const panel = document.getElementById('cancel-risk-panel');
   if (!panel || !data) return;
 
-  const driverHtml = (data.drivers || []).map(d => `
-    <div class="rec-card ${d.impact}">
-      <div class="rec-icon">⚠️</div>
-      <div class="rec-body">
-        <div class="rec-title">${d.driver}</div>
-        <div class="rec-meta"><span class="priority ${d.impact}">${d.impact}</span><span class="rec-metric">Value: ${d.value}</span></div>
-      </div>
-    </div>
-  `).join('') || '<div class="text-muted fs-12">No significant risk drivers identified.</div>';
+  let gaugeColor = 'var(--ok)';
+  let shadowColor = 'rgba(16, 185, 129, 0.2)';
+  if (data.risk_level === 'Critical') {
+    gaugeColor = 'var(--crit)';
+    shadowColor = 'rgba(239, 68, 68, 0.2)';
+  } else if (data.risk_level === 'High') {
+    gaugeColor = 'var(--warn)';
+    shadowColor = 'rgba(245, 158, 11, 0.2)';
+  }
+  
+  let trendColor = data.trend_direction === 'Rising' ? 'var(--crit)' : 'var(--ok)';
+  let trendIcon = data.trend_direction === 'Rising' ? '↗' : '↘';
 
-  const recHtml = (data.recommendations || []).map(r => `
-    <div class="alert alert-info mt-8">💡 ${r}</div>
-  `).join('');
+  const driversHtml = (data.drivers || []).map(d => {
+    const dotColor = d.impact === 'Critical' ? 'var(--crit)' : (d.impact === 'High' ? 'var(--warn)' : 'var(--ok)');
+    return `
+      <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:20px; padding:6px 12px; font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:6px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+        <span style="width:8px; height:8px; border-radius:50%; background:${dotColor};"></span>
+        ${d.driver} <strong style="color:var(--text-primary)">${d.value}</strong>
+      </div>
+    `;
+  }).join('') || '<span style="color:var(--text-muted); font-size:12px;">None identified</span>';
 
   panel.innerHTML = `
-    <div class="grid-2">
-      <div>
-        <div class="kpi-grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-          <div class="kpi-card ${data.risk_level === 'Critical' ? 'crit' : (data.risk_level === 'High' ? 'warn' : 'ok')}">
-            <div class="kpi-label">Risk Score</div>
-            <div class="kpi-value">${data.risk_score}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Risk Level</div>
-            <div class="kpi-value" style="font-size:18px">${data.risk_level}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Cancel Rate</div>
-            <div class="kpi-value large">${IMSERV.fmt.pct(data.cancel_rate)}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Trend</div>
-            <div class="kpi-value large ${data.trend_direction === 'Rising' ? 'text-crit' : 'text-ok'}">${data.trend_direction}</div>
+    <div style="display:flex; flex-wrap:wrap; gap: 30px; align-items: stretch; background: var(--bg-surface); padding: 24px; border-radius: var(--radius-md); border: 1px solid var(--border);">
+      
+      <!-- Left: The Gauge -->
+      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-width: 160px; border-right: 1px solid rgba(255,255,255,0.05); padding-right: 30px;">
+        <div style="position:relative; width: 140px; height: 140px; border-radius: 50%; background: conic-gradient(${gaugeColor} ${data.risk_score}%, var(--bg-card) 0); display:flex; align-items:center; justify-content:center; box-shadow: 0 0 30px ${shadowColor}; margin-bottom: 16px;">
+           <div style="position:absolute; width: 120px; height: 120px; background: var(--bg-surface); border-radius: 50%; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:1px;">Score</div>
+              <div style="font-size:36px; font-weight:800; color:var(--text-primary); line-height:1; margin-top:2px;">${data.risk_score}</div>
+           </div>
+        </div>
+        <div style="font-size:18px; font-weight:700; color:${gaugeColor}; text-transform:uppercase; letter-spacing:1px;">${data.risk_level}</div>
+      </div>
+
+      <!-- Middle: Key Metrics -->
+      <div style="display:flex; flex-direction:column; justify-content:center; min-width: 180px; border-right: 1px solid rgba(255,255,255,0.05); padding-right: 30px; gap: 24px;">
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:1px; margin-bottom:6px;">Cancel Rate</div>
+          <div style="font-size:32px; font-weight:700; color:var(--text-primary);">${IMSERV.fmt.pct(data.cancel_rate)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:1px; margin-bottom:6px;">Trend</div>
+          <div style="font-size:32px; font-weight:700; color:${trendColor}; display:flex; align-items:center; gap:8px;">${data.trend_direction} <span style="font-size:24px;">${trendIcon}</span></div>
+        </div>
+      </div>
+
+      <!-- Right: Insights & Drivers -->
+      <div style="flex:1; display:flex; flex-direction:column; gap: 16px; justify-content:center; min-width: 250px;">
+        <div style="background: rgba(0, 184, 217, 0.08); border-left: 3px solid var(--brand-accent); padding: 12px 16px; border-radius: 0 8px 8px 0;">
+          <div style="font-size:11px; color:var(--brand-accent); text-transform:uppercase; font-weight:700; letter-spacing:1px; margin-bottom:6px;">💡 AI Recommendation</div>
+          <div style="font-size:13px; color:var(--text-primary); line-height:1.5;">${data.recommendations[0] || 'Maintain current operational strategies.'}</div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:1px; margin-bottom:8px;">⚠️ Primary Risk Drivers</div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            ${driversHtml}
           </div>
         </div>
-        ${recHtml}
       </div>
-      <div>
-        <div class="fs-12 fw-600 mb-8 text-muted">RISK DRIVERS</div>
-        <div class="rec-list">${driverHtml}</div>
-      </div>
+      
     </div>
   `;
 }

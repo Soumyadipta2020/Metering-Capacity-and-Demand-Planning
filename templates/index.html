@@ -177,23 +177,9 @@
             </div>
           </div>
           <div class="card-body">
-            <table class="data-table" id="regional-heatmap-table">
-              <thead>
-                <tr>
-                  <th>Region</th>
-                  <th>Total Requests</th>
-                  <th>Bookings</th>
-                  <th>Completions</th>
-                  <th>Cancellations</th>
-                  <th>Aborts</th>
-                  <th>Completion Rate</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="regional-heatmap-body">
-                <tr><td colspan="8" class="loading"><span class="spinner"></span> Loading...</td></tr>
-              </tbody>
-            </table>
+            <div id="regional-heatmap-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+              <div class="loading"><span class="spinner"></span> Loading...</div>
+            </div>
           </div>
         </div>
 

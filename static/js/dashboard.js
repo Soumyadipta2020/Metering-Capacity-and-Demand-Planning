@@ -172,24 +172,57 @@ function renderJourneyTrend(data) {
 }
 
 function renderRegionalHeatmap(data) {
-  const tbody = document.getElementById('regional-heatmap-body');
-  if (!tbody) return;
+  const container = document.getElementById('regional-heatmap-grid');
+  if (!container) return;
   if (!data || !data.length) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No data available</div></div></td></tr>';
+    container.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;"><div class="empty-icon">📊</div><div class="empty-title">No data available</div></div>';
     return;
   }
-  tbody.innerHTML = data.map(r => `
-    <tr>
-      <td><strong>${r.region_name || r.region_code}</strong></td>
-      <td>${IMSERV.fmt.num(r.requests)}</td>
-      <td>—</td>
-      <td>${IMSERV.fmt.num(r.completions)}</td>
-      <td><span class="text-crit">${IMSERV.fmt.num(r.cancellations)}</span></td>
-      <td><span class="text-warn">${IMSERV.fmt.num(r.aborts)}</span></td>
-      <td><strong>${IMSERV.fmt.pct(r.completion_rate)}</strong></td>
-      <td><span class="rag ${r.rag}">${r.rag}</span></td>
-    </tr>
-  `).join('');
+
+  container.innerHTML = data.map(r => {
+    const isRed = r.rag === 'Red';
+    const isAmber = r.rag === 'Amber';
+    const borderColor = isRed ? 'var(--crit)' : (isAmber ? 'var(--warn)' : 'var(--ok)');
+    const bgColor = isRed ? 'rgba(239, 68, 68, 0.05)' : (isAmber ? 'rgba(245, 158, 11, 0.05)' : 'rgba(16, 185, 129, 0.05)');
+
+    return `
+      <div style="background: var(--bg-card); border: 1px solid var(--border); border-top: 4px solid ${borderColor}; border-radius: var(--radius-md); padding: 18px; position: relative; box-shadow: 0 4px 12px rgba(0,0,0,0.1); transition: transform 0.2s;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
+           <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${r.region_name || r.region_code}</div>
+           <div class="rag ${r.rag}">${r.rag}</div>
+        </div>
+        
+        <div style="display:flex; gap: 15px; align-items:center; margin-bottom: 20px; background: ${bgColor}; padding: 12px; border-radius: 8px;">
+           <div style="flex:1;">
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:0.5px;">Completion Rate</div>
+              <div style="font-size:28px; font-weight:800; color:var(--text-primary); line-height:1.2;">${IMSERV.fmt.pct(r.completion_rate)}</div>
+              <div style="height:6px; background:rgba(255,255,255,0.1); border-radius:3px; margin-top:8px; overflow:hidden;">
+                 <div style="height:100%; width:${r.completion_rate}%; background:${borderColor}; border-radius:3px;"></div>
+              </div>
+           </div>
+        </div>
+        
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+           <div style="background:var(--bg-surface); padding:10px; border-radius:6px; border: 1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Requests</div>
+              <div style="font-size:15px; font-weight:700; color:var(--text-primary);">${IMSERV.fmt.num(r.requests)}</div>
+           </div>
+           <div style="background:var(--bg-surface); padding:10px; border-radius:6px; border: 1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Completions</div>
+              <div style="font-size:15px; font-weight:700; color:var(--ok);">${IMSERV.fmt.num(r.completions)}</div>
+           </div>
+           <div style="background:var(--bg-surface); padding:10px; border-radius:6px; border: 1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Cancellations</div>
+              <div style="font-size:15px; font-weight:700; color:var(--crit);">${IMSERV.fmt.num(r.cancellations)}</div>
+           </div>
+           <div style="background:var(--bg-surface); padding:10px; border-radius:6px; border: 1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Aborts</div>
+              <div style="font-size:15px; font-weight:700; color:var(--warn);">${IMSERV.fmt.num(r.aborts)}</div>
+           </div>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function renderAIRecommendations(data) {
@@ -214,8 +247,8 @@ function renderAIRecommendations(data) {
         <div class="rec-desc">${r.body}</div>
         <div class="rec-meta">
           <span class="priority ${r.priority}">${r.priority}</span>
-          ${r.region_code ? `<span class="stat-chip">📍 ${r.region_code}</span>` : ''}
-          ${r.metric_value != null ? `<span class="rec-metric">${r.metric_label}: ${r.metric_value}</span>` : ''}
+          ${r.region_code ? '<span class="stat-chip">📍 ' + r.region_code + '</span>' : ''}
+          ${r.metric_value != null ? '<span class="rec-metric">' + r.metric_label + ': ' + r.metric_value + '</span>' : ''}
           ${r.action_required ? '<span class="rag Red">Action Required</span>' : ''}
         </div>
       </div>
