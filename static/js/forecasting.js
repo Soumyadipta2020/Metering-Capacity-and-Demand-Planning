@@ -192,7 +192,7 @@ function renderFunnelMetrics(funnel) {
   if (!body || !funnel) return;
   const f = funnel.funnel || {};
   body.innerHTML = `
-    <div class="kpi-grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-bottom:0">
+    <div class="kpi-grid" style="grid-template-columns:repeat(3, 1fr);gap:10px;margin-bottom:0">
       <div class="kpi-card info"><div class="kpi-label">Requests</div><div class="kpi-value large">${IMSERV.fmt.num(f.requests)}</div><div class="kpi-icon">📋</div></div>
       <div class="kpi-card info"><div class="kpi-label">Contacts</div><div class="kpi-value large">${IMSERV.fmt.num(f.contacts)}</div><div class="kpi-icon">📞</div></div>
       <div class="kpi-card ok"><div class="kpi-label">Bookings</div><div class="kpi-value large">${IMSERV.fmt.num(f.bookings)}</div><div class="kpi-icon">📅</div></div>

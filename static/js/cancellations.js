@@ -116,16 +116,28 @@ function renderCancelTrend(data) {
 }
 
 function renderCancelRegional(data) {
-  const tbody = document.getElementById('cancel-regional-body');
-  if (!tbody) return;
-  tbody.innerHTML = (data || []).map(r => `
-    <tr>
-      <td><strong>${r.region_code}</strong></td>
-      <td><span class="${r.cancel_rate > 18 ? 'text-crit' : (r.cancel_rate > 14 ? 'text-warn' : 'text-ok')}">${IMSERV.fmt.pct(r.cancel_rate)}</span></td>
-      <td>${IMSERV.fmt.pct(r.abort_rate)}</td>
-      <td><span class="rag ${r.rag}">${r.rag}</span></td>
-    </tr>
-  `).join('');
+  const ctx = document.getElementById('cancel-regional-chart');
+  if (!ctx || !data || !data.length) return;
+
+  IMSERV.registerChart('cancel-regional', new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(r => r.region_code),
+      datasets: [
+        { label: 'Cancel Rate %', data: data.map(r => r.cancel_rate), backgroundColor: 'rgba(239,68,68,0.65)' },
+        { label: 'Abort Rate %', data: data.map(r => r.abort_rate), backgroundColor: 'rgba(245,158,11,0.65)' },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: IMSERV.chartDefaults.plugins,
+      scales: {
+        ...IMSERV.chartDefaults.scales,
+        y: { ...IMSERV.chartDefaults.scales.y, ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => v + '%' } },
+      },
+    },
+  }));
 }
 
 async function loadCancellationRisk() {

@@ -136,28 +136,6 @@
           <div class="kpi-card ok"><div class="kpi-label">Completion Rate</div><div class="kpi-value" id="kpi-completion-rate">—</div><div class="kpi-icon">📈</div></div>
         </div>
 
-        <!-- Customer Interaction Classification -->
-        <div class="card interaction-card mb-16">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Customer Interaction Classification</div>
-              <div class="card-subtitle">source_interaction_channel mapped to customer_interaction_type</div>
-            </div>
-            <div class="card-actions">
-              <span class="stat-chip" id="interaction-total">Loading...</span>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="interaction-type-list" id="interaction-type-summary">
-              <div class="loading"><span class="spinner"></span> Loading...</div>
-            </div>
-            <div class="interaction-insight" id="interaction-insight"></div>
-            <div class="interaction-route-list" id="interaction-map-body">
-              <div class="loading"><span class="spinner"></span> Loading...</div>
-            </div>
-          </div>
-        </div>
-
         <div class="grid-5-7">
 
           <!-- Funnel Chart -->
@@ -344,19 +322,17 @@
 
           <!-- Conversion Funnel Tab -->
           <div class="forecast-tab-panel" id="ftab-funnel">
-            <div class="grid-7-5">
-              <div class="card">
-                <div class="card-header"><div class="card-title">📉 Weekly Booking Conversion Trend</div></div>
-                <div class="card-body">
-                  <div class="chart-wrap chart-h-300">
-                    <canvas id="conversion-trend-chart"></canvas>
-                  </div>
-                </div>
+            <div class="card mb-16">
+              <div class="card-header"><div class="card-title">🎯 Funnel Metrics</div></div>
+              <div class="card-body" id="funnel-metrics-body">
+                <div class="loading"><span class="spinner"></span></div>
               </div>
-              <div class="card">
-                <div class="card-header"><div class="card-title">🎯 Funnel Metrics</div></div>
-                <div class="card-body" id="funnel-metrics-body">
-                  <div class="loading"><span class="spinner"></span></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">📉 Weekly Booking Conversion Trend</div></div>
+              <div class="card-body">
+                <div class="chart-wrap chart-h-300">
+                  <canvas id="conversion-trend-chart"></canvas>
                 </div>
               </div>
             </div>
@@ -416,28 +392,25 @@
 
         </div>
 
-        <div class="grid-2 cancel-comparison-row mb-16">
+        <div class="grid-2 mb-16">
 
           <!-- Monthly Trend -->
           <div class="card">
             <div class="card-header"><div class="card-title">📈 Monthly Cancellation Trend + Forecast</div></div>
             <div class="card-body">
-              <div class="chart-wrap chart-h-260">
+              <div class="chart-wrap chart-h-300">
                 <canvas id="cancel-trend-chart"></canvas>
               </div>
             </div>
           </div>
 
-          <!-- Regional Heatmap -->
+          <!-- Regional Comparison Chart -->
           <div class="card">
             <div class="card-header"><div class="card-title">🗺️ Regional Cancellation Comparison</div></div>
             <div class="card-body">
-              <table class="data-table">
-                <thead><tr><th>Region</th><th>Cancel Rate</th><th>Abort Rate</th><th>Status</th></tr></thead>
-                <tbody id="cancel-regional-body">
-                  <tr><td colspan="4"><div class="loading"><span class="spinner"></span></div></td></tr>
-                </tbody>
-              </table>
+              <div class="chart-wrap chart-h-300">
+                <canvas id="cancel-regional-chart"></canvas>
+              </div>
             </div>
           </div>
 
@@ -698,9 +671,9 @@
             <div><div class="card-title" id="sc-result-title">Scenario Results</div></div>
           </div>
           <div class="card-body">
-            <div class="scenario-result-layout">
+            <div class="grid-2">
               <div>
-                <div class="kpi-grid scenario-result-kpis">
+                <div class="kpi-grid" style="grid-template-columns:1fr 1fr; gap:10px; margin-bottom:0">
                   <div class="kpi-card ok"><div class="kpi-label">Revenue</div><div class="kpi-value" id="sc-res-revenue">—</div><div class="kpi-icon">💷</div></div>
                   <div class="kpi-card"><div class="kpi-label">Total Cost</div><div class="kpi-value" id="sc-res-cost">—</div><div class="kpi-icon">💸</div></div>
                   <div class="kpi-card ok"><div class="kpi-label">Margin</div><div class="kpi-value" id="sc-res-margin">—</div><div class="kpi-icon">📈</div></div>
@@ -709,7 +682,7 @@
                   <div class="kpi-card"><div class="kpi-label">Capacity Status</div><div class="kpi-value" id="sc-res-capacity">—</div><div class="kpi-icon">⚡</div></div>
                 </div>
               </div>
-              <div class="chart-wrap scenario-waterfall-chart">
+              <div class="chart-wrap chart-h-260">
                 <canvas id="waterfall-chart"></canvas>
               </div>
             </div>
