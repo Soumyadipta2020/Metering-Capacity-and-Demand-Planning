@@ -201,7 +201,7 @@ def forecast_channel_volume(
             continue
         if r.get("is_forecast", "0") != "0":
             continue
-        wk = f"{r.get('year', '2024')}-W{int(r.get('week', 1)):02d}"
+        wk = f"{r.get('year', '2025')}-W{int(r.get('week', 1)):02d}"
         weekly[wk] += to_float(r.get("volume", 0))
 
     history = [weekly[k] for k in sorted(weekly.keys())]

@@ -101,12 +101,11 @@
           </select>
           <select class="filter-select" id="global-year" onchange="onYearChange()">
             <option value="2025" selected>2025</option>
-            <option value="2024">2024</option>
           </select>
         </div>
         <div class="btn-icon" onclick="refreshCurrentView()" title="Refresh">↻</div>
         <div class="btn-icon" onclick="exportCurrentView()" title="Export">⬇</div>
-        <div class="btn-icon" onclick="openAiPanel()" title="AI Insights">🤖</div>
+        <div class="btn-icon ai-trigger ok" id="ai-trigger" onclick="openAiPanel()" title="AI Insights"></div>
       </div>
     </header>
 
@@ -160,9 +159,7 @@
               </div>
             </div>
             <div class="card-body">
-              <div class="chart-wrap chart-h-300">
-                <canvas id="journey-trend-chart"></canvas>
-              </div>
+              <div class="journey-rhythm" id="journey-trend-chart"></div>
             </div>
           </div>
 
@@ -177,26 +174,8 @@
             </div>
           </div>
           <div class="card-body">
-            <div id="regional-heatmap-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+            <div id="regional-heatmap-grid" class="regional-radar-grid">
               <div class="loading"><span class="spinner"></span> Loading...</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- AI Recommendations -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">🤖 AI Operational Recommendations</div>
-              <div class="card-subtitle">Intelligent alerts ranked by priority</div>
-            </div>
-            <div class="card-actions">
-              <span class="stat-chip" id="rec-counts">Loading...</span>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="rec-list" id="ai-rec-list">
-              <div class="loading"><span class="spinner"></span> Generating AI insights...</div>
             </div>
           </div>
         </div>
@@ -711,7 +690,7 @@
 <div class="modal-overlay" id="ai-modal">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">🤖 AI Operational Intelligence</div>
+      <div class="modal-title">AI Operational Intelligence</div>
       <div class="modal-close" onclick="closeAiPanel()">✕</div>
     </div>
     <div class="modal-body" id="ai-modal-body">

@@ -19,7 +19,7 @@
     "financial_data.csv",
     "capacity_demand.csv"
   ],
-  "period": "2024-01-01 to 2026-12-31",
+  "period": "2025-01-01 to 2026-12-31",
   "regions": [
     "NW",
     "NE",

@@ -135,7 +135,7 @@ def get_cancellation_root_causes(
 
 def get_cancellation_trends(region_code: str = None) -> dict:
     """
-    Monthly cancellation and abort rate trend: 2024–2025 actuals + 2026 forecast.
+    Monthly cancellation and abort rate trend: 2025 actuals + 2026 forecast.
 
     Returns:
         dict with monthly trend data and 6-month forward projection

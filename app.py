@@ -28,6 +28,15 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("SECRET_KEY", "imserv-dev-secret-2026")
 CORS(app)
 _DATA_READY = False
+SUPPORTED_YEARS = {2025}
+
+def _request_year(default: int = 2025) -> int:
+    """Return a supported actual-data year; stale years fall back to 2025."""
+    try:
+        year = int(request.args.get("year", default))
+    except (TypeError, ValueError):
+        return default
+    return year if year in SUPPORTED_YEARS else default
 
 # ─── After-request: no-cache for all /api/* routes (mirrors DAA pattern) ─────
 @app.after_request
@@ -110,7 +119,7 @@ def index():
 def journey_kpis():
     """Top-level funnel KPIs for the executive dashboard."""
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         get_journey, _, to_int_fn, to_float_fn, safe_pct_fn = _get_ingestion()
         rows = get_journey()
@@ -148,7 +157,7 @@ def journey_kpis():
 def journey_weekly_trend():
     """Weekly completion rate trend for line chart."""
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         get_journey, _, to_int_fn, to_float_fn, _ = _get_ingestion()
         rows = get_journey()
@@ -193,7 +202,7 @@ def journey_weekly_trend():
 @app.route("/api/journey/regional-heatmap")
 def journey_regional_heatmap():
     """Regional completion rate heatmap data."""
-    year = int(request.args.get("year", 2025))
+    year = _request_year()
     try:
         get_journey, _, to_int_fn, to_float_fn, safe_pct_fn = _get_ingestion()
         rows = get_journey()
@@ -233,7 +242,7 @@ def journey_regional_heatmap():
 def journey_interactions():
     """Customer interaction source/type mapping for journey analytics."""
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         from engine.forecasting_engine import get_customer_interaction_map
         return jsonify(get_customer_interaction_map(region, year))
@@ -248,7 +257,7 @@ def journey_interactions():
 @app.route("/api/forecasting/channel-kpis")
 def forecasting_channel_kpis():
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         _, get_kpis, _ = _get_forecasting_engine()
         return jsonify(get_kpis(region, year))
@@ -272,7 +281,7 @@ def forecasting_forecast():
 @app.route("/api/forecasting/funnel")
 def forecasting_funnel():
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         _, _, get_funnel = _get_forecasting_engine()
         return jsonify(get_funnel(region, year))
@@ -287,7 +296,7 @@ def forecasting_funnel():
 @app.route("/api/cancellations/kpis")
 def cancellations_kpis():
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         get_kpis, *_ = _get_cancellation_engine()
         return jsonify(get_kpis(region, year))
@@ -298,7 +307,7 @@ def cancellations_kpis():
 @app.route("/api/cancellations/root-causes")
 def cancellations_root_causes():
     region        = request.args.get("region")
-    year          = int(request.args.get("year", 2025))
+    year          = _request_year()
     include_aborts= request.args.get("include_aborts", "true").lower() == "true"
     try:
         _, get_rc, *_ = _get_cancellation_engine()
@@ -319,7 +328,7 @@ def cancellations_trends():
 
 @app.route("/api/cancellations/heatmap")
 def cancellations_heatmap():
-    year = int(request.args.get("year", 2025))
+    year = _request_year()
     try:
         _, _, _, get_heatmap, *_ = _get_cancellation_engine()
         return jsonify(get_heatmap(year))
@@ -340,7 +349,7 @@ def cancellations_predict():
 @app.route("/api/cancellations/rebooking")
 def cancellations_rebooking():
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         *_, get_rebook = _get_cancellation_engine()
         return jsonify(get_rebook(region, year))
@@ -355,7 +364,7 @@ def cancellations_rebooking():
 @app.route("/api/field-ops/kpis")
 def field_ops_kpis():
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         get_kpis, *_ = _get_field_ops_engine()
         return jsonify(get_kpis(region, year))
@@ -365,7 +374,7 @@ def field_ops_kpis():
 
 @app.route("/api/field-ops/capacity-matrix")
 def field_ops_capacity_matrix():
-    year = int(request.args.get("year", 2025))
+    year = _request_year()
     try:
         _, get_matrix, *_ = _get_field_ops_engine()
         return jsonify(get_matrix(year))
@@ -377,7 +386,7 @@ def field_ops_capacity_matrix():
 def field_ops_patch_plan():
     region = request.args.get("region", "NW")
     week   = request.args.get("week")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         _, _, get_patch, *_ = _get_field_ops_engine()
         week_int = int(week) if week else None
@@ -389,7 +398,7 @@ def field_ops_patch_plan():
 @app.route("/api/field-ops/engineer-performance")
 def field_ops_engineer_performance():
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     top_n  = int(request.args.get("top_n", 20))
     try:
         _, _, _, get_perf, *_ = _get_field_ops_engine()
@@ -411,7 +420,7 @@ def field_ops_understaffing():
 
 @app.route("/api/field-ops/optimise")
 def field_ops_optimise():
-    year = int(request.args.get("year", 2025))
+    year = _request_year()
     try:
         _, _, _, _, _, optimise = _get_field_ops_engine()
         return jsonify(optimise(year))
@@ -426,7 +435,7 @@ def field_ops_optimise():
 @app.route("/api/financial/kpis")
 def financial_kpis():
     region = request.args.get("region")
-    year   = int(request.args.get("year", 2025))
+    year   = _request_year()
     try:
         get_kpis, *_ = _get_financial_engine()
         return jsonify(get_kpis(region, year))
@@ -487,7 +496,7 @@ def financial_forecast():
 
 @app.route("/api/ai/recommendations")
 def ai_recommendations():
-    year        = int(request.args.get("year", 2025))
+    year        = _request_year()
     max_results = int(request.args.get("max", 20))
     try:
         if not _ai_enabled():
@@ -500,7 +509,7 @@ def ai_recommendations():
 
 @app.route("/api/ai/summary")
 def ai_summary():
-    year = int(request.args.get("year", 2025))
+    year = _request_year()
     try:
         if not _ai_enabled():
             return jsonify({"summary": "AI recommendations are disabled on this deployment."})
@@ -512,7 +521,7 @@ def ai_summary():
 
 @app.route("/api/ai/dashboard")
 def ai_dashboard():
-    year        = int(request.args.get("year", 2025))
+    year        = _request_year()
     max_results = int(request.args.get("max", 20))
     try:
         if not _ai_enabled():

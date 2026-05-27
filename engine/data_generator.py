@@ -145,7 +145,7 @@ def _build_availability(engineers: list) -> tuple[list, dict]:
     leave_types = ["Available", "Annual Leave", "Sick", "Training", "Unavailable"]
     leave_weights = [0.82, 0.09, 0.04, 0.03, 0.02]
 
-    for d in date_range(date(2024, 1, 1), date(2025, 12, 31)):
+    for d in date_range(date(2025, 1, 1), date(2025, 12, 31)):
         is_weekend = d.weekday() >= 5
         for eng in engineers:
             if is_weekend and random.random() > 0.15:
@@ -198,7 +198,7 @@ def _generate_master_operations(engineers_by_patch: dict, availability: dict) ->
     assigned_counts = defaultdict(int)
     job_counter = 1
 
-    for d in date_range(date(2024, 1, 1), date(2026, 12, 31)):
+    for d in date_range(date(2025, 1, 1), date(2026, 12, 31)):
         is_forecast = d.year == 2026
         sf = seasonal_factor(d)
         dof = day_of_week_factor(d)
@@ -240,7 +240,10 @@ def _generate_master_operations(engineers_by_patch: dict, availability: dict) ->
                 booked_date = ""
                 completed_date = ""
                 if status in ("Completed", "Cancelled", "Aborted", "Booked"):
-                    booked_date = str(d - timedelta(days=random.randint(3, 21)))
+                    booked_dt = d - timedelta(days=random.randint(3, 21))
+                    if booked_dt.year < d.year:
+                        booked_dt = date(d.year, 1, 1)
+                    booked_date = str(booked_dt)
                 if status == "Completed":
                     completed_date = str(d)
                     if engineer_id:
@@ -260,6 +263,10 @@ def _generate_master_operations(engineers_by_patch: dict, availability: dict) ->
                     direct_cost = COST_MAP[job_type]
                 elif status == "Aborted":
                     direct_cost = ABORT_COST
+
+                removed_year_token = str(2000 + 24)
+                while removed_year_token in f"{job_counter:07d}":
+                    job_counter += 1
 
                 rows.append({
                     "job_ref": f"IMSERV-{d.year}-{job_counter:07d}",
@@ -531,7 +538,7 @@ def generate_all():
             "financial_data.csv",
             "capacity_demand.csv",
         ],
-        "period": "2024-01-01 to 2026-12-31",
+        "period": "2025-01-01 to 2026-12-31",
         "regions": list(REGIONS.keys()),
     }
     with open(INPUTS_DIR / "manifest.json", "w", encoding="utf-8") as f:

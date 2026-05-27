@@ -80,6 +80,7 @@ async function loadAiModal() {
   const year = IMSERV.getYear();
   const ai = await IMSERV.apiFetch('/api/ai/dashboard?year=' + year + '&max=15');
   const recs = ai?.recommendations;
+  if (recs && typeof updateAiTriggerState === 'function') updateAiTriggerState(recs);
 
   if (!recs) {
     body.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-title">Could not load recommendations</div></div>';

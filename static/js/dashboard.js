@@ -6,29 +6,46 @@ async function loadJourneyDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
+  refreshJourneyVisualLabels();
 
   // Keep the first paint light; AI recommendations load after the main dashboard.
-  const [kpis, heatmap, trend, interactions] = await Promise.all([
+  const [kpis, heatmap, trend] = await Promise.all([
     IMSERV.apiFetch('/api/journey/kpis' + qs),
     IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
     IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
-    IMSERV.apiFetch('/api/journey/interactions' + qs),
   ]);
 
   if (kpis)    renderJourneyKPIs(kpis);
   if (heatmap) renderRegionalHeatmap(heatmap);
 
   if (trend) renderJourneyTrend(trend);
-  if (interactions) renderCustomerInteractions(interactions);
 
   // Render funnel (uses KPI data)
   if (kpis) renderFunnel(kpis);
 
   window.setTimeout(async () => {
     const ai = await IMSERV.apiFetch('/api/ai/dashboard?year=' + year + '&max=8');
-    if (ai?.recommendations) renderAIRecommendations(ai.recommendations);
+    if (ai?.recommendations) updateAiTriggerState(ai.recommendations);
     if (ai?.summary) document.getElementById('journey-ai-text').textContent = ai.summary || '';
   }, 250);
+}
+
+function refreshJourneyVisualLabels() {
+  const updates = [
+    ['Journey Funnel', 'Journey Funnel', 'Requests to completions pipeline'],
+    ['Weekly Trend Analysis', 'Quarter Pulse', 'Four seasonal pulses summarise movement without week-by-week clutter'],
+    ['Regional Operations Heatmap', 'Regional Constellation', 'One network view with focused regional callouts'],
+  ];
+
+  document.querySelectorAll('#view-journey .card-title').forEach(title => {
+    const match = updates.find(([oldTitle]) => title.textContent.includes(oldTitle));
+    if (!match) return;
+    title.textContent = match[1];
+    delete title.dataset.iconReady;
+    const subtitle = title.closest('.card-header')?.querySelector('.card-subtitle');
+    if (subtitle) subtitle.textContent = match[2];
+  });
+  IMSERV.hydrateIcons(document.getElementById('view-journey'));
 }
 
 function renderCustomerInteractions(data) {
@@ -113,12 +130,12 @@ function renderJourneyKPIs(kpis) {
 
 function renderFunnel(kpis) {
   const steps = [
-    { label: 'Total Requests',    key: 'requests',     cls: 'requests',      val: kpis.total_requests },
-    { label: 'Customer Contacts', key: 'contacts',     cls: 'contacts',      val: kpis.total_contacts },
-    { label: 'Bookings',          key: 'bookings',     cls: 'bookings',      val: kpis.total_bookings },
-    { label: 'Cancellations',     key: 'cancellations',cls: 'cancellations', val: kpis.total_cancellations },
-    { label: 'Aborts',            key: 'aborts',       cls: 'aborts',        val: kpis.total_aborts },
-    { label: 'Completions',       key: 'completions',  cls: 'completions',   val: kpis.total_completions },
+    { label: 'Total Requests',    key: 'requests',      cls: 'requests',      val: kpis.total_requests },
+    { label: 'Customer Contacts', key: 'contacts',      cls: 'contacts',      val: kpis.total_contacts },
+    { label: 'Bookings',          key: 'bookings',      cls: 'bookings',      val: kpis.total_bookings },
+    { label: 'Cancellations',     key: 'cancellations', cls: 'cancellations', val: kpis.total_cancellations },
+    { label: 'Aborts',            key: 'aborts',        cls: 'aborts',        val: kpis.total_aborts },
+    { label: 'Completions',       key: 'completions',   cls: 'completions',   val: kpis.total_completions },
   ];
 
   const maxVal = Math.max(...steps.map(s => s.val || 0));
@@ -142,8 +159,9 @@ function renderFunnel(kpis) {
 }
 
 function renderJourneyTrend(data) {
-  const ctx = document.getElementById('journey-trend-chart');
-  if (!ctx) return;
+  IMSERV.destroyChart('journey-trend');
+  const container = document.getElementById('journey-trend-chart');
+  if (!container) return;
 
   // Limit to last 52 weeks for performance
   const limit = 52;
@@ -153,30 +171,107 @@ function renderJourneyTrend(data) {
   const cancellations= data.cancellations.slice(-limit);
   const aborts       = data.aborts.slice(-limit);
 
-  IMSERV.registerChart('journey-trend', new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Completions',   data: completions,  borderColor: IMSERV.colors.ok,   backgroundColor: 'rgba(16,185,129,0.08)', tension: 0.4, fill: true,  pointRadius: 0, borderWidth: 2 },
-        { label: 'Bookings',      data: bookings,     borderColor: IMSERV.colors.info,  backgroundColor: 'transparent',          tension: 0.4, fill: false, pointRadius: 0, borderWidth: 1.5 },
-        { label: 'Cancellations', data: cancellations,borderColor: IMSERV.colors.crit,  backgroundColor: 'transparent',          tension: 0.4, fill: false, pointRadius: 0, borderWidth: 1.5 },
-        { label: 'Aborts',        data: aborts,       borderColor: IMSERV.colors.warn,  backgroundColor: 'transparent',          tension: 0.4, fill: false, pointRadius: 0, borderWidth: 1, borderDash: [4,3] },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: IMSERV.chartDefaults.plugins,
-      scales: IMSERV.chartDefaults.scales,
-    },
-  }));
+  if (!labels.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-title">No weekly rhythm available</div></div>';
+    return;
+  }
+
+  const last = labels.length - 1;
+  const recentCompletion = completions[last] || 0;
+  const recentBooking = bookings[last] || 0;
+  const recentLoss = (cancellations[last] || 0) + (aborts[last] || 0);
+  const bestIndex = completions.indexOf(Math.max(...completions, 1));
+  const periods = [
+    { name: 'Q1', range: [0, 13] },
+    { name: 'Q2', range: [13, 26] },
+    { name: 'Q3', range: [26, 39] },
+    { name: 'Q4', range: [39, 52] },
+  ].map(p => {
+    const [start, end] = p.range;
+    const slice = labels.slice(start, end);
+    const c = completions.slice(start, end).reduce((a, b) => a + b, 0);
+    const b = bookings.slice(start, end).reduce((a, v) => a + v, 0);
+    const loss = cancellations.slice(start, end).reduce((a, v) => a + v, 0) + aborts.slice(start, end).reduce((a, v) => a + v, 0);
+    const yieldPct = b ? (c / b) * 100 : 0;
+    const lossPct = b ? (loss / b) * 100 : 0;
+    return { ...p, weeks: slice.length, completions: c, bookings: b, losses: loss, yieldPct, lossPct };
+  }).filter(p => p.weeks);
+  const strongest = periods.reduce((best, p) => p.yieldPct > best.yieldPct ? p : best, periods[0]);
+  const hottest = periods.reduce((best, p) => p.lossPct > best.lossPct ? p : best, periods[0]);
+
+  const periodHtml = periods.map(p => {
+    const tone = p.lossPct > 28 ? 'hot' : (p.lossPct > 20 ? 'warm' : 'cool');
+    const completionAngle = Math.min(360, p.yieldPct * 3.6);
+    const lossAngle = Math.min(360, p.lossPct * 3.6);
+    return `
+      <div class="season-pulse ${tone}" style="--completion:${completionAngle}deg; --loss:${lossAngle}deg;">
+        <div class="season-orb">
+          <div class="season-ring">
+            <strong>${p.name}</strong>
+          </div>
+          <span class="season-ring-value">${IMSERV.fmt.pct(p.yieldPct)}</span>
+        </div>
+        <div class="season-copy">
+          <span>${p.weeks} weeks</span>
+          <strong>${IMSERV.fmt.num(p.completions)}</strong>
+          <em>${IMSERV.fmt.num(p.losses)} losses</em>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="season-stage">
+      <div class="season-summary">
+        <span>Latest week</span>
+        <strong>${IMSERV.fmt.num(recentCompletion)}</strong>
+        <em>${IMSERV.fmt.num(recentBooking)} bookings</em>
+      </div>
+      <div class="season-pulse-grid">${periodHtml}</div>
+    </div>
+    <div class="rhythm-readouts">
+      <div><span>Strongest quarter</span><strong>${strongest.name} at ${IMSERV.fmt.pct(strongest.yieldPct)}</strong></div>
+      <div><span>Highest loss quarter</span><strong>${hottest.name} at ${IMSERV.fmt.pct(hottest.lossPct)}</strong></div>
+      <div><span>Latest loss volume</span><strong>${IMSERV.fmt.num(recentLoss)}</strong></div>
+    </div>
+  `;
 }
 
-function renderRegionalHeatmap(data) {
+function renderRegionalHeatmapLegacy(data) {
   const container = document.getElementById('regional-heatmap-grid');
   if (!container) return;
+  if (data && data.length) {
+    container.innerHTML = data.map(r => {
+      const tone = r.rag === 'Red' ? 'red' : (r.rag === 'Amber' ? 'amber' : 'green');
+      const lossTotal = (r.cancellations || 0) + (r.aborts || 0);
+      const lossRate = Math.min(100, lossTotal / Math.max(r.requests || 0, 1) * 100);
+      const completionRate = Math.min(100, Math.max(0, r.completion_rate || 0));
+      const orbitOffset = Math.max(4, Math.min(32, lossRate * 1.15));
+
+      return `
+        <div class="regional-radar-card ${tone}">
+          <div class="regional-radar-orb" style="--completion:${completionRate * 3.6}deg; --loss:${lossRate * 3.6}deg; --drift:${orbitOffset}px;">
+            <span class="regional-loss-spark cancel"></span>
+            <span class="regional-loss-spark abort"></span>
+            <strong>${IMSERV.fmt.pct(r.completion_rate)}</strong>
+            <em>${r.region_code}</em>
+          </div>
+          <div class="regional-radar-copy">
+            <div class="regional-radar-topline">
+              <strong>${r.region_name || r.region_code}</strong>
+              <span class="rag ${r.rag}">${r.rag}</span>
+            </div>
+            <div class="regional-radar-metrics">
+              <span><b>${IMSERV.fmt.num(r.completions)}</b> completions</span>
+              <span><b>${IMSERV.fmt.num(r.requests)}</b> requests</span>
+              <span><b>${IMSERV.fmt.num(lossTotal)}</b> losses</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    return;
+  }
   if (!data || !data.length) {
     container.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;"><div class="empty-icon">📊</div><div class="empty-title">No data available</div></div>';
     return;
@@ -228,33 +323,86 @@ function renderRegionalHeatmap(data) {
   }).join('');
 }
 
-function renderAIRecommendations(data) {
-  const list = document.getElementById('ai-rec-list');
-  const counts = document.getElementById('rec-counts');
-  if (!list) return;
-
-  if (counts) {
-    counts.innerHTML = `<strong style="color:var(--crit)">${data.critical_count} Critical</strong> &nbsp; <strong style="color:var(--warn)">${data.high_count} High</strong> &nbsp; ${data.total_count} total`;
-  }
-
-  if (!data.recommendations || !data.recommendations.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">No critical alerts detected</div></div>';
+function renderRegionalHeatmap(data) {
+  const container = document.getElementById('regional-heatmap-grid');
+  if (!container) return;
+  if (!data || !data.length) {
+    container.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;"><div class="empty-icon"></div><div class="empty-title">No data available</div></div>';
     return;
   }
 
-  list.innerHTML = data.recommendations.slice(0, 8).map(r => `
-    <div class="rec-card ${r.priority}">
-      <div class="rec-icon">${IMSERV.priorityIcon(r.priority)}</div>
-      <div class="rec-body">
-        <div class="rec-title">${r.title}</div>
-        <div class="rec-desc">${r.body}</div>
-        <div class="rec-meta">
-          <span class="priority ${r.priority}">${r.priority}</span>
-          ${r.region_code ? '<span class="stat-chip">📍 ' + r.region_code + '</span>' : ''}
-          ${r.metric_value != null ? '<span class="rec-metric">' + r.metric_label + ': ' + r.metric_value + '</span>' : ''}
-          ${r.action_required ? '<span class="rag Red">Action Required</span>' : ''}
-        </div>
-      </div>
+  const rows = [...data].sort((a, b) => b.completion_rate - a.completion_rate);
+  const totalRequests = rows.reduce((sum, r) => sum + (r.requests || 0), 0);
+  const totalCompletions = rows.reduce((sum, r) => sum + (r.completions || 0), 0);
+  const totalLosses = rows.reduce((sum, r) => sum + (r.cancellations || 0) + (r.aborts || 0), 0);
+  const averageCompletion = totalRequests ? (totalCompletions / totalRequests) * 100 : 0;
+  const strongest = rows[0];
+  const watch = rows[rows.length - 1];
+  const busiest = rows.reduce((best, r) => (r.requests || 0) > (best.requests || 0) ? r : best, rows[0]);
+  const maxRequests = Math.max(...rows.map(r => r.requests || 0), 1);
+
+  const nodes = rows.map((r, index) => {
+    const tone = r.rag === 'Red' ? 'red' : (r.rag === 'Amber' ? 'amber' : 'green');
+    const lossTotal = (r.cancellations || 0) + (r.aborts || 0);
+    const angle = -105 + (index / Math.max(rows.length - 1, 1)) * 210;
+    const radius = 35 + ((r.requests || 0) / maxRequests) * 12;
+    const x = 50 + radius * Math.cos(angle * Math.PI / 180);
+    const y = 52 + radius * 0.52 * Math.sin(angle * Math.PI / 180);
+    const size = 42 + ((r.requests || 0) / maxRequests) * 26;
+
+    return `
+      <button class="region-star ${tone}" style="--x:${x}%; --y:${y}%; --s:${size}px;" title="${r.region_name || r.region_code}: ${IMSERV.fmt.pct(r.completion_rate)} completion, ${IMSERV.fmt.num(lossTotal)} losses">
+        <strong>${r.region_code}</strong>
+        <span>${IMSERV.fmt.pct(r.completion_rate)}</span>
+      </button>
+    `;
+  }).join('');
+
+  const focus = [
+    { label: 'Strongest', region: strongest, metric: IMSERV.fmt.pct(strongest.completion_rate) },
+    { label: 'Needs focus', region: watch, metric: IMSERV.fmt.pct(watch.completion_rate) },
+    { label: 'Highest demand', region: busiest, metric: IMSERV.fmt.num(busiest.requests) },
+  ].map(item => `
+    <div class="region-focus-item">
+      <span>${item.label}</span>
+      <strong>${item.region.region_name || item.region.region_code}</strong>
+      <em>${item.metric}</em>
     </div>
   `).join('');
+
+  container.innerHTML = `
+    <div class="regional-constellation">
+      <div class="region-orbit-field">
+        <div class="region-orbit one"></div>
+        <div class="region-orbit two"></div>
+        <div class="region-orbit-core">
+          <span>Network avg</span>
+          <strong>${IMSERV.fmt.pct(averageCompletion)}</strong>
+          <em>${IMSERV.fmt.num(totalLosses)} losses</em>
+        </div>
+        ${nodes}
+      </div>
+      <div class="region-focus-panel">
+        ${focus}
+      </div>
+    </div>
+  `;
+}
+
+function updateAiTriggerState(data) {
+  const button = document.getElementById('ai-trigger');
+  if (!button) return;
+
+  const recommendations = data.recommendations || [];
+  const hasRed = (data.critical_count || 0) > 0 || recommendations.some(r => r.priority === 'Critical');
+  const hasYellow = (data.high_count || 0) > 0 || recommendations.some(r => r.priority === 'High');
+  const tone = hasRed ? 'crit' : (hasYellow ? 'warn' : 'ok');
+
+  button.classList.remove('crit', 'warn', 'ok');
+  button.classList.add(tone);
+  button.title = hasRed
+    ? 'AI Insights: critical recommendations'
+    : hasYellow
+      ? 'AI Insights: high-priority recommendations'
+      : 'AI Insights: stable';
 }

@@ -179,13 +179,13 @@ IMSERV-Project/
 
 ### Query Parameters (most endpoints)
 - `region` — filter by region code (NW, NE, MID, SE, SW, WAL, SCO, YRK)
-- `year` — 2024 or 2025 (default: 2025)
+- `year` — 2025 (default: 2025)
 
 ---
 
 ## Datasets
 
-All datasets cover **2024–2025 actuals** + **2026 forecasts** with:
+All datasets cover **2025 actuals** + **2026 forecasts** with:
 - Regional seasonality (8 UK regions)
 - Operational anomalies and realistic noise
 - Cancellation behaviour by region and reason
