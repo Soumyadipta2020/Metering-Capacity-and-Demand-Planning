@@ -1853,6 +1853,37 @@ body {
   margin-bottom: 14px;
 }
 
+.optimise-controls-body {
+  border-bottom: 1px solid var(--border);
+}
+
+.optimise-parameter-panel {
+  padding: 12px;
+}
+
+.optimise-input-grid {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  margin-bottom: 10px;
+}
+
+.optimise-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.optimise-result-grid {
+  align-items: start;
+  margin-bottom: 0;
+}
+
+.optimise-impact-table td,
+.optimise-impact-table th {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -3400,6 +3431,7 @@ body {
 /* ─── Responsive ────────────────────────────────────────────── */
 @media (max-width: 1200px) {
   .grid-2, .grid-7-5, .grid-5-7 { grid-template-columns: 1fr; }
+  .optimise-input-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
   .scenario-result-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .channel-storyline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cancel-insight-grid { grid-template-columns: 1fr; }
@@ -3458,6 +3490,7 @@ body {
   .kpi-grid { grid-template-columns: 1fr; }
   #cancel-risk-panel .kpi-grid { grid-template-columns: 1fr !important; }
   .scenario-result-kpis { grid-template-columns: 1fr; }
+  .optimise-input-grid { grid-template-columns: 1fr; }
   .scenario-waterfall-chart { height: 190px; }
   .grid-3 { grid-template-columns: 1fr; }
   .journey-flow-stage {
@@ -3629,6 +3662,7 @@ body {
 .gap-8         { gap: 8px; }
 .gap-12        { gap: 12px; }
 .flex-1        { flex: 1; }
+.flex-wrap     { flex-wrap: wrap; }
 
 .overflow-auto { overflow: auto; }
 .w-full        { width: 100%; }

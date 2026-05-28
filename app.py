@@ -469,7 +469,14 @@ def field_ops_optimise():
     year = _request_year()
     try:
         _, _, _, _, _, optimise = _get_field_ops_engine()
-        return jsonify(optimise(year))
+        return jsonify(optimise(
+            year=year,
+            target_utilisation_pct=request.args.get("target", 80),
+            tolerance_pct=request.args.get("tolerance", 4),
+            max_engineers_per_move=request.args.get("max_move", 5),
+            min_engineers_per_move=request.args.get("min_move", 1),
+            max_relocation_distance=request.args.get("max_dist", 50),
+        ))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

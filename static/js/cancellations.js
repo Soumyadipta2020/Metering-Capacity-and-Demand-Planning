@@ -4,41 +4,17 @@ async function loadCancellationsDashboard() {
   const region = IMSERV.getRegion();
   const year = IMSERV.getYear();
   const qs = `?region=${region}&year=${year}`;
-  const selectedRiskRegion = getCancellationRegionFilter();
 
-  const [kpis, rootCauses, trends, heatmap, rebook] = await Promise.all([
+  const [kpis, rootCauses, rebook] = await Promise.all([
     IMSERV.apiFetch('/api/cancellations/kpis' + qs),
     IMSERV.apiFetch('/api/cancellations/root-causes' + qs),
-    IMSERV.apiFetch('/api/cancellations/trends' + (selectedRiskRegion ? `?region=${selectedRiskRegion}` : '')),
-    IMSERV.apiFetch('/api/cancellations/heatmap' + `?year=${year}`),
     IMSERV.apiFetch('/api/cancellations/rebooking' + qs),
   ]);
 
   if (kpis) renderCancelKPIs(kpis);
   if (rootCauses) renderParetoChart(rootCauses);
   if (rootCauses) renderCategoryChart(rootCauses);
-  if (trends) renderCancelTrend(trends);
-  if (heatmap) renderCancelRegional(heatmap);
   if (rebook) renderRebooking(rebook);
-
-  await loadCancellationRisk();
-}
-
-function getCancellationRegionFilter() {
-  return document.getElementById('cancel-predict-region')?.value || '';
-}
-
-async function onCancellationRegionFilterChange() {
-  await Promise.all([
-    loadCancellationTrendForSelectedRegion(),
-    loadCancellationRisk(),
-  ]);
-}
-
-async function loadCancellationTrendForSelectedRegion() {
-  const region = getCancellationRegionFilter();
-  const trends = await IMSERV.apiFetch('/api/cancellations/trends' + (region ? `?region=${region}` : ''));
-  if (trends) renderCancelTrend(trends);
 }
 
 function renderCancelKPIs(kpis) {
@@ -231,7 +207,7 @@ function renderCancelRegional(data) {
 }
 
 async function loadCancellationRisk() {
-  const region = getCancellationRegionFilter();
+  const region = IMSERV.getRegion();
   const data = await IMSERV.apiFetch('/api/cancellations/predict' + (region ? `?region=${region}` : ''));
   const panel = document.getElementById('cancel-risk-panel');
   if (!panel || !data) return;

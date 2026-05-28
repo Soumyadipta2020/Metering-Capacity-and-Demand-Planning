@@ -3,7 +3,7 @@
 const VIEW_CONFIG = {
   journey: { title: 'Smart Meter Request Demand Overview', breadcrumb: 'IMSERV / Demand / Request to Completion', loader: loadJourneyDashboard },
   forecasting: { title: 'Smart Meter Demand Forecasting', breadcrumb: 'IMSERV / Forecasting / Request Demand', loader: loadForecastingDashboard },
-  cancellations: { title: 'Cancellation and Abort Risk Planning', breadcrumb: 'IMSERV / Operations / Risk and Recovery', loader: loadCancellationsDashboard },
+  cancellations: { title: 'Cancellation and Abort Risk Planning', breadcrumb: 'IMSERV / Demand / Risk and Recovery', loader: loadCancellationsDashboard },
   'field-ops': { title: 'Engineer Resource Planning', breadcrumb: 'IMSERV / Operations / Demand vs Capacity', loader: loadFieldOpsDashboard },
   financial: { title: 'Demand and Resource Financial Planning', breadcrumb: 'IMSERV / Finance / Scenario Impact', loader: loadFinancialDashboard },
 };

@@ -281,41 +281,194 @@ def predict_understaffing(region_code: str, look_ahead_weeks: int = 8) -> list:
     return forecasts
 
 
-def optimise_workforce_allocation(year: int = 2025) -> dict:
+def _clamp_number(value, default, min_value, max_value, cast=float):
+    try:
+        value = cast(value)
+    except (TypeError, ValueError):
+        value = default
+    return max(min_value, min(max_value, value))
+
+
+def optimise_workforce_allocation(
+    year: int = 2025,
+    target_utilisation_pct: float = 80,
+    tolerance_pct: float = 4,
+    max_engineers_per_move: int = 5,
+    min_engineers_per_move: int = 1,
+    max_relocation_distance: int = 50,
+) -> dict:
     """
-    Simple workforce rebalancing recommendations across all regions.
-    Identifies over/under-staffed regions and suggests transfers.
+    Workforce rebalancing recommendations across all regions.
+    Identifies regions outside a user-adjustable target utilisation band and
+    suggests engineer transfers without mutating the source datasets.
 
     Returns:
         dict with rebalancing recommendations and efficiency gain estimate
     """
-    region_kpis = {}
-    for rc in ["NW", "NE", "MID", "SE", "SW", "WAL", "SCO", "YRK"]:
+    target = _clamp_number(target_utilisation_pct, 80, 60, 95, float)
+    tolerance = _clamp_number(tolerance_pct, 4, 1, 20, float)
+    max_move = int(_clamp_number(max_engineers_per_move, 5, 1, 25, int))
+    min_move = int(_clamp_number(min_engineers_per_move, 1, 1, max_move, int))
+    lower_bound = max(40.0, target - tolerance)
+    upper_bound = min(120.0, target + tolerance)
+
+    region_codes = ["NW", "NE", "MID", "SE", "SW", "WAL", "SCO", "YRK"]
+    capacity_rows = get_region_capacity_matrix(year)
+    regional_capacity = defaultdict(lambda: {"capacity_jobs": 0.0, "demand_jobs": 0.0, "weeks": set()})
+    for row in capacity_rows:
+        rc = row["region_code"]
+        regional_capacity[rc]["capacity_jobs"] += to_float(row.get("capacity_jobs"))
+        regional_capacity[rc]["demand_jobs"] += to_float(row.get("demand_jobs"))
+        regional_capacity[rc]["weeks"].add(to_int(row.get("week_number")))
+
+    region_state = {}
+    for rc in region_codes:
         kpis = get_field_ops_kpis(rc, year)
-        region_kpis[rc] = kpis
+        cap = regional_capacity[rc]["capacity_jobs"]
+        dem = regional_capacity[rc]["demand_jobs"]
+        engineers = kpis["total_engineers"]
+        if cap <= 0:
+            cap = dem / max(kpis["avg_utilisation"] / 100, 0.01)
+        capacity_per_engineer = cap / max(engineers, 1)
+        util = safe_pct(dem, cap)
+        weeks = len(regional_capacity[rc]["weeks"]) or 52
+        region_state[rc] = {
+            "region_code": rc,
+            "engineers_before": engineers,
+            "engineers_after": engineers,
+            "capacity_before": cap,
+            "capacity_after": cap,
+            "demand_jobs": dem,
+            "capacity_per_engineer": capacity_per_engineer,
+            "utilisation_before": util,
+            "utilisation_after": util,
+            "weeks": weeks,
+        }
 
-    overstaffed   = [(rc, d) for rc, d in region_kpis.items() if d["avg_utilisation"] < 65]
-    understaffed  = [(rc, d) for rc, d in region_kpis.items() if d["avg_utilisation"] > 85]
+    sources = []
+    destinations = []
+    target_ratio = target / 100
 
-    recommendations = []
-    for under_rc, _ in understaffed:
-        for over_rc, od in overstaffed:
-            surplus = int((65 - od["avg_utilisation"]) / 100 * od["total_engineers"])
-            if surplus > 0:
-                recommendations.append({
-                    "from_region": over_rc,
-                    "to_region":   under_rc,
-                    "engineers":   min(surplus, 5),
-                    "rationale":   f"{over_rc} utilisation {od['avg_utilisation']}% → transfer to high-demand {under_rc}",
+    for rc, state in region_state.items():
+        cap = state["capacity_before"]
+        dem = state["demand_jobs"]
+        cpe = max(state["capacity_per_engineer"], 1)
+        util = state["utilisation_before"]
+
+        if util < lower_bound:
+            removable_capacity = max(0, cap - (dem / max(target_ratio, 0.01)))
+            surplus_engineers = int(removable_capacity // cpe)
+            if surplus_engineers >= min_move:
+                sources.append({
+                    "region_code": rc,
+                    "available": surplus_engineers,
+                    "utilisation": util,
                 })
 
-    avg_before = statistics.mean([d["avg_utilisation"] for d in region_kpis.values()])
-    efficiency_gain = round(min(8.0, len(recommendations) * 1.5), 1)
+        if util > upper_bound:
+            required_capacity = max(0, (dem / max(target_ratio, 0.01)) - cap)
+            needed_engineers = math.ceil(required_capacity / cpe)
+            if needed_engineers >= min_move:
+                destinations.append({
+                    "region_code": rc,
+                    "needed": needed_engineers,
+                    "utilisation": util,
+                })
+
+    sources.sort(key=lambda item: item["utilisation"])
+    destinations.sort(key=lambda item: item["utilisation"], reverse=True)
+
+    recommendations = []
+    for dest in destinations:
+        for src in sources:
+            if dest["needed"] < min_move:
+                break
+            if src["available"] < min_move:
+                continue
+
+            engineers = min(src["available"], dest["needed"], max_move)
+            if engineers < min_move:
+                continue
+
+            src_state = region_state[src["region_code"]]
+            dest_state = region_state[dest["region_code"]]
+            src_capacity_delta = engineers * src_state["capacity_per_engineer"]
+            dest_capacity_delta = engineers * dest_state["capacity_per_engineer"]
+
+            src_before = src_state["utilisation_after"]
+            dest_before = dest_state["utilisation_after"]
+
+            src_state["capacity_after"] = max(src_state["capacity_after"] - src_capacity_delta, 1)
+            src_state["engineers_after"] -= engineers
+            src_state["utilisation_after"] = safe_pct(src_state["demand_jobs"], src_state["capacity_after"])
+
+            dest_state["capacity_after"] += dest_capacity_delta
+            dest_state["engineers_after"] += engineers
+            dest_state["utilisation_after"] = safe_pct(dest_state["demand_jobs"], dest_state["capacity_after"])
+
+            src["available"] -= engineers
+            dest["needed"] -= engineers
+
+            recommendations.append({
+                "from_region": src["region_code"],
+                "to_region": dest["region_code"],
+                "engineers": engineers,
+                "from_utilisation_before": round(src_before, 1),
+                "from_utilisation_after": src_state["utilisation_after"],
+                "to_utilisation_before": round(dest_before, 1),
+                "to_utilisation_after": dest_state["utilisation_after"],
+                "rationale": (
+                    f"{src['region_code']} sits below the {lower_bound:.0f}% lower band; "
+                    f"{dest['region_code']} sits above the {upper_bound:.0f}% upper band."
+                ),
+            })
+
+    before_utils = [state["utilisation_before"] for state in region_state.values()]
+    after_utils = [state["utilisation_after"] for state in region_state.values()]
+    balance_before = statistics.mean([abs(util - target) for util in before_utils])
+    balance_after = statistics.mean([abs(util - target) for util in after_utils])
+    efficiency_gain = round(max(0, balance_before - balance_after), 1)
+
+    overstaffed = [
+        rc for rc, state in region_state.items()
+        if state["utilisation_before"] < lower_bound
+    ]
+    understaffed = [
+        rc for rc, state in region_state.items()
+        if state["utilisation_before"] > upper_bound
+    ]
 
     return {
-        "overstaffed_regions":   [rc for rc, _ in overstaffed],
-        "understaffed_regions":  [rc for rc, _ in understaffed],
-        "recommendations":       recommendations[:5],
-        "avg_utilisation_before": round(avg_before, 1),
+        "parameters": {
+            "target_utilisation_pct": target,
+            "tolerance_pct": tolerance,
+            "lower_bound_pct": round(lower_bound, 1),
+            "upper_bound_pct": round(upper_bound, 1),
+            "max_engineers_per_move": max_move,
+            "min_engineers_per_move": min_move,
+            "max_relocation_distance_mi": int(max_relocation_distance),
+        },
+        "overstaffed_regions": overstaffed,
+        "understaffed_regions": understaffed,
+        "recommendations": recommendations,
+        "regional_before_after": [
+            {
+                "region_code": rc,
+                "engineers_before": state["engineers_before"],
+                "engineers_after": state["engineers_after"],
+                "capacity_before": int(round(state["capacity_before"])),
+                "capacity_after": int(round(state["capacity_after"])),
+                "demand_jobs": int(round(state["demand_jobs"])),
+                "utilisation_before": round(state["utilisation_before"], 1),
+                "utilisation_after": round(state["utilisation_after"], 1),
+                "weeks": state["weeks"],
+            }
+            for rc, state in sorted(region_state.items())
+        ],
+        "total_engineers_moved": sum(item["engineers"] for item in recommendations),
+        "avg_utilisation_before": round(statistics.mean(before_utils), 1),
+        "avg_utilisation_after": round(statistics.mean(after_utils), 1),
+        "balance_gap_before_pct": round(balance_before, 1),
+        "balance_gap_after_pct": round(balance_after, 1),
         "estimated_efficiency_gain_pct": efficiency_gain,
     }

@@ -34,6 +34,10 @@
           <span class="nav-icon">📊</span>
           <span class="nav-label">Request Demand</span>
         </div>
+        <div class="nav-item" data-view="cancellations" onclick="switchView('cancellations', this)">
+          <span class="nav-icon">❌</span>
+          <span class="nav-label">Risk & Recovery</span>
+        </div>
       </div>
 
       <div class="nav-section">
@@ -46,16 +50,11 @@
           <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="overview" onclick="switchForecastSidebarTab('overview', this)">Overview</button>
           <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="forecast" onclick="switchForecastSidebarTab('forecast', this)">Demand Forecast</button>
           <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="funnel" onclick="switchForecastSidebarTab('funnel', this)">Request Funnel</button>
-          <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="channels" onclick="switchForecastSidebarTab('channels', this)">Channel Demand</button>
         </div>
       </div>
 
       <div class="nav-section">
         <div class="nav-section-label">Operations</div>
-        <div class="nav-item" data-view="cancellations" onclick="switchView('cancellations', this)">
-          <span class="nav-icon">❌</span>
-          <span class="nav-label">Risk & Recovery</span>
-        </div>
         <div class="nav-item" data-view="field-ops" onclick="switchView('field-ops', this)">
           <span class="nav-icon">🔧</span>
           <span class="nav-label">Resource Planning</span>
@@ -178,6 +177,14 @@
 
         </div>
 
+        <!-- Request to Visit Completion Funnel -->
+        <div class="card mb-16">
+          <div class="card-header"><div class="card-title">🎯 Request to Visit Completion Funnel</div></div>
+          <div class="card-body" id="funnel-metrics-body">
+            <div class="loading"><span class="spinner"></span></div>
+          </div>
+        </div>
+
         <!-- Regional Heatmap -->
         <div class="card mb-16">
           <div class="card-header">
@@ -190,6 +197,24 @@
             <div id="regional-heatmap-grid" class="regional-radar-grid">
               <div class="loading"><span class="spinner"></span> Loading...</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Channel Comparison -->
+        <div class="channel-lab mb-16">
+          <div class="channel-lab-topline">
+            <div>
+              <div class="channel-lab-title">Smart Meter Request Channel Signal Map</div>
+              <div class="channel-lab-subtitle">Shows customer touchpoints, bookings received, successful visit conversion and booking contribution by channel</div>
+            </div>
+            <div class="channel-lab-legend">
+              <span><i class="legend-dot volume"></i>Bubble size = customer touchpoints</span>
+              <span><i class="legend-dot conversion"></i>Ring = bookings to successful visits</span>
+              <span><i class="legend-dot abandon"></i>Marker = abandon</span>
+            </div>
+          </div>
+          <div id="channel-comparison-grid" class="channel-ecosystem">
+            <div class="loading"><span class="spinner"></span></div>
           </div>
         </div>
 
@@ -269,7 +294,7 @@
                 </div>
               </div>
             </div>
-            <div class="grid-2">
+            <div class="grid-2 mb-16">
               <div class="card">
                 <div class="card-header"><div class="card-title">🔬 Demand Forecast Model Accuracy</div></div>
                 <div class="card-body">
@@ -288,42 +313,33 @@
                 </div>
               </div>
             </div>
+
+            <section class="cancel-visual-panel combined-risk-panel mb-16">
+              <div class="combined-risk-grid">
+                <div class="combined-risk-pane">
+                  <div class="combined-risk-pane-title">Cancellation Rate Trend and Forecast</div>
+                  <div id="cancel-trend-chart" class="cancel-pulse">
+                    <div class="loading"><span class="spinner"></span></div>
+                  </div>
+                </div>
+                <div class="combined-risk-pane">
+                  <div class="combined-risk-pane-title">Smart Meter Cancellation Risk Prediction</div>
+                  <div id="cancel-risk-panel" class="cancel-risk-prediction-body">
+                    <div class="loading"><span class="spinner"></span></div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
 
           <!-- Conversion Funnel Tab -->
           <div class="forecast-tab-panel" id="ftab-funnel">
-            <div class="card mb-16">
-              <div class="card-header"><div class="card-title">🎯 Request to Visit Completion Funnel</div></div>
-              <div class="card-body" id="funnel-metrics-body">
-                <div class="loading"><span class="spinner"></span></div>
-              </div>
-            </div>
             <div class="card">
               <div class="card-header"><div class="card-title">📉 Weekly Request to Completion Conversion Trend</div></div>
               <div class="card-body">
                 <div class="chart-wrap chart-h-300">
                   <canvas id="conversion-trend-chart"></canvas>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Channel Comparison Tab -->
-          <div class="forecast-tab-panel" id="ftab-channels">
-            <div class="channel-lab">
-              <div class="channel-lab-topline">
-                <div>
-                  <div class="channel-lab-title">Smart Meter Request Channel Signal Map</div>
-                  <div class="channel-lab-subtitle">Shows customer touchpoints, bookings received, successful visit conversion and booking contribution by channel</div>
-                </div>
-                <div class="channel-lab-legend">
-                  <span><i class="legend-dot volume"></i>Bubble size = customer touchpoints</span>
-                  <span><i class="legend-dot conversion"></i>Ring = bookings to successful visits</span>
-                  <span><i class="legend-dot abandon"></i>Marker = abandon</span>
-                </div>
-              </div>
-              <div id="channel-comparison-grid" class="channel-ecosystem">
-                <div class="loading"><span class="spinner"></span></div>
               </div>
             </div>
           </div>
@@ -372,49 +388,7 @@
 
         </div>
 
-        <section class="cancel-visual-panel combined-risk-panel mb-16">
-          <div class="cancel-panel-header">
-            <div>
-              <div class="cancel-panel-title">Cancellation Trend and Risk Prediction</div>
-              <div class="cancel-panel-subtitle">Uses the selected region for both the cancellation trend and cancellation risk prediction</div>
-            </div>
-            <div class="card-actions">
-              <select class="filter-select" id="cancel-predict-region" onchange="onCancellationRegionFilterChange()">
-                <option value="">All Regions</option>
-                <option value="NW">North West</option><option value="NE">North East</option>
-                <option value="MID">Midlands</option><option value="SE">South East</option>
-                <option value="SW">South West</option><option value="WAL">Wales</option>
-                <option value="SCO">Scotland</option><option value="YRK">Yorkshire</option>
-              </select>
-            </div>
-          </div>
-          <div class="combined-risk-grid">
-            <div class="combined-risk-pane">
-              <div class="combined-risk-pane-title">Cancellation Rate Trend and Forecast</div>
-              <div id="cancel-trend-chart" class="cancel-pulse">
-                <div class="loading"><span class="spinner"></span></div>
-              </div>
-            </div>
-            <div class="combined-risk-pane">
-              <div class="combined-risk-pane-title">Smart Meter Cancellation Risk Prediction</div>
-              <div id="cancel-risk-panel" class="cancel-risk-prediction-body">
-                <div class="loading"><span class="spinner"></span></div>
-              </div>
-            </div>
-          </div>
-        </section>
 
-        <section class="cancel-visual-panel region-panel mb-16">
-          <div class="cancel-panel-header">
-            <div>
-              <div class="cancel-panel-title">Regional Cancellation and Abort Risk</div>
-              <div class="cancel-panel-subtitle">Compares cancellation and abort pressure across operating regions</div>
-            </div>
-          </div>
-          <div id="cancel-regional-chart" class="regional-risk-field">
-            <div class="loading"><span class="spinner"></span></div>
-          </div>
-        </section>
 
         <!-- Rebooking Analytics -->
         <div class="card">
@@ -529,6 +503,52 @@
               <div><div class="card-title">🎯 Engineer Resource Rebalancing Recommendations</div></div>
               <div class="card-actions">
                 <button class="btn btn-primary btn-sm" onclick="loadOptimisation()">▶ Run Optimisation</button>
+              </div>
+            </div>
+            <div class="card-body optimise-controls-body">
+              <div class="scenario-panel optimise-parameter-panel">
+                <div class="scenario-input-grid optimise-input-grid">
+                  <div class="form-group">
+                    <label class="form-label">Target Utilisation</label>
+                    <div class="range-wrap">
+                      <input class="form-range" type="range" id="opt-target" min="65" max="90" step="1" value="78" oninput="updateOptimiseRange('opt-target','opt-target-val','%')" />
+                      <span class="range-val" id="opt-target-val">78%</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Action Band</label>
+                    <div class="range-wrap">
+                      <input class="form-range" type="range" id="opt-tolerance" min="1" max="10" step="1" value="2" oninput="updateOptimiseRange('opt-tolerance','opt-tolerance-val','%')" />
+                      <span class="range-val" id="opt-tolerance-val">2%</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Max Engineers Per Move</label>
+                    <div class="range-wrap">
+                      <input class="form-range" type="range" id="opt-max-move" min="1" max="10" step="1" value="5" oninput="updateOptimiseRange('opt-max-move','opt-max-move-val','')" />
+                      <span class="range-val" id="opt-max-move-val">5</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Minimum Move Size</label>
+                    <div class="range-wrap">
+                      <input class="form-range" type="range" id="opt-min-move" min="1" max="5" step="1" value="1" oninput="updateOptimiseRange('opt-min-move','opt-min-move-val','')" />
+                      <span class="range-val" id="opt-min-move-val">1</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Max Relocation Distance</label>
+                    <div class="range-wrap">
+                      <input class="form-range" type="range" id="opt-max-dist" min="10" max="200" step="10" value="50" oninput="updateOptimiseRange('opt-max-dist','opt-max-dist-val',' mi')" />
+                      <span class="range-val" id="opt-max-dist-val">50 mi</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="optimise-action-row">
+                  <button class="btn btn-secondary btn-sm" id="optimise-implement-btn" onclick="implementOptimisation()" disabled>Implement</button>
+                  <button class="btn btn-danger btn-sm" id="optimise-revert-btn" onclick="revertOptimisation()" style="display:none">Revert</button>
+                  <span class="text-muted fs-11" id="optimise-state-label">No optimisation applied</span>
+                </div>
               </div>
             </div>
             <div class="card-body" id="optimise-body">
