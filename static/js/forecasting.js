@@ -2,6 +2,7 @@
 
 let _forecastChart = null;
 let _activeForecastTab = 'forecast';
+let _lastForecastData = null;
 
 async function loadForecastingDashboard() {
   const region = IMSERV.getRegion();
@@ -14,8 +15,6 @@ async function loadForecastingDashboard() {
   ]);
 
   if (kpis) renderForecastKPIs(kpis, funnel);
-  if (kpis) renderChannelBreakdown(kpis);
-  if (funnel) renderFunnelMetrics(funnel);
 
   loadActiveForecastTabData();
 }
@@ -78,14 +77,14 @@ function renderChannelBreakdown(kpis) {
 async function loadForecast() {
   const region  = IMSERV.getRegion();
   const channel = document.getElementById('forecast-channel-filter')?.value || '';
-  const qs = `?region=${region}&channel=${channel}&weeks=26`;
+  const qs = `?region=${region}&channel=${channel}&weeks=52`;
 
   const data = await IMSERV.apiFetch('/api/forecasting/forecast' + qs);
   if (!data) return;
+  _lastForecastData = data;
 
   renderForecastChart(data);
   renderModelAccuracy(data.model_accuracy || {});
-  renderModelComparison(data);
 
   // Load cancellation trend and risk prediction below the forecast model comparisons
   const cancelTrends = await IMSERV.apiFetch('/api/cancellations/trends' + (region ? `?region=${region}` : ''));
@@ -97,48 +96,84 @@ async function loadForecast() {
   }
 }
 
+function onForecastModelChange() {
+  if (_lastForecastData) {
+    renderForecastChart(_lastForecastData);
+  } else {
+    loadForecast();
+  }
+}
+
 function renderForecastChart(data) {
   const ctx = document.getElementById('forecast-chart');
   if (!ctx) return;
 
-  // Trim history to last 26 weeks for readability
-  const hLen = Math.min(26, (data.history_labels || []).length);
-  const histLabels = (data.history_labels || []).slice(-hLen);
-  const histValues = (data.history_values  || []).slice(-hLen);
+  const modelSelect = document.getElementById('forecast-model-filter');
+  const modelForecasts = data.model_forecasts || {};
+  const modelColors = { Prophet: '#0052CC', ARIMA: '#10B981', XGBoost: '#F59E0B', LightGBM: '#8B5CF6' };
+  const selectedModel = modelSelect?.value || '';
+  if (modelSelect) {
+    const current = modelSelect.value;
+    const options = ['<option value="">Ensemble P50</option>']
+      .concat(Object.keys(modelForecasts).map(m => `<option value="${m}">${m}</option>`));
+    modelSelect.innerHTML = options.join('');
+    modelSelect.value = modelForecasts[current] ? current : '';
+  }
+  const activeModel = modelSelect?.value || '';
+  const centralForecast = activeModel && modelForecasts[activeModel]
+    ? modelForecasts[activeModel].slice(0, data.labels.length)
+    : data.p50;
+  const centralLabel = activeModel ? `${activeModel} Demand Forecast` : 'P50 Demand Forecast';
+  const centralColor = activeModel ? (modelColors[activeModel] || IMSERV.colors.accent) : IMSERV.colors.accent;
 
-  const allLabels   = [...histLabels, ...data.labels];
-  const histPad     = Array(data.labels.length).fill(null);
-  const forecastPad = Array(histLabels.length).fill(null);
+  const horizon = Math.min(52, data.labels?.length || centralForecast.length || 0);
+  const weekLabels = Array.from({ length: horizon }, (_, i) => `W${i + 1}`);
+  const actual2025 = (data.history_values || []).slice(0, horizon);
+  const forecast2026 = centralForecast.slice(0, horizon);
+  const p10Band = activeModel
+    ? forecast2026.map(v => Math.round(v * 0.8))
+    : (data.p10 || []).slice(0, horizon);
+  const p90Band = activeModel
+    ? forecast2026.map(v => Math.round(v * 1.2))
+    : (data.p90 || []).slice(0, horizon);
 
+  IMSERV.destroyChart?.('forecast');
   IMSERV.registerChart('forecast', new Chart(ctx, {
     type: 'line',
     data: {
-      labels: allLabels,
+      labels: weekLabels,
       datasets: [
         {
-          label: 'Historical Request Contacts',
-          data: [...histValues, ...histPad],
-          borderColor: IMSERV.colors.info,
-          backgroundColor: 'rgba(59,130,246,0.08)',
-          fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2,
+          label: '2025 Actual Request Contacts',
+          data: actual2025,
+          borderColor: '#14B8A6',
+          backgroundColor: 'rgba(20,184,166,0.08)',
+          fill: false,
+          tension: 0.4,
+          pointRadius: 0,
+          borderWidth: 2.5,
         },
         {
-          label: 'P50 Demand Forecast',
-          data: [...forecastPad, ...data.p50],
-          borderColor: IMSERV.colors.accent,
+          label: activeModel ? `2026 ${activeModel} Forecast` : '2026 Ensemble Forecast (P50)',
+          data: forecast2026,
+          borderColor: centralColor,
           backgroundColor: 'rgba(0,184,217,0.10)',
-          fill: false, tension: 0.4, pointRadius: 0, borderWidth: 2.5, borderDash: [6,3],
+          fill: false,
+          tension: 0.4,
+          pointRadius: 0,
+          borderWidth: activeModel ? 2.75 : 2.5,
+          borderDash: activeModel ? [] : [6,3],
         },
         {
-          label: 'P90 High Demand',
-          data: [...forecastPad, ...data.p90],
+          label: 'P90 Optimistic',
+          data: p90Band,
           borderColor: 'rgba(245,158,11,0.5)',
           backgroundColor: 'rgba(245,158,11,0.06)',
           fill: '+1', tension: 0.4, pointRadius: 0, borderWidth: 1, borderDash: [3,3],
         },
         {
-          label: 'P10 Low Demand',
-          data: [...forecastPad, ...data.p10],
+          label: 'P10 Conservative',
+          data: p10Band,
           borderColor: 'rgba(245,158,11,0.5)',
           backgroundColor: 'rgba(245,158,11,0.06)',
           fill: false, tension: 0.4, pointRadius: 0, borderWidth: 1, borderDash: [3,3],
@@ -151,7 +186,7 @@ function renderForecastChart(data) {
       plugins: IMSERV.chartDefaults.plugins,
       scales: {
         ...IMSERV.chartDefaults.scales,
-        x: { ...IMSERV.chartDefaults.scales.x, ticks: { ...IMSERV.chartDefaults.scales.x.ticks, maxTicksLimit: 16 } },
+        x: { ...IMSERV.chartDefaults.scales.x, ticks: { ...IMSERV.chartDefaults.scales.x.ticks, maxTicksLimit: 13 } },
       },
     },
   }));
@@ -177,6 +212,54 @@ function renderModelAccuracy(accuracy) {
     `;
   }).join('');
 }
+
+function renderModelAccuracyVisual(accuracy) {
+  const container = document.getElementById('model-accuracy-body');
+  if (!container) return false;
+  const rows = Object.entries(accuracy || {})
+    .map(([model, d]) => ({ model, ...d }))
+    .sort((a, b) => (a.mape ?? 999) - (b.mape ?? 999));
+
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-title">No accuracy data</div></div>';
+    return true;
+  }
+
+  const maxMae = Math.max(...rows.map(d => d.mae || 0), 1);
+  const maxRmse = Math.max(...rows.map(d => d.rmse || 0), 1);
+  container.innerHTML = rows.map((d, idx) => {
+    const accuracyPct = Math.max(0, 100 - (d.mape || 0));
+    const tone = d.mape < 6 ? 'strong' : (d.mape < 10 ? 'steady' : 'risk');
+    const barColor = tone === 'strong' ? '#10B981' : tone === 'steady' ? '#F59E0B' : '#EF4444';
+    const maePct = Math.max(4, (d.mae || 0) / maxMae * 100);
+    const rmsePct = Math.max(4, (d.rmse || 0) / maxRmse * 100);
+    const label = tone === 'strong' ? 'Best fit' : tone === 'steady' ? 'Planning fit' : 'Watch variance';
+    return `
+      <div class="model-accuracy-row ${tone}" style="--accuracy:${accuracyPct}%; --mae:${maePct}%; --rmse:${rmsePct}%; --model-color:${barColor};">
+        <div class="model-accuracy-main">
+          <span class="model-rank">#${idx + 1}</span>
+          <div>
+            <strong>${d.model}</strong>
+            <em>${label}</em>
+          </div>
+          <b>${accuracyPct.toFixed(1)}%</b>
+        </div>
+        <div class="model-accuracy-bar"><i></i></div>
+        <div class="model-accuracy-metrics">
+          <span>MAE <strong>${d.mae?.toFixed(1) || '-'}</strong><i class="mae"></i></span>
+          <span>RMSE <strong>${d.rmse?.toFixed(1) || '-'}</strong><i class="rmse"></i></span>
+          <span>MAPE <strong>${d.mape?.toFixed(2) || '-'}%</strong></span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  return true;
+}
+
+const _renderModelAccuracyTable = renderModelAccuracy;
+renderModelAccuracy = function renderModelAccuracy(accuracy) {
+  if (!renderModelAccuracyVisual(accuracy)) _renderModelAccuracyTable(accuracy);
+};
 
 function renderModelComparison(data) {
   const ctx = document.getElementById('model-comparison-chart');

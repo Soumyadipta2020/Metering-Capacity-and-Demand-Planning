@@ -2031,6 +2031,180 @@ body {
   display: block;
 }
 
+/* Demand Forecast Visual Suite */
+.forecast-ensemble-card,
+.model-accuracy-card,
+.model-comparison-card {
+  border-color: rgba(59,130,246,0.34);
+  background:
+    linear-gradient(180deg, rgba(59,130,246,0.08), transparent 42%),
+    var(--bg-card);
+}
+
+.forecast-ensemble-card .card-header,
+.model-accuracy-card .card-header,
+.model-comparison-card .card-header {
+  background: rgba(15,23,42,0.18);
+}
+
+.forecast-main-chart {
+  height: 360px;
+  padding: 8px 4px 0;
+}
+
+.forecast-plan-grid {
+  display: grid;
+  grid-template-columns: minmax(680px, 2fr) minmax(380px, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.forecast-plan-grid .forecast-ensemble-card,
+.forecast-plan-grid .model-accuracy-card {
+  margin-bottom: 0;
+}
+
+.forecast-plan-grid .model-comparison-card {
+  display: none;
+}
+
+.forecast-analytics-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) minmax(520px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.model-accuracy-board {
+  display: grid;
+  gap: 8px;
+}
+
+.model-accuracy-row {
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148,163,184,0.14);
+  background: rgba(2,6,23,0.20);
+}
+
+.model-accuracy-row.strong { border-color: rgba(16,185,129,0.28); }
+.model-accuracy-row.steady { border-color: rgba(245,158,11,0.26); }
+.model-accuracy-row.risk { border-color: rgba(239,68,68,0.26); }
+
+.model-accuracy-main {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-rank {
+  width: 26px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(148,163,184,0.10);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.model-accuracy-main strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.model-accuracy-main em {
+  display: block;
+  margin-top: 1px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.model-accuracy-main b {
+  color: var(--model-color);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.model-accuracy-bar {
+  height: 7px;
+  margin: 8px 0;
+  border-radius: 999px;
+  background: rgba(148,163,184,0.14);
+  overflow: hidden;
+}
+
+.model-accuracy-bar i {
+  display: block;
+  width: var(--accuracy);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--model-color), color-mix(in srgb, var(--model-color) 56%, #3B82F6));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--model-color) 30%, transparent);
+}
+
+.model-accuracy-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.model-accuracy-metrics span {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.model-accuracy-metrics strong {
+  display: inline;
+  margin-left: 4px;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.model-accuracy-metrics i {
+  display: none;
+}
+
+.model-accuracy-metrics i::after {
+  content: "";
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--model-color);
+}
+
+.model-accuracy-metrics i.mae::after { width: var(--mae); }
+.model-accuracy-metrics i.rmse::after { width: var(--rmse); }
+
+.model-comparison-chart {
+  height: 300px;
+  padding: 10px 4px 0;
+}
+
+.forecast-method-strip {
+  border-radius: 8px;
+  border: 1px solid rgba(59,130,246,0.30);
+  border-left: 4px solid var(--info);
+  padding: 14px 18px;
+  background: linear-gradient(90deg, rgba(59,130,246,0.16), rgba(15,23,42,0.76));
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.forecast-method-strip strong {
+  color: var(--text-primary);
+  margin-right: 8px;
+}
+
 /* Channel Signal Map */
 .channel-lab {
   min-height: 690px;

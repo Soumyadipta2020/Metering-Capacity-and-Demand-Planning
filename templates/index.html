@@ -264,14 +264,18 @@
 
           <!-- Forecast Models Tab -->
           <div class="forecast-tab-panel active" id="ftab-forecast">
-            <div class="card mb-16">
+            <div class="forecast-plan-grid mb-16">
+            <div class="card forecast-ensemble-card">
               <div class="card-header">
                 <div>
-                  <div class="card-title">📈 26-Week Smart Meter Request Demand Forecast</div>
-                  <div class="card-subtitle">Projected request/contact volume with P10, P50 and P90 confidence bands from multiple models</div>
+                  <div class="card-title">📈 52-Week Smart Meter Request Demand Forecast</div>
+                  <div class="card-subtitle">2026 weekly forecast compared with 2025 same-week actuals, including P10, P50 and P90 planning bands</div>
                 </div>
                 <div class="card-actions">
                   <div class="filter-bar">
+                    <select class="filter-select" id="forecast-model-filter" onchange="onForecastModelChange()">
+                      <option value="">Ensemble P50</option>
+                    </select>
                     <select class="filter-select" id="forecast-channel-filter" onchange="loadForecast()">
                       <option value="">All Channels</option>
                       <option value="Phone">Phone</option>
@@ -284,29 +288,31 @@
                 </div>
               </div>
               <div class="card-body">
-                <div class="chart-wrap chart-h-360">
+                <div class="chart-wrap forecast-main-chart">
                   <canvas id="forecast-chart"></canvas>
                 </div>
               </div>
             </div>
-            <div class="grid-2 mb-16">
-              <div class="card">
+              <div class="card model-accuracy-card">
                 <div class="card-header"><div class="card-title">🔬 Demand Forecast Model Accuracy</div></div>
                 <div class="card-body">
-                  <table class="data-table" id="model-accuracy-table">
-                    <thead><tr><th>Model</th><th>MAE</th><th>RMSE</th><th>MAPE %</th></tr></thead>
-                    <tbody id="model-accuracy-body"><tr><td colspan="4"><div class="loading"><span class="spinner"></span></div></td></tr></tbody>
-                  </table>
+                  <div class="model-accuracy-board" id="model-accuracy-body">
+                    <div class="loading"><span class="spinner"></span></div>
+                  </div>
                 </div>
               </div>
-              <div class="card">
+              <div class="card model-comparison-card">
                 <div class="card-header"><div class="card-title">📊 Forecast Comparison by Model</div></div>
                 <div class="card-body">
-                  <div class="chart-wrap chart-h-260">
+                  <div class="chart-wrap model-comparison-chart">
                     <canvas id="model-comparison-chart"></canvas>
                   </div>
                 </div>
               </div>
+            </div>
+            <div class="forecast-method-strip mb-16">
+              <strong>Forecast ensemble combines ARIMA, LightGBM, Prophet and XGBoost</strong>
+              <span>P50 is the central demand path, with P10/P90 bands showing downside and upside planning ranges.</span>
             </div>
 
             <section class="cancel-visual-panel combined-risk-panel mb-16">
@@ -737,3 +743,4 @@
 
 </body>
 </html>
+
