@@ -2305,7 +2305,49 @@ body {
 }
 
 .cancel-risk-grid {
-  grid-template-columns: minmax(360px, 0.82fr) minmax(620px, 1.18fr);
+  grid-template-columns: minmax(420px, 1fr) minmax(520px, 1fr);
+}
+
+.combined-risk-panel {
+  width: 100%;
+}
+
+.combined-risk-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) minmax(520px, 1fr);
+  gap: 0;
+  padding: 12px;
+  flex: 1;
+}
+
+.combined-risk-pane {
+  min-width: 0;
+  min-height: 350px;
+  display: flex;
+  flex-direction: column;
+}
+
+.combined-risk-pane + .combined-risk-pane {
+  border-left: 1px solid rgba(148,163,184,0.14);
+  padding-left: 12px;
+  margin-left: 12px;
+}
+
+.combined-risk-pane-title {
+  margin-bottom: 10px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.combined-risk-pane .cancel-pulse,
+.combined-risk-pane .cancel-risk-prediction-body {
+  padding: 0;
+}
+
+.combined-risk-pane .pulse-stage,
+.combined-risk-pane .risk-prediction-card {
+  min-height: 300px;
 }
 
 .cancel-visual-panel {
@@ -2346,7 +2388,8 @@ body {
 .cause-constellation,
 .category-lens,
 .cancel-pulse,
-.regional-risk-field {
+.regional-risk-field,
+.cancel-risk-prediction-body {
   min-height: 0;
   padding: 12px;
   flex: 1;
@@ -2594,6 +2637,146 @@ body {
   line-height: 1.2;
 }
 
+.reason-breakdown {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+  min-height: 390px;
+}
+
+.reason-breakdown-total {
+  border: 1px solid rgba(148,163,184,0.16);
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 28%, rgba(59,130,246,0.26), rgba(15,23,42,0.92) 58%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 18px;
+}
+
+.reason-breakdown.cancel .reason-breakdown-total {
+  background: radial-gradient(circle at 50% 28%, rgba(239,68,68,0.24), rgba(15,23,42,0.92) 58%);
+  border-color: rgba(239,68,68,0.22);
+}
+
+.reason-breakdown.abort .reason-breakdown-total {
+  background: radial-gradient(circle at 50% 28%, rgba(245,158,11,0.22), rgba(15,23,42,0.92) 58%);
+  border-color: rgba(245,158,11,0.24);
+}
+
+.reason-breakdown-total span,
+.reason-breakdown-total em {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.reason-breakdown-total strong {
+  margin: 8px 0 2px;
+  font-size: 32px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.reason-breakdown-list {
+  display: grid;
+  gap: 9px;
+  align-content: start;
+}
+
+.reason-breakdown-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 74px;
+  gap: 10px;
+  align-items: center;
+  min-height: 52px;
+  padding: 10px;
+  border: 1px solid rgba(148,163,184,0.12);
+  border-radius: 8px;
+  background: rgba(15,23,42,0.62);
+  animation: cause-pop 420ms ease both;
+  animation-delay: var(--delay);
+}
+
+.reason-breakdown.cancel .reason-breakdown-row.primary {
+  border-color: rgba(239,68,68,0.44);
+  background: linear-gradient(90deg, rgba(239,68,68,0.13), rgba(15,23,42,0.58));
+}
+
+.reason-breakdown.abort .reason-breakdown-row.primary {
+  border-color: rgba(245,158,11,0.44);
+  background: linear-gradient(90deg, rgba(245,158,11,0.13), rgba(15,23,42,0.58));
+}
+
+.reason-breakdown-main { min-width: 0; }
+
+.reason-breakdown-main span,
+.reason-breakdown-main em,
+.reason-breakdown-metric strong,
+.reason-breakdown-metric small {
+  display: block;
+}
+
+.reason-breakdown-main span {
+  color: var(--text-primary);
+  font-weight: 800;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reason-breakdown-main em {
+  margin-top: 1px;
+  color: var(--text-muted);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.reason-breakdown-main i {
+  display: block;
+  height: 5px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: rgba(148,163,184,0.12);
+  overflow: hidden;
+}
+
+.reason-breakdown-main i b {
+  display: block;
+  height: 100%;
+  width: var(--influence);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ef4444, #f59e0b);
+}
+
+.reason-breakdown.abort .reason-breakdown-main i b {
+  background: linear-gradient(90deg, #f59e0b, #facc15);
+}
+
+.reason-breakdown-metric {
+  text-align: right;
+}
+
+.reason-breakdown-metric strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.reason-breakdown-metric small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .category-lens-stage {
   min-height: 0;
   flex: 1;
@@ -2801,22 +2984,23 @@ body {
 
 .regional-risk-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
-  gap: 9px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
 }
 
 .region-risk-tile {
-  min-height: 82px;
+  min-height: 138px;
   border-radius: 8px;
-  padding: 9px 12px;
+  padding: 14px;
   border: 1px solid rgba(148,163,184,0.16);
   background:
     radial-gradient(circle at 50% 24%, rgba(239,68,68,0.20), transparent 42%),
     rgba(2,6,23,0.36);
   position: relative;
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 11px;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 14px;
   align-items: center;
 }
 
@@ -2825,8 +3009,8 @@ body {
 .region-risk-tile.green { border-color: rgba(16,185,129,0.26); }
 
 .region-risk-orbit {
-  width: 56px;
-  height: 56px;
+  width: 72px;
+  height: 72px;
   border-radius: 999px;
   position: relative;
   display: grid;
@@ -2845,14 +3029,14 @@ body {
 }
 
 .region-abort-ring {
-  inset: 8px;
+  inset: 10px;
   background: conic-gradient(#f59e0b 0 var(--abort), rgba(148,163,184,0.16) var(--abort) 360deg);
 }
 
 .region-abort-ring::after {
   content: "";
   position: absolute;
-  inset: 8px;
+  inset: 10px;
   border-radius: inherit;
   background: rgba(15,23,42,0.96);
 }
@@ -2861,7 +3045,7 @@ body {
   position: relative;
   z-index: 2;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 900;
 }
 
@@ -2879,8 +3063,8 @@ body {
 }
 
 .region-risk-copy strong {
-  margin-top: 4px;
-  font-size: 20px;
+  margin-top: 6px;
+  font-size: 25px;
   color: var(--text-primary);
   line-height: 1;
 }
@@ -2889,7 +3073,7 @@ body {
   display: inline-block;
   margin-top: 5px;
   margin-right: 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   font-style: normal;
   line-height: 1.25;
@@ -2909,6 +3093,134 @@ body {
 }
 
 /* ─── Waterfall Chart ───────────────────────────────────────── */
+.risk-prediction-card {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+  min-height: 300px;
+  border-radius: 8px;
+  background: rgba(2,6,23,0.32);
+  border: 1px solid rgba(148,163,184,0.13);
+  padding: 16px;
+}
+
+.risk-gauge-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.risk-gauge {
+  width: 132px;
+  height: 132px;
+  border-radius: 999px;
+  background: conic-gradient(var(--risk-color) var(--risk-score), rgba(148,163,184,0.16) 0);
+  box-shadow: 0 0 28px var(--risk-shadow);
+  display: grid;
+  place-items: center;
+}
+
+.risk-gauge > div {
+  width: 108px;
+  height: 108px;
+  border-radius: inherit;
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.risk-gauge span,
+.risk-scope,
+.risk-metric-grid span,
+.risk-recommendation span,
+.risk-drivers > span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.risk-gauge strong {
+  margin-top: 2px;
+  font-size: 34px;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.risk-level {
+  font-size: 17px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.risk-prediction-detail {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  align-content: center;
+}
+
+.risk-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.risk-metric-grid div,
+.risk-recommendation {
+  border-radius: 8px;
+  border: 1px solid rgba(148,163,184,0.13);
+  background: rgba(15,23,42,0.64);
+  padding: 11px 12px;
+}
+
+.risk-metric-grid strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 22px;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.risk-metric-grid small {
+  font-size: 11px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 1px 5px;
+}
+
+.risk-recommendation {
+  border-left: 3px solid var(--brand-accent);
+  background: rgba(0,184,217,0.08);
+}
+
+.risk-recommendation span {
+  color: var(--brand-accent);
+}
+
+.risk-recommendation strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.risk-drivers > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .waterfall-bar {
   display: flex;
   align-items: flex-end;
@@ -3091,6 +3403,15 @@ body {
   .scenario-result-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .channel-storyline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cancel-insight-grid { grid-template-columns: 1fr; }
+  .combined-risk-grid { grid-template-columns: 1fr; }
+  .combined-risk-pane + .combined-risk-pane {
+    border-left: 0;
+    border-top: 1px solid rgba(148,163,184,0.14);
+    padding-left: 0;
+    padding-top: 12px;
+    margin-left: 0;
+    margin-top: 12px;
+  }
 }
 
 @media (max-width: 960px) {
@@ -3238,12 +3559,32 @@ body {
   .category-lens,
   .cancel-pulse,
   .regional-risk-field { padding: 10px; }
+  .combined-risk-grid {
+    padding: 10px;
+  }
+  .combined-risk-pane {
+    min-height: 0;
+  }
+  .combined-risk-pane .pulse-stage,
+  .combined-risk-pane .risk-prediction-card {
+    min-height: 270px;
+  }
+  .combined-risk-pane .risk-prediction-card {
+    grid-template-columns: 1fr;
+  }
   .cause-stage {
     min-height: auto;
     padding: 14px;
     display: grid;
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+  .reason-breakdown {
+    min-height: 0;
+    grid-template-columns: 1fr;
+  }
+  .reason-breakdown-total {
+    min-height: 104px;
   }
   .cause-focus { display: none; }
   .cause-driver { grid-template-columns: 24px 40px minmax(0, 1fr); }

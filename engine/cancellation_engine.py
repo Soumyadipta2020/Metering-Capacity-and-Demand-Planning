@@ -79,6 +79,8 @@ def get_cancellation_root_causes(
         dict with category breakdown, Pareto percentages, raw reason counts
     """
     reason_counter: Counter = Counter()
+    cancellation_counter: Counter = Counter()
+    abort_counter: Counter = Counter()
     category_counter: Counter = Counter()
     year_str = str(year)
 
@@ -91,13 +93,28 @@ def get_cancellation_root_causes(
         if r.get("status") == "Cancelled" and r.get("cancellation_reason"):
             reason = r["cancellation_reason"]
             reason_counter[reason] += 1
+            cancellation_counter[reason] += 1
             category_counter[CANCEL_CATEGORIES.get(reason, "Other")] += 1
         elif include_aborts and r.get("status") == "Aborted" and r.get("abort_reason"):
             reason = r["abort_reason"]
             reason_counter[reason] += 1
+            abort_counter[reason] += 1
             category_counter[CANCEL_CATEGORIES.get(reason, "Other")] += 1
 
     total_reasons = sum(reason_counter.values())
+    total_cancellations = sum(cancellation_counter.values())
+    total_aborts = sum(abort_counter.values())
+
+    def reason_rows(counter: Counter, total: int) -> list:
+        return [
+            {
+                "reason": reason,
+                "category": CANCEL_CATEGORIES.get(reason, "Other"),
+                "count": count,
+                "pct": safe_pct(count, total),
+            }
+            for reason, count in sorted(counter.items(), key=lambda x: -x[1])
+        ]
 
     # Pareto: sorted by frequency
     reasons_sorted = sorted(reason_counter.items(), key=lambda x: -x[1])
@@ -126,6 +143,10 @@ def get_cancellation_root_causes(
 
     return {
         "total_events":   total_reasons,
+        "total_cancellations": total_cancellations,
+        "total_aborts":   total_aborts,
+        "cancellation_reasons": reason_rows(cancellation_counter, total_cancellations),
+        "abort_reasons":  reason_rows(abort_counter, total_aborts),
         "pareto":         pareto,
         "categories":     category_data,
         "top_reason":     pareto[0]["reason"] if pareto else None,
@@ -288,10 +309,11 @@ def predict_cancellation_risk(region_code: str, week_ahead: int = 4) -> dict:
     if abort_rate > 10:
         recommendations.append("Increase engineer pre-job checks and meter access verification")
     if risk_score > 50:
-        recommendations.append(f"Deploy targeted retention intervention for {region_code} region")
+        scope = f"{region_code} region" if region_code else "all regions"
+        recommendations.append(f"Deploy targeted retention intervention for {scope}")
 
     return {
-        "region_code":    region_code,
+        "region_code":    region_code or "ALL",
         "risk_score":     round(risk_score, 1),
         "risk_level":     risk_level,
         "trend_direction":trend_dir,

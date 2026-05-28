@@ -4,11 +4,12 @@ async function loadCancellationsDashboard() {
   const region = IMSERV.getRegion();
   const year = IMSERV.getYear();
   const qs = `?region=${region}&year=${year}`;
+  const selectedRiskRegion = getCancellationRegionFilter();
 
   const [kpis, rootCauses, trends, heatmap, rebook] = await Promise.all([
     IMSERV.apiFetch('/api/cancellations/kpis' + qs),
     IMSERV.apiFetch('/api/cancellations/root-causes' + qs),
-    IMSERV.apiFetch('/api/cancellations/trends' + (region ? `?region=${region}` : '')),
+    IMSERV.apiFetch('/api/cancellations/trends' + (selectedRiskRegion ? `?region=${selectedRiskRegion}` : '')),
     IMSERV.apiFetch('/api/cancellations/heatmap' + `?year=${year}`),
     IMSERV.apiFetch('/api/cancellations/rebooking' + qs),
   ]);
@@ -21,6 +22,23 @@ async function loadCancellationsDashboard() {
   if (rebook) renderRebooking(rebook);
 
   await loadCancellationRisk();
+}
+
+function getCancellationRegionFilter() {
+  return document.getElementById('cancel-predict-region')?.value || '';
+}
+
+async function onCancellationRegionFilterChange() {
+  await Promise.all([
+    loadCancellationTrendForSelectedRegion(),
+    loadCancellationRisk(),
+  ]);
+}
+
+async function loadCancellationTrendForSelectedRegion() {
+  const region = getCancellationRegionFilter();
+  const trends = await IMSERV.apiFetch('/api/cancellations/trends' + (region ? `?region=${region}` : ''));
+  if (trends) renderCancelTrend(trends);
 }
 
 function renderCancelKPIs(kpis) {
@@ -45,28 +63,45 @@ function cancelEscape(value) {
 
 function renderParetoChart(data) {
   const container = document.getElementById('pareto-chart');
-  if (!container || !data.pareto) return;
+  if (!container) return;
+  renderReasonBreakdown(container, data.cancellation_reasons || [], data.total_cancellations || 0, {
+    empty: 'No cancellation reasons available',
+    totalLabel: 'Total cancellations',
+    tone: 'cancel',
+  });
+}
 
-  const top = data.pareto.slice(0, 8);
+function renderCategoryChart(data) {
+  const container = document.getElementById('category-chart');
+  if (!container) return;
+  renderReasonBreakdown(container, data.abort_reasons || [], data.total_aborts || 0, {
+    empty: 'No abort reasons available',
+    totalLabel: 'Total aborts',
+    tone: 'abort',
+  });
+}
+
+function renderReasonBreakdown(container, rows, total, config) {
+  const top = rows.slice(0, 8);
+
   if (!top.length) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-title">No root causes available</div></div>';
+    container.innerHTML = `<div class="empty-state"><div class="empty-title">${cancelEscape(config.empty)}</div></div>`;
     return;
   }
 
   const maxCount = Math.max(...top.map(d => d.count), 1);
-  const drivers = top.map((r, idx) => {
-    const pressure = Math.min(100, Math.max(0, r.cumulative_pct || 0));
-    const influence = r.count / maxCount * 100;
+  const topShare = top[0]?.pct || 0;
+  const rowsHtml = top.map((r, idx) => {
+    const influence = Math.max(3, r.count / maxCount * 100);
     return `
-      <div class="cause-driver ${idx === 0 ? 'primary' : ''}" style="--pressure:${pressure * 3.6}deg; --influence:${influence}%; --delay:${idx * 55}ms;">
+      <div class="reason-breakdown-row ${idx === 0 ? 'primary' : ''}" style="--influence:${influence}%; --delay:${idx * 45}ms;">
         <div class="cause-rank">${idx + 1}</div>
-        <div class="cause-driver-ring"></div>
-        <div class="cause-driver-main">
+        <div class="reason-breakdown-main">
           <span>${cancelEscape(r.reason)}</span>
           <em>${cancelEscape(r.category)}</em>
-          <i><b style="width:${influence}%"></b></i>
+          <i><b></b></i>
         </div>
-        <div class="cause-driver-metric">
+        <div class="reason-breakdown-metric">
           <strong>${IMSERV.fmt.num(r.count)}</strong>
           <small>${IMSERV.fmt.pct(r.pct)}</small>
         </div>
@@ -74,83 +109,21 @@ function renderParetoChart(data) {
     `;
   }).join('');
 
-  const paretoPath = top.map((r, idx) => {
-    const x = 8 + idx * (84 / Math.max(top.length - 1, 1));
-    const y = 92 - Math.min(86, r.cumulative_pct * 0.86);
-    return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-  }).join(' ');
-
   container.innerHTML = `
-    <div class="cause-stage">
-      <div class="cause-focus">
-        <div class="cause-core">
-          <span>Total cancellation/abort events</span>
-          <strong>${IMSERV.fmt.num(data.total_events || 0)}</strong>
-          <em>${cancelEscape(data.top_category || 'Root causes')}</em>
-        </div>
-        <svg class="pareto-strip" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <path class="pareto-pressure-path" d="${paretoPath}" />
-        </svg>
+    <div class="reason-breakdown ${config.tone}">
+      <div class="reason-breakdown-total">
+        <span>${cancelEscape(config.totalLabel)}</span>
+        <strong>${IMSERV.fmt.num(total)}</strong>
+        <em>${IMSERV.fmt.num(top.length)} reasons shown</em>
       </div>
-      <div class="cause-driver-grid">
-        ${drivers}
+      <div class="reason-breakdown-list">
+        ${rowsHtml}
       </div>
     </div>
     <div class="cause-summary-strip">
-      <div>
-        <span>Largest completion blocker</span>
-        <strong>${cancelEscape(top[0].reason)}</strong>
-      </div>
-      <div>
-        <span>Share of loss causes</span>
-        <strong>${IMSERV.fmt.pct(top[0].pct)}</strong>
-      </div>
-      <div>
-        <span>Top 8 cumulative impact</span>
-        <strong>${IMSERV.fmt.pct(top[top.length - 1].cumulative_pct)}</strong>
-      </div>
-    </div>
-  `;
-}
-
-function renderCategoryChart(data) {
-  const container = document.getElementById('category-chart');
-  if (!container || !data.categories) return;
-
-  const cats = [...data.categories].sort((a, b) => b.count - a.count);
-  if (!cats.length) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-title">No category data available</div></div>';
-    return;
-  }
-
-  const colours = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#14b8a6'];
-  const total = cats.reduce((sum, c) => sum + c.count, 0) || 1;
-  const max = Math.max(...cats.map(c => c.count), 1);
-  const cells = cats.map((c, idx) => {
-    const share = c.count / total * 100;
-    const intensity = 0.38 + (c.count / max) * 0.62;
-    return `
-      <div class="category-cell" style="--cat-color:${colours[idx % colours.length]}; --share:${share * 3.6}deg; --intensity:${intensity};">
-        <div class="category-cell-ring"></div>
-        <div class="category-cell-body">
-          <span>${cancelEscape(c.category)}</span>
-          <strong>${IMSERV.fmt.num(c.count)}</strong>
-          <em>${IMSERV.fmt.pct(c.pct)}</em>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  container.innerHTML = `
-    <div class="category-lens-stage">
-      <div class="category-total-lens">
-        <span>Families</span>
-        <strong>${cats.length}</strong>
-        <em>${IMSERV.fmt.num(total)} events</em>
-      </div>
-      <div class="category-cell-grid">
-        ${cells}
-      </div>
+      <div><span>Top reason</span><strong>${cancelEscape(top[0].reason)}</strong></div>
+      <div><span>Top reason rate</span><strong>${IMSERV.fmt.pct(topShare)}</strong></div>
+      <div><span>Shown volume</span><strong>${IMSERV.fmt.num(top.reduce((sum, r) => sum + r.count, 0))}</strong></div>
     </div>
   `;
 }
@@ -258,8 +231,8 @@ function renderCancelRegional(data) {
 }
 
 async function loadCancellationRisk() {
-  const region = document.getElementById('cancel-predict-region')?.value || 'NW';
-  const data = await IMSERV.apiFetch('/api/cancellations/predict?region=' + region);
+  const region = getCancellationRegionFilter();
+  const data = await IMSERV.apiFetch('/api/cancellations/predict' + (region ? `?region=${region}` : ''));
   const panel = document.getElementById('cancel-risk-panel');
   if (!panel || !data) return;
 
@@ -285,38 +258,34 @@ async function loadCancellationRisk() {
       </div>
     `;
   }).join('') || '<span style="color:var(--text-muted); font-size:12px;">None identified</span>';
+  const scopeLabel = data.region_code === 'ALL' ? 'All regions' : `${cancelEscape(data.region_code)} region`;
 
   panel.innerHTML = `
-    <div style="display:flex; flex-wrap:wrap; gap: 30px; align-items: stretch; background: var(--bg-surface); padding: 24px; border-radius: var(--radius-md); border: 1px solid var(--border);">
-      <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-width: 160px; border-right: 1px solid rgba(255,255,255,0.05); padding-right: 30px;">
-        <div style="position:relative; width: 140px; height: 140px; border-radius: 50%; background: conic-gradient(${gaugeColor} ${data.risk_score}%, var(--bg-card) 0); display:flex; align-items:center; justify-content:center; box-shadow: 0 0 30px ${shadowColor}; margin-bottom: 16px;">
-           <div style="position:absolute; width: 120px; height: 120px; background: var(--bg-surface); border-radius: 50%; display:flex; flex-direction:column; align-items:center; justify-content:center;">
-              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:1px;">Score</div>
-              <div style="font-size:36px; font-weight:800; color:var(--text-primary); line-height:1; margin-top:2px;">${data.risk_score}</div>
-           </div>
+    <div class="risk-prediction-card">
+      <div class="risk-gauge-block">
+        <div class="risk-gauge" style="--risk-color:${gaugeColor}; --risk-score:${data.risk_score}%; --risk-shadow:${shadowColor};">
+          <div>
+            <span>Score</span>
+            <strong>${data.risk_score}</strong>
+          </div>
         </div>
-        <div style="font-size:18px; font-weight:700; color:${gaugeColor}; text-transform:uppercase; letter-spacing:1px;">${cancelEscape(data.risk_level)}</div>
+        <strong class="risk-level" style="color:${gaugeColor};">${cancelEscape(data.risk_level)}</strong>
+        <span class="risk-scope">${scopeLabel}</span>
       </div>
 
-      <div style="display:flex; flex-direction:column; justify-content:center; min-width: 180px; border-right: 1px solid rgba(255,255,255,0.05); padding-right: 30px; gap: 24px;">
-        <div>
-          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:1px; margin-bottom:6px;">Cancel Rate</div>
-          <div style="font-size:32px; font-weight:700; color:var(--text-primary);">${IMSERV.fmt.pct(data.cancel_rate)}</div>
+      <div class="risk-prediction-detail">
+        <div class="risk-metric-grid">
+          <div><span>Cancel Rate</span><strong>${IMSERV.fmt.pct(data.cancel_rate)}</strong></div>
+          <div><span>Abort Rate</span><strong>${IMSERV.fmt.pct(data.abort_rate)}</strong></div>
+          <div><span>Trend</span><strong style="color:${trendColor};">${cancelEscape(data.trend_direction)} <small>${trendIcon}</small></strong></div>
         </div>
-        <div>
-          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:1px; margin-bottom:6px;">Trend</div>
-          <div style="font-size:28px; font-weight:700; color:${trendColor}; display:flex; align-items:center; gap:8px;">${cancelEscape(data.trend_direction)} <span style="font-size:13px; border:1px solid currentColor; border-radius:999px; padding:2px 6px;">${trendIcon}</span></div>
+        <div class="risk-recommendation">
+          <span>AI Recommendation</span>
+          <strong>${cancelEscape(data.recommendations?.[0] || 'Maintain current operational strategies.')}</strong>
         </div>
-      </div>
-
-      <div style="flex:1; display:flex; flex-direction:column; gap: 16px; justify-content:center; min-width: 250px;">
-        <div style="background: rgba(0, 184, 217, 0.08); border-left: 3px solid var(--brand-accent); padding: 12px 16px; border-radius: 0 8px 8px 0;">
-          <div style="font-size:11px; color:var(--brand-accent); text-transform:uppercase; font-weight:700; letter-spacing:1px; margin-bottom:6px;">AI Recommendation</div>
-          <div style="font-size:13px; color:var(--text-primary); line-height:1.5;">${cancelEscape(data.recommendations?.[0] || 'Maintain current operational strategies.')}</div>
-        </div>
-        <div>
-          <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:1px; margin-bottom:8px;">Primary Risk Drivers</div>
-          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        <div class="risk-drivers">
+          <span>Primary Risk Drivers</span>
+          <div>
             ${driversHtml}
           </div>
         </div>

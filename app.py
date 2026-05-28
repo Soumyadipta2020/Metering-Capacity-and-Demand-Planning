@@ -384,7 +384,7 @@ def cancellations_heatmap():
 
 @app.route("/api/cancellations/predict")
 def cancellations_predict():
-    region = request.args.get("region", "NW")
+    region = request.args.get("region") or None
     try:
         _, _, _, _, predict, _ = _get_cancellation_engine()
         return jsonify(predict(region))
