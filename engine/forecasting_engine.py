@@ -282,11 +282,15 @@ def get_channel_kpis(region_code: str = None, year: int = 2025) -> dict:
     channel_breakdown = []
     for ch, d in by_channel.items():
         conv = safe_pct(d["bookings"], d["volume"])
+        successful_visits = max(d["bookings"] - d["cancellations"], 0)
         channel_breakdown.append({
             "channel":       ch,
             "volume":        int(d["volume"]),
             "bookings":      int(d["bookings"]),
+            "cancellations":  int(d["cancellations"]),
+            "successful_visits": int(successful_visits),
             "conversion_pct": conv,
+            "visit_success_pct": safe_pct(successful_visits, d["bookings"]),
             "abandon_pct":   safe_pct(d["abandoned"], d["volume"]),
         })
     channel_breakdown.sort(key=lambda x: -x["volume"])
@@ -295,8 +299,10 @@ def get_channel_kpis(region_code: str = None, year: int = 2025) -> dict:
         "total_volume":      total_volume,
         "total_bookings":    total_bookings,
         "total_cancellations": total_cancel,
+        "total_successful_visits": max(total_bookings - total_cancel, 0),
         "total_abandoned":   total_abandon,
         "conversion_rate":   safe_pct(total_bookings, total_volume),
+        "visit_success_rate": safe_pct(total_bookings - total_cancel, total_bookings),
         "abandon_rate":      safe_pct(total_abandon, total_volume),
         "channel_breakdown": channel_breakdown,
     }

@@ -222,11 +222,20 @@ function switchOpsTab(name, el) {
   _activeOpsTab = name;
   document.querySelectorAll('.ops-tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('#view-field-ops .tab-item').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#field-ops-subnav .nav-subitem').forEach(t => t.classList.remove('active'));
   const panel = document.getElementById('opstab-' + name);
   if (panel) panel.classList.add('active');
   if (el) el.classList.add('active');
+  if (typeof activateSidebarSubnav === 'function') activateSidebarSubnav('field-ops', name);
 
   requestAnimationFrame(loadActiveOpsTabData);
+}
+
+function switchOpsSidebarTab(name, el) {
+  if (_currentView !== 'field-ops') {
+    switchView('field-ops', document.querySelector('.nav-item[data-view="field-ops"]'));
+  }
+  switchOpsTab(name, el);
 }
 
 function loadActiveOpsTabData() {

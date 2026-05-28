@@ -9,14 +9,46 @@ const VIEW_CONFIG = {
 };
 
 let _currentView = 'journey';
+let _sidebarResizeObserver = null;
+
+function syncSidebarWidth() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  const width = Math.ceil(sidebar.getBoundingClientRect().width);
+  document.documentElement.style.setProperty('--nav-current-width', `${width}px`);
+}
+
+function initFluidSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  syncSidebarWidth();
+  if ('ResizeObserver' in window) {
+    _sidebarResizeObserver?.disconnect();
+    _sidebarResizeObserver = new ResizeObserver(syncSidebarWidth);
+    _sidebarResizeObserver.observe(sidebar);
+  }
+  window.addEventListener('resize', syncSidebarWidth);
+  document.fonts?.ready?.then(syncSidebarWidth);
+}
+
+function activateSidebarSubnav(viewName, tabName) {
+  document.querySelectorAll('.nav-subitem').forEach(n => n.classList.remove('active'));
+  if (!viewName || !tabName) return;
+  const item = document.querySelector(`.nav-subitem[data-parent="${viewName}"][data-subtab="${tabName}"]`);
+  if (item) item.classList.add('active');
+}
 
 function switchView(viewName, navEl) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.nav-item[data-view]').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.nav-subitem').forEach(n => n.classList.remove('active'));
 
   const view = document.getElementById('view-' + viewName);
   if (view) view.classList.add('active');
-  if (navEl) navEl.classList.add('active');
+  const mainNav = navEl?.dataset?.view === viewName
+    ? navEl
+    : document.querySelector(`.nav-item[data-view="${viewName}"]`);
+  if (mainNav) mainNav.classList.add('active');
 
   const config = VIEW_CONFIG[viewName];
   if (config) {
@@ -28,6 +60,8 @@ function switchView(viewName, navEl) {
 
   _currentView = viewName;
   if (config?.loader) config.loader();
+  if (viewName === 'forecasting') activateSidebarSubnav(viewName, typeof _activeForecastTab !== 'undefined' ? _activeForecastTab : 'overview');
+  if (viewName === 'field-ops') activateSidebarSubnav(viewName, typeof _activeOpsTab !== 'undefined' ? _activeOpsTab : 'capacity');
 }
 
 function onRegionChange() {
@@ -58,6 +92,8 @@ function exportCurrentView() {
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
   if (sidebar) sidebar.classList.toggle('collapsed');
+  requestAnimationFrame(syncSidebarWidth);
+  window.setTimeout(syncSidebarWidth, 280);
 }
 
 function openAiPanel() {
@@ -127,5 +163,6 @@ document.getElementById('ai-modal')?.addEventListener('click', function (e) {
 });
 
 document.addEventListener('DOMContentLoaded', function () {
+  initFluidSidebar();
   loadJourneyDashboard();
 });

@@ -42,6 +42,12 @@
           <span class="nav-icon">📞</span>
           <span class="nav-label">Demand Forecast</span>
         </div>
+        <div class="nav-submenu" id="forecasting-subnav">
+          <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="overview" onclick="switchForecastSidebarTab('overview', this)">Overview</button>
+          <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="forecast" onclick="switchForecastSidebarTab('forecast', this)">Demand Forecast</button>
+          <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="funnel" onclick="switchForecastSidebarTab('funnel', this)">Request Funnel</button>
+          <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="channels" onclick="switchForecastSidebarTab('channels', this)">Channel Demand</button>
+        </div>
       </div>
 
       <div class="nav-section">
@@ -53,6 +59,13 @@
         <div class="nav-item" data-view="field-ops" onclick="switchView('field-ops', this)">
           <span class="nav-icon">🔧</span>
           <span class="nav-label">Resource Planning</span>
+        </div>
+        <div class="nav-submenu" id="field-ops-subnav">
+          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="capacity" onclick="switchOpsSidebarTab('capacity', this)">Demand vs Capacity</button>
+          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="patch" onclick="switchOpsSidebarTab('patch', this)">Patch Resources</button>
+          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="engineers" onclick="switchOpsSidebarTab('engineers', this)">Engineer Performance</button>
+          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="forecast" onclick="switchOpsSidebarTab('forecast', this)">Capacity Gap Forecast</button>
+          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="optimise" onclick="switchOpsSidebarTab('optimise', this)">Resource Optimisation</button>
         </div>
       </div>
 
@@ -188,14 +201,6 @@
       ════════════════════════════════════════════════════════ -->
       <div class="view" id="view-forecasting">
 
-        <!-- Sub-tabs -->
-        <div class="tab-bar">
-          <div class="tab-item active" onclick="switchForecastTab('overview', this)">Overview</div>
-          <div class="tab-item" onclick="switchForecastTab('forecast', this)">Demand Forecast</div>
-          <div class="tab-item" onclick="switchForecastTab('funnel', this)">Request Funnel</div>
-          <div class="tab-item" onclick="switchForecastTab('channels', this)">Channel Demand</div>
-        </div>
-
         <!-- Forecast KPIs -->
         <div class="kpi-grid" id="forecast-kpis">
           <div class="kpi-card info"><div class="kpi-label">Request Contacts</div><div class="kpi-value" id="fc-kpi-volume">—</div><div class="kpi-icon">📞</div></div>
@@ -309,11 +314,11 @@
               <div class="channel-lab-topline">
                 <div>
                   <div class="channel-lab-title">Smart Meter Request Channel Signal Map</div>
-                  <div class="channel-lab-subtitle">Shows contact demand, booking conversion, abandonment and booking contribution by channel</div>
+                  <div class="channel-lab-subtitle">Shows customer touchpoints, bookings received, successful visit conversion and booking contribution by channel</div>
                 </div>
                 <div class="channel-lab-legend">
-                  <span><i class="legend-dot volume"></i>Bubble size = volume</span>
-                  <span><i class="legend-dot conversion"></i>Ring = conversion</span>
+                  <span><i class="legend-dot volume"></i>Bubble size = customer touchpoints</span>
+                  <span><i class="legend-dot conversion"></i>Ring = bookings to successful visits</span>
                   <span><i class="legend-dot abandon"></i>Marker = abandon</span>
                 </div>
               </div>
@@ -440,15 +445,6 @@
           <div class="kpi-card ok"><div class="kpi-label">Jobs Completed</div><div class="kpi-value" id="ops-kpi-jobs">—</div><div class="kpi-icon">✅</div></div>
           <div class="kpi-card"><div class="kpi-label">Productivity (jobs/day)</div><div class="kpi-value" id="ops-kpi-productivity">—</div><div class="kpi-icon">📊</div></div>
           <div class="kpi-card warn"><div class="kpi-label">Absence Rate</div><div class="kpi-value" id="ops-kpi-absence">—</div><div class="kpi-icon">🏥</div></div>
-        </div>
-
-        <!-- Sub-tabs -->
-        <div class="tab-bar">
-          <div class="tab-item active" onclick="switchOpsTab('capacity', this)">Demand vs Capacity</div>
-          <div class="tab-item" onclick="switchOpsTab('patch', this)">Patch Resources</div>
-          <div class="tab-item" onclick="switchOpsTab('engineers', this)">Engineer Performance</div>
-          <div class="tab-item" onclick="switchOpsTab('forecast', this)">Capacity Gap Forecast</div>
-          <div class="tab-item" onclick="switchOpsTab('optimise', this)">Resource Optimisation</div>
         </div>
 
         <!-- Capacity Matrix -->

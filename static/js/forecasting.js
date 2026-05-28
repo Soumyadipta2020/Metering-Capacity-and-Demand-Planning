@@ -336,10 +336,19 @@ function switchForecastTab(name, el) {
   _activeForecastTab = name;
   document.querySelectorAll('.forecast-tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('#view-forecasting .tab-item').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#forecasting-subnav .nav-subitem').forEach(t => t.classList.remove('active'));
   const panel = document.getElementById('ftab-' + name);
   if (panel) panel.classList.add('active');
   if (el) el.classList.add('active');
+  if (typeof activateSidebarSubnav === 'function') activateSidebarSubnav('forecasting', name);
   requestAnimationFrame(loadActiveForecastTabData);
+}
+
+function switchForecastSidebarTab(name, el) {
+  if (_currentView !== 'forecasting') {
+    switchView('forecasting', document.querySelector('.nav-item[data-view="forecasting"]'));
+  }
+  switchForecastTab(name, el);
 }
 
 function loadActiveForecastTabData() {
@@ -370,9 +379,12 @@ async function loadChannelComparison() {
   const maxBookings = Math.max(...sorted.map(c => c.bookings), 1);
   const totalVolume = sorted.reduce((sum, c) => sum + c.volume, 0);
   const totalBookings = sorted.reduce((sum, c) => sum + c.bookings, 0);
+  const totalSuccessfulVisits = sorted.reduce((sum, c) => sum + (c.successful_visits ?? Math.max((c.bookings || 0) - (c.cancellations || 0), 0)), 0);
   const totalAbandoned = sorted.reduce((sum, c) => sum + c.abandon_pct * c.volume / 100, 0);
-  const blendedConversion = totalVolume ? (totalBookings / totalVolume) * 100 : 0;
+  const blendedVisitSuccess = totalBookings ? (totalSuccessfulVisits / totalBookings) * 100 : 0;
   const blendedAbandon = totalVolume ? (totalAbandoned / totalVolume) * 100 : 0;
+  const successfulVisitsFor = (c) => c.successful_visits ?? Math.max((c.bookings || 0) - (c.cancellations || 0), 0);
+  const visitSuccessFor = (c) => Math.max(0, Math.min(100, c.visit_success_pct ?? (c.bookings ? (successfulVisitsFor(c) / c.bookings) * 100 : 0)));
 
   const positions = [
     { x: 18, y: 46 },
@@ -415,37 +427,41 @@ async function loadChannelComparison() {
   const nodes = sorted.map((c, idx) => {
     const pos = positions[idx % positions.length];
     const size = Math.round(84 + (c.volume / maxVolume) * 76);
-    const conversion = Math.max(0, Math.min(100, c.conversion_pct || 0));
+    const successfulVisits = successfulVisitsFor(c);
+    const visitSuccess = visitSuccessFor(c);
     const abandon = Math.max(0, Math.min(100, c.abandon_pct || 0));
     const share = totalVolume ? (c.volume / totalVolume) * 100 : 0;
+    const bookingShare = totalBookings ? (c.bookings / totalBookings) * 100 : 0;
     const colour = accent[idx % accent.length];
     const safeName = escapeHtml(c.channel);
 
     return `
       <button
         class="channel-orb"
-        style="--x:${pos.x}%; --y:${pos.y}%; --size:${size}px; --channel-color:${colour}; --conversion:${conversion * 3.6}deg; --abandon:${Math.max(10, abandon * 3.6)}deg;"
-        title="${safeName}: ${IMSERV.fmt.num(c.volume)} interactions, ${IMSERV.fmt.pct(conversion)} conversion"
+        style="--x:${pos.x}%; --y:${pos.y}%; --size:${size}px; --channel-color:${colour}; --conversion:${visitSuccess * 3.6}deg; --abandon:${Math.max(10, abandon * 3.6)}deg;"
+        title="${safeName}: ${IMSERV.fmt.num(c.volume)} customer touchpoints, ${IMSERV.fmt.num(c.bookings)} bookings, ${IMSERV.fmt.pct(visitSuccess)} to successful visits"
         aria-label="${safeName} channel signal"
       >
         <span class="channel-orb-ring"></span>
         <span class="channel-orb-core">
           <span class="channel-orb-code">${channelCode(c.channel)}</span>
           <span class="channel-orb-name">${safeName}</span>
-          <span class="channel-orb-volume">${IMSERV.fmt.num(c.volume)}</span>
+          <span class="channel-orb-volume">${IMSERV.fmt.num(c.bookings)}</span>
+          <span class="channel-orb-success">${IMSERV.fmt.pct(visitSuccess)}</span>
         </span>
         <span class="channel-orb-marker" title="${IMSERV.fmt.pct(abandon)} abandoned"></span>
         <span class="channel-orb-metrics">
-          <strong>${IMSERV.fmt.pct(conversion)}</strong>
-          <em>${IMSERV.fmt.num(c.bookings)} bookings</em>
-          <small>${share.toFixed(1)}% of volume</small>
+          <strong>${IMSERV.fmt.num(successfulVisits)}</strong>
+          <em>successful visits</em>
+          <small>${bookingShare.toFixed(1)}% of bookings</small>
+          <small>${share.toFixed(1)}% of touchpoints</small>
         </span>
       </button>
     `;
   }).join('');
 
   const insight = sorted[0];
-  const bestConversion = [...sorted].sort((a, b) => b.conversion_pct - a.conversion_pct)[0];
+  const bestConversion = [...sorted].sort((a, b) => visitSuccessFor(b) - visitSuccessFor(a))[0];
   const mostAbandoned = [...sorted].sort((a, b) => b.abandon_pct - a.abandon_pct)[0];
 
   container.innerHTML = `
@@ -458,7 +474,7 @@ async function loadChannelComparison() {
         <div class="booking-core-ring"></div>
         <div class="booking-core-label">Bookings Core</div>
         <div class="booking-core-value">${IMSERV.fmt.num(totalBookings)}</div>
-        <div class="booking-core-sub">${IMSERV.fmt.pct(blendedConversion)} conversion</div>
+        <div class="booking-core-sub">${IMSERV.fmt.pct(blendedVisitSuccess)} to visits</div>
       </div>
 
       ${nodes}
@@ -473,7 +489,7 @@ async function loadChannelComparison() {
       <div class="channel-story-pill efficient">
         <span>Most efficient</span>
         <strong>${escapeHtml(bestConversion.channel)}</strong>
-        <em>${IMSERV.fmt.pct(bestConversion.conversion_pct)} conversion</em>
+        <em>${IMSERV.fmt.pct(visitSuccessFor(bestConversion))} to successful visits</em>
       </div>
       <div class="channel-story-pill friction">
         <span>Highest friction</span>
