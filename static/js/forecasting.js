@@ -1,7 +1,7 @@
 /* IMSERV — Module 2: Contact Centre Forecasting */
 
 let _forecastChart = null;
-let _activeForecastTab = 'overview';
+let _activeForecastTab = 'forecast';
 
 async function loadForecastingDashboard() {
   const region = IMSERV.getRegion();
@@ -260,9 +260,5 @@ function switchForecastSidebarTab(name, el) {
 }
 
 function loadActiveForecastTabData() {
-  if (_activeForecastTab === 'forecast') {
-    loadForecast();
-  } else if (_activeForecastTab === 'funnel') {
-    loadConversionTrend();
-  }
+  loadForecast();
 }

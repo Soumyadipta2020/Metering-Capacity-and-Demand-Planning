@@ -46,11 +46,6 @@
           <span class="nav-icon">📞</span>
           <span class="nav-label">Demand Forecast</span>
         </div>
-        <div class="nav-submenu" id="forecasting-subnav">
-          <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="overview" onclick="switchForecastSidebarTab('overview', this)">Overview</button>
-          <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="forecast" onclick="switchForecastSidebarTab('forecast', this)">Demand Forecast</button>
-          <button class="nav-subitem" type="button" data-parent="forecasting" data-subtab="funnel" onclick="switchForecastSidebarTab('funnel', this)">Request Funnel</button>
-        </div>
       </div>
 
       <div class="nav-section">
@@ -237,7 +232,7 @@
         <div class="forecast-tabs-content">
 
           <!-- Overview Tab -->
-          <div class="forecast-tab-panel active" id="ftab-overview">
+          <div class="forecast-tab-panel" id="ftab-overview">
             <div class="grid-2">
               <div class="card">
                 <div class="card-header">
@@ -268,7 +263,7 @@
           </div>
 
           <!-- Forecast Models Tab -->
-          <div class="forecast-tab-panel" id="ftab-forecast">
+          <div class="forecast-tab-panel active" id="ftab-forecast">
             <div class="card mb-16">
               <div class="card-header">
                 <div>
@@ -390,16 +385,31 @@
 
 
 
-        <!-- Rebooking Analytics -->
-        <div class="card">
-          <div class="card-header"><div class="card-title">🔄 Rebooking Recovery by Region</div></div>
-          <div class="card-body">
-            <table class="data-table">
-              <thead><tr><th>Region</th><th>Rebook Rate</th><th>Avg Lag (days)</th><th>Success Rate</th></tr></thead>
-              <tbody id="rebook-table-body">
-                <tr><td colspan="4"><div class="loading"><span class="spinner"></span></div></td></tr>
-              </tbody>
-            </table>
+        <!-- Rebooking Recovery — Recovery Constellation -->
+        <div class="recovery-constellation-card">
+          <div class="recovery-constellation-header">
+            <div>
+              <div class="recovery-constellation-title">🔄 Rebooking Recovery by Region</div>
+              <div class="recovery-constellation-subtitle">How effectively each region recovers cancelled smart meter visits through rebooking</div>
+            </div>
+            <div class="recovery-legend">
+              <span><i class="rleg-dot rebook"></i>Rebook rate</span>
+              <span><i class="rleg-dot success"></i>Success rate</span>
+              <span><i class="rleg-dot lag"></i>Avg lag (days)</span>
+            </div>
+          </div>
+          <div class="recovery-constellation-stage" id="recovery-constellation-stage">
+            <div class="loading"><span class="spinner"></span> Loading recovery data...</div>
+          </div>
+          <div class="recovery-detail-strip" id="recovery-detail-strip" style="display:none">
+            <div class="recovery-detail-region" id="rd-region">—</div>
+            <div class="recovery-detail-metrics">
+              <div><span>Rebook Rate</span><strong id="rd-rebook">—</strong></div>
+              <div><span>Avg Lag</span><strong id="rd-lag">—</strong></div>
+              <div><span>Success Rate</span><strong id="rd-success">—</strong></div>
+              <div><span>Recovery Score</span><strong id="rd-score">—</strong></div>
+            </div>
+            <div class="recovery-detail-insight" id="rd-insight">—</div>
           </div>
         </div>
 

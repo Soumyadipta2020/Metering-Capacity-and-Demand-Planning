@@ -270,15 +270,383 @@ async function loadCancellationRisk() {
   `;
 }
 
+/* ── Recovery Constellation ───────────────────────────────── */
+
+// Singleton tooltip element shared across all constellation nodes
+let _rcTooltip = null;
+function getRcTooltip() {
+  if (!_rcTooltip) {
+    _rcTooltip = document.createElement('div');
+    _rcTooltip.className = 'rc-tooltip';
+    _rcTooltip.style.display = 'none';
+    document.body.appendChild(_rcTooltip);
+  }
+  return _rcTooltip;
+}
+
+function showRcTooltip(node, svgEl, evt) {
+  const tip = getRcTooltip();
+  const sc  = node.score;
+  const scColor = sc >= 70 ? '#10B981' : sc >= 50 ? '#F59E0B' : '#EF4444';
+  const notRebooked = node.not_rebooked ?? (node.total_cancellations - node.rebooked_count);
+  const failedRebooks = node.failed_rebooks ?? (node.rebooked_count - node.completed_rebooks);
+
+  tip.innerHTML = `
+    <div class="rct-header">
+      <span class="rct-region">${cancelEscape(node.region_code)}</span>
+      <span class="rct-score" style="color:${scColor}">${sc}<small>/100</small></span>
+    </div>
+    <div class="rct-divider"></div>
+    <div class="rct-row">
+      <span class="rct-dot cancel"></span>
+      <span class="rct-label">Total Cancellations</span>
+      <strong class="rct-val">${(node.total_cancellations || 0).toLocaleString()}</strong>
+    </div>
+    <div class="rct-row">
+      <span class="rct-dot rebook"></span>
+      <span class="rct-label">Rebooked</span>
+      <strong class="rct-val">${(node.rebooked_count || 0).toLocaleString()} <em>of ${(node.total_cancellations || 0).toLocaleString()}</em></strong>
+    </div>
+    <div class="rct-row">
+      <span class="rct-dot success"></span>
+      <span class="rct-label">Completed Rebooks</span>
+      <strong class="rct-val">${(node.completed_rebooks || 0).toLocaleString()} <em>of ${(node.rebooked_count || 0).toLocaleString()}</em></strong>
+    </div>
+    <div class="rct-row">
+      <span class="rct-dot fail"></span>
+      <span class="rct-label">Failed Rebooks</span>
+      <strong class="rct-val">${failedRebooks.toLocaleString()}</strong>
+    </div>
+    <div class="rct-row">
+      <span class="rct-dot lost"></span>
+      <span class="rct-label">Not Rebooked</span>
+      <strong class="rct-val">${notRebooked.toLocaleString()}</strong>
+    </div>
+    <div class="rct-divider"></div>
+    <div class="rct-row">
+      <span class="rct-dot lag"></span>
+      <span class="rct-label">Avg Rebook Lag</span>
+      <strong class="rct-val">${node.avg_rebook_lag_days} days</strong>
+    </div>
+    <div class="rct-row">
+      <span class="rct-dot fast"></span>
+      <span class="rct-label">Fast Rebooks (&lt;½ lag)</span>
+      <strong class="rct-val">${node.fast_rebook_pct ?? '—'}%</strong>
+    </div>
+    <div class="rct-bar-wrap">
+      <div class="rct-bar-track">
+        <div class="rct-bar-fill rebook"  style="width:${node.rebook_rate_pct}%" title="Rebook rate"></div>
+      </div>
+      <div class="rct-bar-track">
+        <div class="rct-bar-fill success" style="width:${node.rebook_success_pct}%" title="Success rate"></div>
+      </div>
+    </div>
+    <div class="rct-bar-labels">
+      <span>Rebook ${node.rebook_rate_pct}%</span>
+      <span>Success ${node.rebook_success_pct}%</span>
+    </div>
+  `;
+  tip.style.display = 'block';
+  positionRcTooltip(tip, evt);
+}
+
+function positionRcTooltip(tip, evt) {
+  const margin = 14;
+  const vpW = window.innerWidth, vpH = window.innerHeight;
+  const tw = tip.offsetWidth || 240, th = tip.offsetHeight || 300;
+  let x = evt.clientX + margin;
+  let y = evt.clientY - th / 2;
+  if (x + tw > vpW - 8) x = evt.clientX - tw - margin;
+  if (y < 8) y = 8;
+  if (y + th > vpH - 8) y = vpH - th - 8;
+  tip.style.left = x + 'px';
+  tip.style.top  = y + 'px';
+}
+
+function hideRcTooltip() {
+  const tip = getRcTooltip();
+  tip.style.display = 'none';
+}
+
 function renderRebooking(data) {
-  const tbody = document.getElementById('rebook-table-body');
-  if (!tbody) return;
-  tbody.innerHTML = (data.rebook_data || []).map(r => `
-    <tr>
-      <td><strong>${cancelEscape(r.region_code)}</strong></td>
-      <td>${IMSERV.fmt.pct(r.rebook_rate_pct)}</td>
-      <td>${r.avg_rebook_lag_days} days</td>
-      <td><span class="${r.rebook_success_pct > 60 ? 'text-ok' : 'text-warn'}">${IMSERV.fmt.pct(r.rebook_success_pct)}</span></td>
-    </tr>
+  const stage = document.getElementById('recovery-constellation-stage');
+  if (!stage) return;
+
+  const rows = data.rebook_data || [];
+  if (!rows.length) {
+    stage.innerHTML = '<div class="empty-state"><div class="empty-title">No rebooking data available</div></div>';
+    return;
+  }
+
+  // Composite recovery score: rebook rate × 0.45 + success × 0.40 + lag speed bonus × 0.15
+  const scored = rows.map(r => {
+    const lagPenalty = Math.max(0, 1 - (r.avg_rebook_lag_days - 8) / 20);
+    const score = Math.round(r.rebook_rate_pct * 0.45 + r.rebook_success_pct * 0.40 + lagPenalty * 15);
+    return { ...r, score };
+  });
+
+  const boardMaxLag = Math.max(...scored.map(r => r.avg_rebook_lag_days), 1);
+  const boardCount = scored.length;
+  const boardScore = Math.round(scored.reduce((s, r) => s + r.score, 0) / boardCount);
+  const boardRebook = data.overall_rebook_rate || 0;
+  const boardLag = data.avg_rebook_lag_days || 0;
+  const boardScoreColor = boardScore >= 70 ? '#10B981' : boardScore >= 50 ? '#F59E0B' : '#EF4444';
+  const rankedBoard = [...scored].sort((a, b) => b.score - a.score);
+  const insightFor = r => {
+    if (r.score >= 70) return `Strong recovery pipeline. ${cancelEscape(r.region_code)} converts cancellations efficiently - ${r.completed_rebooks ?? '-'} rebooks completed.`;
+    if (r.score >= 50) return `Moderate recovery. ${cancelEscape(r.region_code)} rebooked ${r.rebooked_count ?? '-'} of ${r.total_cancellations ?? '-'} cancellations but success rate needs improvement.`;
+    return `Recovery at risk. Only ${r.rebooked_count ?? '-'} of ${r.total_cancellations ?? '-'} cancellations were rebooked - targeted outreach recommended.`;
+  };
+
+  const regionTiles = rankedBoard.map((r, i) => {
+    const tone = r.score >= 70 ? 'strong' : r.score >= 50 ? 'steady' : 'risk';
+    const regionScoreColor = r.score >= 70 ? '#10B981' : r.score >= 50 ? '#F59E0B' : '#EF4444';
+    const lagPct = Math.max(6, Math.min(100, r.avg_rebook_lag_days / boardMaxLag * 100));
+    return `
+      <button type="button" class="rc-region-card ${tone}" data-idx="${i}"
+              style="--score-color:${regionScoreColor}; --rebook:${r.rebook_rate_pct}%; --success:${r.rebook_success_pct}%; --lag:${lagPct}%;">
+        <span class="rc-card-rank">#${i + 1}</span>
+        <span class="rc-card-score">${r.score}</span>
+        <span class="rc-card-region">${cancelEscape(r.region_code)}</span>
+        <span class="rc-card-status">${tone === 'strong' ? 'Strong' : tone === 'steady' ? 'Recovering' : 'At risk'}</span>
+        <span class="rc-card-count"><b>${IMSERV.fmt.num(r.rebooked_count)}</b> / ${IMSERV.fmt.num(r.total_cancellations)}</span>
+        <span class="rc-card-lag">${r.avg_rebook_lag_days}d lag</span>
+        <span class="rc-card-bar rebook"><i></i><em>Rebook ${r.rebook_rate_pct}%</em></span>
+        <span class="rc-card-bar success"><i></i><em>Success ${r.rebook_success_pct}%</em></span>
+        <span class="rc-card-meta">${IMSERV.fmt.num(r.completed_rebooks)} completed</span>
+      </button>
+    `;
+  }).join('');
+
+  stage.innerHTML = `
+    <div class="rc-board-shell">
+      <div class="rc-overview-card" style="--score-color:${boardScoreColor}; --rebook:${boardRebook}%; --lag:${Math.max(6, Math.min(100, boardLag / boardMaxLag * 100))}%;">
+        <div class="rc-overview-ring">
+          <strong>${boardScore}</strong>
+          <span>Score</span>
+        </div>
+        <div class="rc-overview-copy">
+          <span>Network recovery pulse</span>
+          <strong>${boardRebook}% avg rebook rate</strong>
+          <em>${boardLag.toFixed(1)}d average lag across ${boardCount} regions</em>
+        </div>
+        <div class="rc-overview-bars">
+          <div><span>Rebook rate</span><i class="rebook"></i><b>${boardRebook}%</b></div>
+          <div><span>Lag pressure</span><i class="lag"></i><b>${boardLag.toFixed(1)}d</b></div>
+        </div>
+        <div class="rc-overview-stats">
+          <div><span>Regions</span><strong>${boardCount}</strong></div>
+          <div><span>Avg Rebook Rate</span><strong>${boardRebook}%</strong></div>
+          <div><span>Avg Lag</span><strong>${boardLag.toFixed(1)}d</strong></div>
+        </div>
+        <div class="rc-overview-ranking">
+          ${rankedBoard.slice(0, 3).map((r, i) => `
+            <div>
+              <span>#${i + 1}</span>
+              <strong>${cancelEscape(r.region_code)}</strong>
+              <em style="color:${r.score>=70?'#10B981':r.score>=50?'#F59E0B':'#EF4444'}">${r.score}</em>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div class="rc-region-board">
+        ${regionTiles}
+      </div>
+    </div>
+  `;
+
+  stage.querySelectorAll('.rc-region-card').forEach(el => {
+    el.addEventListener('mouseenter', evt => {
+      const r = rankedBoard[+el.dataset.idx];
+      if (r) showRcTooltip(r, null, evt);
+    });
+    el.addEventListener('mousemove', evt => positionRcTooltip(getRcTooltip(), evt));
+    el.addEventListener('mouseleave', hideRcTooltip);
+    el.addEventListener('click', () => {
+      const r = rankedBoard[+el.dataset.idx];
+      if (!r) return;
+      const scColor = r.score >= 70 ? '#10B981' : r.score >= 50 ? '#F59E0B' : '#EF4444';
+      const set = (id, v) => { const item = document.getElementById(id); if (item) item.textContent = v; };
+      set('rd-region', r.region_code);
+      set('rd-rebook', `${r.rebooked_count ?? '-'} / ${r.total_cancellations ?? '-'} (${r.rebook_rate_pct}%)`);
+      set('rd-lag', `${r.avg_rebook_lag_days} days`);
+      set('rd-success', `${r.completed_rebooks ?? '-'} completed (${r.rebook_success_pct}%)`);
+      set('rd-score', r.score);
+      const scoreEl = document.getElementById('rd-score');
+      if (scoreEl) scoreEl.style.color = scColor;
+      set('rd-insight', insightFor(r));
+
+      const strip = document.getElementById('recovery-detail-strip');
+      if (strip) { strip.style.display = ''; strip.classList.add('rc-strip-flash'); }
+      setTimeout(() => strip?.classList.remove('rc-strip-flash'), 600);
+
+      stage.querySelectorAll('.rc-region-card').forEach(card => card.classList.remove('rc-node-active'));
+      el.classList.add('rc-node-active');
+    });
+  });
+  return;
+
+  const maxLag = Math.max(...scored.map(r => r.avg_rebook_lag_days), 1);
+  const n = scored.length;
+  // Wide orbit tuned to the landscape card so the graph uses the available viewport.
+  const cx = 125, cy = 38, Rx = 100, Ry = 23;
+  const angle = i => (i / n) * 2 * Math.PI - Math.PI / 2;
+
+  const nodes = scored.map((r, i) => {
+    const a = angle(i);
+    // Variable distance from centre based on recovery score (higher score = further out)
+    const d = 0.84 + (r.score / 100) * 0.32;
+    return { ...r, x: cx + Rx * d * Math.cos(a), y: cy + Ry * d * Math.sin(a), a };
+  });
+
+  function arcPath(cx, cy, r, startAngle, endAngle) {
+    const s = { x: cx + r * Math.cos(startAngle), y: cy + r * Math.sin(startAngle) };
+    const e = { x: cx + r * Math.cos(endAngle),   y: cy + r * Math.sin(endAngle)   };
+    const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
+    return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
+  }
+
+  const overallScore  = Math.round(scored.reduce((s, r) => s + r.score, 0) / n);
+  const overallRebook = data.overall_rebook_rate || 0;
+  const overallLag    = data.avg_rebook_lag_days || 0;
+  const scoreColor    = overallScore >= 70 ? '#10B981' : overallScore >= 50 ? '#F59E0B' : '#EF4444';
+  const arcStart      = -Math.PI / 2;
+
+  const nodesSvg = nodes.map((nd, i) => {
+    const delay       = i * 80;
+    const rebookFrac  = nd.rebook_rate_pct / 100;
+    const successFrac = nd.rebook_success_pct / 100;
+    const lagFrac     = 1 - (nd.avg_rebook_lag_days / maxLag);
+    const nColor      = nd.score >= 70 ? '#10B981' : nd.score >= 50 ? '#F59E0B' : '#EF4444';
+    const glowId      = `glow-${i}`;
+    const r1 = 5.0, r2 = 4.0, r3 = 3.0;
+
+    const rebookArc  = arcPath(nd.x, nd.y, r1, arcStart, arcStart + rebookFrac  * 2 * Math.PI);
+    const successArc = arcPath(nd.x, nd.y, r2, arcStart, arcStart + successFrac * 2 * Math.PI);
+    const lagArc     = arcPath(nd.x, nd.y, r3, arcStart, arcStart + lagFrac     * 2 * Math.PI);
+
+    // Use actual direction from center to node for accurate spokes
+    const dLen = Math.hypot(nd.x - cx, nd.y - cy) || 1;
+    const dX = (nd.x - cx) / dLen, dY = (nd.y - cy) / dLen;
+    const spokeX1 = cx + 4.5 * dX, spokeY1 = cy + 4.5 * dY;
+    const spokeX2 = nd.x - 6 * dX,  spokeY2 = nd.y - 6 * dY;
+
+    return `
+      <defs>
+        <filter id="${glowId}" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="1.4" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <line class="rc-spoke" x1="${spokeX1.toFixed(2)}" y1="${spokeY1.toFixed(2)}"
+            x2="${spokeX2.toFixed(2)}" y2="${spokeY2.toFixed(2)}" style="animation-delay:${delay}ms" />
+      <circle cx="${nd.x.toFixed(2)}" cy="${nd.y.toFixed(2)}" r="${r1}" class="rc-track" />
+      <circle cx="${nd.x.toFixed(2)}" cy="${nd.y.toFixed(2)}" r="${r2}" class="rc-track" />
+      <circle cx="${nd.x.toFixed(2)}" cy="${nd.y.toFixed(2)}" r="${r3}" class="rc-track" />
+      <path d="${rebookArc}"  class="rc-arc rebook"  style="animation-delay:${delay+120}ms" />
+      <path d="${successArc}" class="rc-arc success" style="animation-delay:${delay+180}ms" />
+      <path d="${lagArc}"     class="rc-arc lag"     style="animation-delay:${delay+240}ms" />
+      <circle class="rc-node-dot" cx="${nd.x.toFixed(2)}" cy="${nd.y.toFixed(2)}" r="2.4"
+              fill="${nColor}" filter="url(#${glowId})"
+              style="animation-delay:${delay}ms" data-idx="${i}" />
+      <text class="rc-label" x="${nd.x.toFixed(2)}" y="${(nd.y + (nd.y > cy ? 8 : -8)).toFixed(2)}"
+            text-anchor="middle" style="animation-delay:${delay}ms">${cancelEscape(nd.region_code)}</text>
+      <text class="rc-score-label" x="${nd.x.toFixed(2)}" y="${(nd.y + (nd.y > cy ? 10.6 : -10.6)).toFixed(2)}"
+            text-anchor="middle" fill="${nColor}" style="animation-delay:${delay}ms">${nd.score}</text>
+      <text class="rc-mini-rebook" x="${nd.x.toFixed(2)}" y="${(nd.y + (nd.y > cy ? 13 : -13)).toFixed(2)}"
+            text-anchor="middle" style="animation-delay:${delay + 60}ms">${nd.rebooked_count ?? '—'}/${nd.total_cancellations ?? '—'}</text>
+      <text class="rc-mini-lag" x="${nd.x.toFixed(2)}" y="${(nd.y + (nd.y > cy ? 15.2 : -15.2)).toFixed(2)}"
+            text-anchor="middle" style="animation-delay:${delay + 80}ms">${nd.avg_rebook_lag_days}d lag</text>
+    `;
+  }).join('');
+
+  const hitTargets = nodes.map((nd, i) => `
+    <circle class="rc-hit" cx="${nd.x.toFixed(2)}" cy="${(nd.y + (nd.y > cy ? 8 : -8)).toFixed(2)}" r="11" data-idx="${i}" />
   `).join('');
+
+  const coreSvg = `
+    <circle class="rc-core-glow" cx="${cx}" cy="${cy}" r="10" />
+    <circle class="rc-core"      cx="${cx}" cy="${cy}" r="7.5"  />
+    <text class="rc-core-pct" x="${cx}" y="${(cy - 1).toFixed(2)}" text-anchor="middle">${overallScore}</text>
+    <text class="rc-core-sub"  x="${cx}" y="${(cy + 3).toFixed(2)}" text-anchor="middle">SCORE</text>
+  `;
+
+  // Keep a sorted copy for ranking — sort scored BEFORE building HTML
+  const ranked = [...scored].sort((a, b) => b.score - a.score);
+
+  stage.innerHTML = `
+    <svg class="rc-svg" viewBox="-8 -2 266 82" preserveAspectRatio="xMidYMid meet" aria-label="Recovery Constellation">
+      <ellipse class="rc-orbit rc-orbit-outer" cx="${cx}" cy="${cy}" rx="${Rx}" ry="${Ry}" />
+      <ellipse class="rc-orbit rc-orbit-mid"   cx="${cx}" cy="${cy}" rx="${(Rx * 0.55).toFixed(1)}" ry="${(Ry * 0.55).toFixed(1)}" />
+      ${nodesSvg}
+      ${hitTargets}
+      ${coreSvg}
+    </svg>
+    <div class="rc-summary-panel">
+      <div class="rc-summary-score" style="--score-color:${scoreColor}">${overallScore}<span>/ 100</span></div>
+      <div class="rc-summary-label">Network Recovery Score</div>
+      <div class="rc-summary-stats">
+        <div><span>Avg Rebook Rate</span><strong>${overallRebook}%</strong></div>
+        <div><span>Avg Lag</span><strong>${overallLag.toFixed(1)}d</strong></div>
+        <div><span>Regions</span><strong>${n}</strong></div>
+      </div>
+      <div class="rc-summary-ranking">
+        ${ranked.slice(0, 3).map((r, i) => `
+          <div class="rc-rank-row">
+            <span class="rc-rank-badge">#${i + 1}</span>
+            <span class="rc-rank-region">${cancelEscape(r.region_code)}</span>
+            <span class="rc-rank-score" style="color:${r.score>=70?'#10B981':r.score>=50?'#F59E0B':'#EF4444'}">${r.score}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div class="rc-hint">Hover to inspect · Click to pin</div>
+    </div>
+  `;
+
+  // ── Events: hover = tooltip, click = pin detail strip ────────
+  const svgEl = stage.querySelector('.rc-svg');
+
+  stage.querySelectorAll('.rc-hit').forEach(el => {
+    el.addEventListener('mouseenter', evt => {
+      const nd = nodes[+el.dataset.idx];
+      if (nd) showRcTooltip(nd, svgEl, evt);
+      // pulse the matching dot
+      stage.querySelectorAll(`.rc-node-dot[data-idx="${el.dataset.idx}"]`).forEach(d => d.classList.add('rc-node-hover'));
+    });
+    el.addEventListener('mousemove', evt => positionRcTooltip(getRcTooltip(), evt));
+    el.addEventListener('mouseleave', () => {
+      hideRcTooltip();
+      stage.querySelectorAll('.rc-node-dot').forEach(d => d.classList.remove('rc-node-hover'));
+    });
+    el.addEventListener('click', () => {
+      const idx = +el.dataset.idx;
+      const r   = nodes[idx];
+      if (!r) return;
+      const sc      = r.score;
+      const scColor = sc >= 70 ? '#10B981' : sc >= 50 ? '#F59E0B' : '#EF4444';
+      const insight = sc >= 70
+        ? `Strong recovery pipeline. ${cancelEscape(r.region_code)} converts cancellations efficiently — ${r.completed_rebooks ?? '—'} rebooks completed.`
+        : sc >= 50
+        ? `Moderate recovery. ${cancelEscape(r.region_code)} rebooked ${r.rebooked_count ?? '—'} of ${r.total_cancellations ?? '—'} cancellations but success rate needs improvement.`
+        : `Recovery at risk. Only ${r.rebooked_count ?? '—'} of ${r.total_cancellations ?? '—'} cancellations were rebooked — targeted outreach recommended.`;
+
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('rd-region',  r.region_code);
+      set('rd-rebook',  `${r.rebooked_count ?? '—'} / ${r.total_cancellations ?? '—'} (${r.rebook_rate_pct}%)`);
+      set('rd-lag',     `${r.avg_rebook_lag_days} days`);
+      set('rd-success', `${r.completed_rebooks ?? '—'} completed (${r.rebook_success_pct}%)`);
+      set('rd-score',   sc);
+      const scoreEl = document.getElementById('rd-score');
+      if (scoreEl) scoreEl.style.color = scColor;
+      set('rd-insight', insight);
+
+      const strip = document.getElementById('recovery-detail-strip');
+      if (strip) { strip.style.display = ''; strip.classList.add('rc-strip-flash'); }
+      setTimeout(() => strip?.classList.remove('rc-strip-flash'), 600);
+
+      stage.querySelectorAll('.rc-node-dot').forEach(d => d.classList.remove('rc-node-active'));
+      stage.querySelectorAll('.rc-hit').forEach(d => d.classList.remove('rc-node-active'));
+      stage.querySelectorAll(`[data-idx="${idx}"]`).forEach(d => d.classList.add('rc-node-active'));
+    });
+  });
 }

@@ -60,7 +60,6 @@ function switchView(viewName, navEl) {
 
   _currentView = viewName;
   if (config?.loader) config.loader();
-  if (viewName === 'forecasting') activateSidebarSubnav(viewName, typeof _activeForecastTab !== 'undefined' ? _activeForecastTab : 'overview');
   if (viewName === 'field-ops') activateSidebarSubnav(viewName, typeof _activeOpsTab !== 'undefined' ? _activeOpsTab : 'capacity');
 }
 
