@@ -11,6 +11,7 @@ Modules:
 """
 import os
 import json
+from collections import Counter
 from pathlib import Path
 from datetime import date, datetime
 
@@ -98,8 +99,8 @@ def _disabled_ai_payload(max_results: int = 20) -> dict:
     }
 
 def _get_ingestion():
-    from engine.ingestion import get_booking_journey, data_health, to_int, to_float, safe_pct
-    return get_booking_journey, data_health, to_int, to_float, safe_pct
+    from engine.ingestion import get_booking_journey, data_health, to_int, to_float, safe_pct, iter_jobs
+    return get_booking_journey, data_health, to_int, to_float, safe_pct, iter_jobs
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ def journey_kpis():
     region = request.args.get("region")
     year   = _request_year()
     try:
-        get_journey, _, to_int_fn, to_float_fn, safe_pct_fn = _get_ingestion()
+        get_journey, _, to_int_fn, to_float_fn, safe_pct_fn, iter_jobs_fn = _get_ingestion()
         rows = get_journey()
         if region:
             rows = [r for r in rows if r["region_code"] == region]
@@ -133,19 +134,59 @@ def journey_kpis():
         total_cancellations = sum(to_int_fn(r["total_cancellations"])  for r in rows)
         total_aborts        = sum(to_int_fn(r["total_aborts"])         for r in rows)
         total_completions   = sum(to_int_fn(r["total_completions"])    for r in rows)
+        total_visits        = max(total_bookings - total_cancellations, 0)
+        total_after_aborts  = max(total_visits - total_aborts, 0)
+        total_not_completed = max(total_after_aborts - total_completions, 0)
         avg_contacts        = round(total_contacts / max(total_requests, 1), 2)
         completion_rate     = safe_pct_fn(total_completions, total_requests)
+        reason_labels = {
+            "EXCHANGE": "Exchange still booked",
+            "NEW_INSTALL": "Install still booked",
+            "REPAIR": "Repair follow-up booked",
+            "REMOVAL": "Removal still booked",
+        }
+        not_completed_reasons = Counter()
+        for job in iter_jobs_fn():
+            if region and job.get("region_code") != region:
+                continue
+            if job.get("requested_date", "")[:4] != str(year) or job.get("is_forecast", "0") != "0":
+                continue
+            if job.get("status") == "Booked":
+                not_completed_reasons[job.get("job_type") or "Other"] += 1
+
+        reason_breakdown = [
+            {
+                "reason": reason_labels.get(reason, reason.replace("_", " ").title()),
+                "count": count,
+                "pct": safe_pct_fn(count, total_not_completed),
+            }
+            for reason, count in not_completed_reasons.most_common()
+        ]
+        reason_total = sum(item["count"] for item in reason_breakdown)
+        if total_not_completed > reason_total:
+            reason_breakdown.append({
+                "reason": "Other still booked",
+                "count": total_not_completed - reason_total,
+                "pct": safe_pct_fn(total_not_completed - reason_total, total_not_completed),
+            })
 
         return jsonify({
             "total_requests":        total_requests,
             "total_contacts":        total_contacts,
             "avg_contacts_per_customer": avg_contacts,
             "total_bookings":        total_bookings,
+            "total_visits":          total_visits,
             "total_cancellations":   total_cancellations,
             "total_aborts":          total_aborts,
+            "total_post_abort_visits": total_after_aborts,
+            "total_not_completed_after_successful_visit": total_not_completed,
             "total_completions":     total_completions,
+            "not_completed_reasons": reason_breakdown,
             "completion_rate":       completion_rate,
             "booking_rate":          safe_pct_fn(total_bookings, total_requests),
+            "visit_rate":            safe_pct_fn(total_visits, total_requests),
+            "post_abort_rate":       safe_pct_fn(total_after_aborts, total_requests),
+            "visit_success_rate":    safe_pct_fn(total_completions, total_visits),
             "cancellation_rate":     safe_pct_fn(total_cancellations, total_bookings),
             "abort_rate":            safe_pct_fn(total_aborts, total_bookings - total_cancellations),
         })
@@ -159,7 +200,7 @@ def journey_weekly_trend():
     region = request.args.get("region")
     year   = _request_year()
     try:
-        get_journey, _, to_int_fn, to_float_fn, _ = _get_ingestion()
+        get_journey, _, to_int_fn, to_float_fn, _, _ = _get_ingestion()
         rows = get_journey()
         if region:
             rows = [r for r in rows if r["region_code"] == region]
@@ -170,19 +211,23 @@ def journey_weekly_trend():
         for r in rows:
             wk = r.get("week_start", "")[:10]
             if wk not in weekly:
-                weekly[wk] = {"requests": 0, "bookings": 0, "completions": 0, "cancellations": 0, "aborts": 0}
+                weekly[wk] = {"requests": 0, "bookings": 0, "visits": 0, "completions": 0, "cancellations": 0, "aborts": 0}
+            bookings = to_int_fn(r["total_bookings"])
+            cancellations = to_int_fn(r["total_cancellations"])
             weekly[wk]["requests"]     += to_int_fn(r["total_requests"])
-            weekly[wk]["bookings"]     += to_int_fn(r["total_bookings"])
+            weekly[wk]["bookings"]     += bookings
+            weekly[wk]["visits"]       += max(bookings - cancellations, 0)
             weekly[wk]["completions"]  += to_int_fn(r["total_completions"])
-            weekly[wk]["cancellations"]+= to_int_fn(r["total_cancellations"])
+            weekly[wk]["cancellations"]+= cancellations
             weekly[wk]["aborts"]       += to_int_fn(r["total_aborts"])
 
-        labels, requests, bookings, completions, cancellations, aborts = [], [], [], [], [], []
+        labels, requests, bookings, visits, completions, cancellations, aborts = [], [], [], [], [], [], []
         for wk in sorted(weekly.keys()):
             d = weekly[wk]
             labels.append(wk)
             requests.append(d["requests"])
             bookings.append(d["bookings"])
+            visits.append(d["visits"])
             completions.append(d["completions"])
             cancellations.append(d["cancellations"])
             aborts.append(d["aborts"])
@@ -191,6 +236,7 @@ def journey_weekly_trend():
             "labels":        labels,
             "requests":      requests,
             "bookings":      bookings,
+            "visits":        visits,
             "completions":   completions,
             "cancellations": cancellations,
             "aborts":        aborts,
@@ -204,7 +250,7 @@ def journey_regional_heatmap():
     """Regional completion rate heatmap data."""
     year = _request_year()
     try:
-        get_journey, _, to_int_fn, to_float_fn, safe_pct_fn = _get_ingestion()
+        get_journey, _, to_int_fn, to_float_fn, safe_pct_fn, _ = _get_ingestion()
         rows = get_journey()
         rows = [r for r in rows if to_int_fn(r.get("year")) == year and r.get("is_forecast", "0") == "0"]
 

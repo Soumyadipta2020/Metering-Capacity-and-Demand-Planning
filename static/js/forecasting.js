@@ -13,18 +13,21 @@ async function loadForecastingDashboard() {
     IMSERV.apiFetch('/api/forecasting/funnel' + qs),
   ]);
 
-  if (kpis) renderForecastKPIs(kpis);
+  if (kpis) renderForecastKPIs(kpis, funnel);
   if (kpis) renderChannelBreakdown(kpis);
   if (funnel) renderFunnelMetrics(funnel);
 
   loadActiveForecastTabData();
 }
 
-function renderForecastKPIs(kpis) {
+function renderForecastKPIs(kpis, funnel) {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const f = funnel?.funnel || {};
+  const visits = f.visits ?? Math.max((f.bookings ?? kpis.total_bookings ?? 0) - (f.cancellations ?? 0), 0);
+  const contactToVisitRate = kpis.total_volume ? (visits / kpis.total_volume) * 100 : kpis.conversion_rate;
   set('fc-kpi-volume',     IMSERV.fmt.num(kpis.total_volume));
-  set('fc-kpi-bookings',   IMSERV.fmt.num(kpis.total_bookings));
-  set('fc-kpi-conversion', IMSERV.fmt.pct(kpis.conversion_rate));
+  set('fc-kpi-bookings',   IMSERV.fmt.num(visits));
+  set('fc-kpi-conversion', IMSERV.fmt.pct(contactToVisitRate));
   set('fc-kpi-abandon',    IMSERV.fmt.pct(kpis.abandon_rate));
 }
 
@@ -191,61 +194,100 @@ function renderFunnelMetrics(funnel) {
   const body = document.getElementById('funnel-metrics-body');
   if (!body || !funnel) return;
   const f = funnel.funnel || {};
+  const requests = f.requests || 0;
+  const visits = f.visits ?? Math.max((f.bookings || 0) - (f.cancellations || 0), 0);
+  const successfulVisits = f.post_abort_visits ?? Math.max(visits - (f.aborts || 0), 0);
+  const completions = f.completions || 0;
+  const notCompleted = f.not_completed_after_successful_visit ?? Math.max(successfulVisits - completions, 0);
+  const reasons = (funnel.not_completed_reasons || []).slice(0, 4);
+  const reasonHtml = reasons.length ? reasons.map(r => `
+    <div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center;">
+      <span style="font-size:11px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${r.reason}</span>
+      <strong style="font-size:12px; color:var(--text-primary);">${IMSERV.fmt.num(r.count)}</strong>
+      <div style="grid-column:1 / -1; height:4px; border-radius:999px; background:rgba(255,255,255,0.06); overflow:hidden;">
+        <div style="height:100%; width:${Math.max(4, Math.min(100, r.pct || 0))}%; background:rgba(56,189,248,0.75);"></div>
+      </div>
+    </div>
+  `).join('') : '<div style="font-size:11px; color:var(--text-muted);">No unresolved successful visits</div>';
+
   body.innerHTML = `
-    <div style="display:flex; flex-direction:column; gap:16px; padding: 10px 0;">
+    <div style="display:flex; flex-direction:column; gap:14px; padding: 10px 0;">
       <!-- Main Funnel Path -->
-      <div style="display:flex; align-items:stretch; gap:4px; height:85px; position:relative;">
+      <div style="display:grid; grid-template-columns:1fr .65fr 1fr 1fr 1.08fr; gap:4px; min-height:88px; position:relative;">
         
         <!-- Requests -->
-        <div style="flex: 1.2 1 0; background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(59,130,246,0.15)); border: 1px solid rgba(59,130,246,0.2); border-radius: 8px 0 0 8px; display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative;">
+        <div style="background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(59,130,246,0.15)); border: 1px solid rgba(59,130,246,0.2); border-radius: 8px 0 0 8px; display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
           <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Requests</div>
-          <div style="font-size:26px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(f.requests)}</div>
+          <div style="font-size:26px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(requests)}</div>
           <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(59,130,246,0.3); z-index:2;"></div>
         </div>
 
         <!-- Contacts -->
-        <div style="flex: 1 1 0; background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.2)); border: 1px solid rgba(59,130,246,0.3); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative;">
+        <div style="background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.16)); border: 1px solid rgba(59,130,246,0.28); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
           <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Contacts</div>
-          <div style="font-size:26px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(f.contacts)}</div>
+          <div style="font-size:22px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(f.contacts)}</div>
           <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(59,130,246,0.4); z-index:2;"></div>
         </div>
 
-        <!-- Bookings -->
-        <div style="flex: 0.7 1 0; background: linear-gradient(135deg, rgba(16,185,129,0.05), rgba(16,185,129,0.15)); border: 1px solid rgba(16,185,129,0.2); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Bookings</div>
-          <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(f.bookings)}</div>
+        <!-- Visits -->
+        <div style="background: linear-gradient(135deg, rgba(16,185,129,0.05), rgba(16,185,129,0.15)); border: 1px solid rgba(16,185,129,0.2); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Visits</div>
+          <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(visits)}</div>
           <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(16,185,129,0.3); z-index:2;"></div>
         </div>
 
+        <!-- Successful Visits -->
+        <div style="background: linear-gradient(135deg, rgba(16,185,129,0.10), rgba(16,185,129,0.20)); border: 1px solid rgba(16,185,129,0.32); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Successful Visits</div>
+          <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(successfulVisits)}</div>
+          <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(16,185,129,0.4); z-index:2;"></div>
+        </div>
+
         <!-- Completions -->
-        <div style="flex: 0.5 1 0; background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.25)); border: 1px solid rgba(16,185,129,0.4); border-radius: 0 8px 8px 0; display:flex; flex-direction:column; justify-content:center; align-items:center; box-shadow: inset 0 0 12px rgba(16,185,129,0.1);">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Completions</div>
-          <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(f.completions)}</div>
+        <div style="background: linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.25)); border: 1px solid rgba(16,185,129,0.4); border-radius: 0 8px 8px 0; display:flex; flex-direction:column; justify-content:center; align-items:center; box-shadow: inset 0 0 12px rgba(16,185,129,0.1); min-width:0;">
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Successful Completions</div>
+          <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(completions)}</div>
         </div>
 
       </div>
 
-      <!-- Falloff branch for Cancellations & Aborts -->
-      <div style="display:flex; align-items:stretch; gap:16px; margin-left: auto; width: 55%; margin-top: 4px;">
-         <!-- line connecting them -->
-         <div style="width: 30px; border-left: 2px dashed rgba(255,255,255,0.2); border-bottom: 2px dashed rgba(255,255,255,0.2); margin-top: -30px; margin-bottom: 30px; border-bottom-left-radius: 12px;"></div>
-         
-         <div style="flex:1; display:flex; gap: 12px;">
-           <div style="flex:1; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.15); border-left: 4px solid var(--crit); padding: 12px 16px; border-radius: 8px;">
-             <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Cancellations</div>
-             <div style="font-size:20px; font-weight:800; color:var(--crit); margin-top:2px;">${IMSERV.fmt.num(f.cancellations)}</div>
-           </div>
-           <div style="flex:1; background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.15); border-left: 4px solid var(--warn); padding: 12px 16px; border-radius: 8px;">
-             <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Aborts</div>
-             <div style="font-size:20px; font-weight:800; color:var(--warn); margin-top:2px;">${IMSERV.fmt.num(f.aborts)}</div>
-           </div>
-         </div>
+      <!-- Falloff branches -->
+      <div style="display:grid; grid-template-columns:1fr .65fr 1fr 1fr 1.08fr; gap:12px; align-items:start;">
+        <div></div>
+        <div>
+          <div style="height:18px; width:50%; border-right:2px dashed rgba(239,68,68,0.35); border-bottom:2px dashed rgba(239,68,68,0.35); border-bottom-right-radius:10px; margin-top:-8px;"></div>
+          <div style="background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.15); border-left: 4px solid var(--crit); padding: 12px 14px; border-radius: 8px;">
+            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Cancellations</div>
+            <div style="font-size:20px; font-weight:800; color:var(--crit); margin-top:2px;">${IMSERV.fmt.num(f.cancellations)}</div>
+          </div>
+        </div>
+        <div>
+          <div style="height:18px; width:50%; border-right:2px dashed rgba(245,158,11,0.45); border-bottom:2px dashed rgba(245,158,11,0.45); border-bottom-right-radius:10px; margin-top:-8px;"></div>
+          <div style="background: rgba(245, 158, 11, 0.05); border: 1px solid rgba(245, 158, 11, 0.15); border-left: 4px solid var(--warn); padding: 12px 14px; border-radius: 8px;">
+            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Aborts</div>
+            <div style="font-size:20px; font-weight:800; color:var(--warn); margin-top:2px;">${IMSERV.fmt.num(f.aborts)}</div>
+          </div>
+        </div>
+        <div style="grid-column:4 / 6;">
+          <div style="height:18px; width:28%; border-right:2px dashed rgba(56,189,248,0.38); border-bottom:2px dashed rgba(56,189,248,0.38); border-bottom-right-radius:10px; margin-top:-8px;"></div>
+          <div style="background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.15); border-left: 4px solid var(--info); padding: 12px 14px; border-radius: 8px;">
+            <div style="display:flex; justify-content:space-between; gap:12px; align-items:baseline;">
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Not Completed</div>
+              <div style="font-size:20px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(notCompleted)}</div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin-top:10px;">
+              ${reasonHtml}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="mt-8" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 16px; display:flex; gap: 16px; justify-content:center;">
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);">Booking Rate: <strong style="color:var(--text-primary); margin-left:4px;">${IMSERV.fmt.pct(funnel.booking_rate)}</strong></div>
+    <div class="mt-8" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 16px; display:flex; gap: 16px; justify-content:center; flex-wrap:wrap;">
+      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);">Visit Rate: <strong style="color:var(--text-primary); margin-left:4px;">${IMSERV.fmt.pct(funnel.visit_rate)}</strong></div>
       <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.1);">Completion Rate: <strong style="color:var(--ok); margin-left:4px;">${IMSERV.fmt.pct(funnel.completion_rate)}</strong></div>
+      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.1);">Visit Success: <strong style="color:var(--ok); margin-left:4px;">${IMSERV.fmt.pct(funnel.visit_success_rate)}</strong></div>
+      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(56,189,248,0.05); border:1px solid rgba(56,189,248,0.1);">Completion Gap: <strong style="color:var(--info); margin-left:4px;">${IMSERV.fmt.num(notCompleted)}</strong></div>
       <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);">Avg Contacts: <strong style="color:var(--text-primary); margin-left:4px;">${funnel.avg_contacts_per_customer}</strong></div>
     </div>
   `;
@@ -262,7 +304,7 @@ async function loadConversionTrend() {
 
   const trend = funnel.weekly_trend || [];
   const labels  = trend.map(t => t.week.substring(0, 10));
-  const bk = trend.map(t => t.bookings);
+  const visits = trend.map(t => t.visits ?? Math.max((t.bookings || 0) - (t.cancellations || 0), 0));
   const cp = trend.map(t => t.completions);
   const cr = trend.map(t => t.completion_rate);
 
@@ -271,9 +313,9 @@ async function loadConversionTrend() {
     data: {
       labels,
       datasets: [
-        { label: 'Booked Meter Jobs',    data: bk, backgroundColor: 'rgba(0,82,204,0.5)',  yAxisID: 'y' },
-        { label: 'Completed Meter Jobs', data: cp, backgroundColor: 'rgba(16,185,129,0.5)',yAxisID: 'y' },
-        { label: 'Completion Rate %',    data: cr, borderColor: IMSERV.colors.accent, type: 'line', fill: false, tension: 0.4, pointRadius: 0, yAxisID: 'y1' },
+        { label: 'Visits',                 data: visits, backgroundColor: 'rgba(0,82,204,0.5)',  yAxisID: 'y' },
+        { label: 'Successful Completions', data: cp,     backgroundColor: 'rgba(16,185,129,0.5)',yAxisID: 'y' },
+        { label: 'Completion Rate %',      data: cr,     borderColor: IMSERV.colors.accent, type: 'line', fill: false, tension: 0.4, pointRadius: 0, yAxisID: 'y1' },
       ],
     },
     options: {

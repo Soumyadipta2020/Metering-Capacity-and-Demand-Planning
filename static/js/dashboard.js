@@ -32,8 +32,8 @@ async function loadJourneyDashboard() {
 
 function refreshJourneyVisualLabels() {
   const updates = [
-    ['Smart Meter Request to Completion Funnel', 'Smart Meter Request to Completion Funnel', 'Shows how incoming requests progress through contact, booking, cancellation, abort and completion stages'],
-    ['Weekly Smart Meter Demand and Completion Trend', 'Weekly Smart Meter Demand and Completion Trend', 'Compares weekly bookings, completed jobs, cancellations and aborts'],
+    ['Smart Meter Request to Completion Funnel', 'Smart Meter Request to Completion Funnel', 'Shows how incoming requests progress through contacts, visits, cancellations, aborts and successful completions'],
+    ['Weekly Smart Meter Demand and Completion Trend', 'Weekly Smart Meter Demand and Completion Trend', 'Compares weekly visits, completed jobs, cancellations and aborts'],
     ['Regional Demand and Completion Status', 'Regional Demand and Completion Status', 'Shows request volume, completion rate and regional RAG status'],
   ];
 
@@ -115,7 +115,7 @@ function renderJourneyKPIs(kpis) {
   set('kpi-requests',         IMSERV.fmt.num(kpis.total_requests));
   set('kpi-contacts',         IMSERV.fmt.num(kpis.total_contacts));
   set('kpi-avg-contacts',     kpis.avg_contacts_per_customer?.toFixed(2) || '—');
-  set('kpi-bookings',         IMSERV.fmt.num(kpis.total_bookings));
+  set('kpi-bookings',         IMSERV.fmt.num(kpis.total_visits ?? Math.max((kpis.total_bookings || 0) - (kpis.total_cancellations || 0), 0)));
   set('kpi-cancellations',    IMSERV.fmt.num(kpis.total_cancellations));
   set('kpi-aborts',           IMSERV.fmt.num(kpis.total_aborts));
   set('kpi-completions',      IMSERV.fmt.num(kpis.total_completions));
@@ -132,7 +132,7 @@ function renderFunnel(kpis) {
   const steps = [
     { label: 'Total Requests',    key: 'requests',      cls: 'requests',      val: kpis.total_requests },
     { label: 'Customer Contacts', key: 'contacts',      cls: 'contacts',      val: kpis.total_contacts },
-    { label: 'Bookings',          key: 'bookings',      cls: 'bookings',      val: kpis.total_bookings },
+    { label: 'Visits',            key: 'visits',        cls: 'visits',        val: kpis.total_visits ?? Math.max((kpis.total_bookings || 0) - (kpis.total_cancellations || 0), 0) },
     { label: 'Cancellations',     key: 'cancellations', cls: 'cancellations', val: kpis.total_cancellations },
     { label: 'Aborts',            key: 'aborts',        cls: 'aborts',        val: kpis.total_aborts },
     { label: 'Completions',       key: 'completions',   cls: 'completions',   val: kpis.total_completions },
@@ -167,7 +167,7 @@ function renderJourneyTrend(data) {
   const limit = 52;
   const labels       = data.labels.slice(-limit);
   const completions  = data.completions.slice(-limit);
-  const bookings     = data.bookings.slice(-limit);
+  const visits       = (data.visits || data.bookings || []).slice(-limit);
   const cancellations= data.cancellations.slice(-limit);
   const aborts       = data.aborts.slice(-limit);
 
@@ -178,7 +178,7 @@ function renderJourneyTrend(data) {
 
   const last = labels.length - 1;
   const recentCompletion = completions[last] || 0;
-  const recentBooking = bookings[last] || 0;
+  const recentVisit = visits[last] || 0;
   const recentLoss = (cancellations[last] || 0) + (aborts[last] || 0);
   const bestIndex = completions.indexOf(Math.max(...completions, 1));
   const periods = [
@@ -190,11 +190,11 @@ function renderJourneyTrend(data) {
     const [start, end] = p.range;
     const slice = labels.slice(start, end);
     const c = completions.slice(start, end).reduce((a, b) => a + b, 0);
-    const b = bookings.slice(start, end).reduce((a, v) => a + v, 0);
+    const b = visits.slice(start, end).reduce((a, v) => a + v, 0);
     const loss = cancellations.slice(start, end).reduce((a, v) => a + v, 0) + aborts.slice(start, end).reduce((a, v) => a + v, 0);
     const yieldPct = b ? (c / b) * 100 : 0;
     const lossPct = b ? (loss / b) * 100 : 0;
-    return { ...p, weeks: slice.length, completions: c, bookings: b, losses: loss, yieldPct, lossPct };
+    return { ...p, weeks: slice.length, completions: c, visits: b, losses: loss, yieldPct, lossPct };
   }).filter(p => p.weeks);
   const strongest = periods.reduce((best, p) => p.yieldPct > best.yieldPct ? p : best, periods[0]);
   const hottest = periods.reduce((best, p) => p.lossPct > best.lossPct ? p : best, periods[0]);
@@ -225,7 +225,7 @@ function renderJourneyTrend(data) {
       <div class="season-summary">
         <span>Latest week</span>
         <strong>${IMSERV.fmt.num(recentCompletion)}</strong>
-        <em>${IMSERV.fmt.num(recentBooking)} bookings</em>
+        <em>${IMSERV.fmt.num(recentVisit)} visits</em>
       </div>
       <div class="season-pulse-grid">${periodHtml}</div>
     </div>

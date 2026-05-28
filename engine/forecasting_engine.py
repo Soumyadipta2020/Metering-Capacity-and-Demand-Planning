@@ -7,11 +7,11 @@ import json
 import math
 import random
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 
 from engine.ingestion import (
-    iter_channel_volume, get_booking_journey,
+    iter_channel_volume, get_booking_journey, iter_jobs,
     to_int, to_float, safe_pct
 )
 
@@ -19,6 +19,13 @@ from engine.ingestion import (
 _FORECAST_CACHE = {}
 
 MODELS = ["Prophet", "ARIMA", "XGBoost", "LightGBM"]
+
+NOT_COMPLETED_REASON_LABELS = {
+    "EXCHANGE": "Exchange still booked",
+    "NEW_INSTALL": "Install still booked",
+    "REPAIR": "Repair follow-up booked",
+    "REMOVAL": "Removal still booked",
+}
 
 INTERACTION_ROUTE_RULES = [
     {
@@ -392,15 +399,53 @@ def get_booking_conversion_funnel(region_code: str = None, year: int = 2025) -> 
     total_cancellations= sum(to_int(r["total_cancellations"])for r in rows)
     total_aborts       = sum(to_int(r["total_aborts"])       for r in rows)
     total_completions  = sum(to_int(r["total_completions"])  for r in rows)
+    total_visits       = max(total_bookings - total_cancellations, 0)
+    total_after_aborts = max(total_visits - total_aborts, 0)
+    total_not_completed = max(total_after_aborts - total_completions, 0)
+
+    year_str = str(year)
+    not_completed_reasons = Counter()
+    for job in iter_jobs():
+        if region_code and job.get("region_code") != region_code:
+            continue
+        if job.get("requested_date", "")[:4] != year_str or job.get("is_forecast", "0") != "0":
+            continue
+        if job.get("status") == "Booked":
+            job_type = job.get("job_type") or "Other"
+            not_completed_reasons[job_type] += 1
+
+    reason_breakdown = [
+        {
+            "reason": NOT_COMPLETED_REASON_LABELS.get(reason, reason.replace("_", " ").title()),
+            "count": count,
+            "pct": safe_pct(count, total_not_completed),
+        }
+        for reason, count in not_completed_reasons.most_common()
+    ]
+    reason_total = sum(item["count"] for item in reason_breakdown)
+    if total_not_completed > reason_total:
+        reason_breakdown.append({
+            "reason": "Other still booked",
+            "count": total_not_completed - reason_total,
+            "pct": safe_pct(total_not_completed - reason_total, total_not_completed),
+        })
 
     avg_contacts = round(total_contacts / max(total_requests, 1), 2)
 
     weekly_trend = []
     for r in sorted(rows, key=lambda x: x.get("week_start", "")):
+        week_bookings = to_int(r["total_bookings"])
+        week_cancellations = to_int(r["total_cancellations"])
+        week_aborts = to_int(r["total_aborts"])
+        week_visits = max(week_bookings - week_cancellations, 0)
         weekly_trend.append({
             "week":        r.get("week_start", ""),
             "requests":    to_int(r["total_requests"]),
-            "bookings":    to_int(r["total_bookings"]),
+            "bookings":    week_bookings,
+            "visits":      week_visits,
+            "cancellations": week_cancellations,
+            "aborts":      week_aborts,
+            "post_abort_visits": max(week_visits - week_aborts, 0),
             "completions": to_int(r["total_completions"]),
             "completion_rate": to_float(r.get("completion_rate_pct", 0)),
         })
@@ -410,13 +455,20 @@ def get_booking_conversion_funnel(region_code: str = None, year: int = 2025) -> 
             "requests":     total_requests,
             "contacts":     total_contacts,
             "bookings":     total_bookings,
+            "visits":       total_visits,
             "cancellations":total_cancellations,
             "aborts":       total_aborts,
+            "post_abort_visits": total_after_aborts,
             "completions":  total_completions,
+            "not_completed_after_successful_visit": total_not_completed,
         },
+        "not_completed_reasons": reason_breakdown,
         "avg_contacts_per_customer": avg_contacts,
         "booking_rate":     safe_pct(total_bookings, total_requests),
+        "visit_rate":       safe_pct(total_visits, total_requests),
+        "post_abort_rate":  safe_pct(total_after_aborts, total_requests),
         "completion_rate":  safe_pct(total_completions, total_requests),
+        "visit_success_rate": safe_pct(total_completions, total_visits),
         "cancellation_rate":safe_pct(total_cancellations, total_bookings),
         "abort_rate":       safe_pct(total_aborts, total_bookings - total_cancellations),
         "weekly_trend":     weekly_trend[-52:],

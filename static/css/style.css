@@ -777,6 +777,7 @@ body {
 
 .funnel-bar.requests     { background: linear-gradient(90deg, #0052CC, #0070E0); }
 .funnel-bar.contacts     { background: linear-gradient(90deg, #0070E0, #00B8D9); }
+.funnel-bar.visits       { background: linear-gradient(90deg, #00B8D9, #10B981); }
 .funnel-bar.bookings     { background: linear-gradient(90deg, #00B8D9, #00C7FF); }
 .funnel-bar.cancellations{ background: linear-gradient(90deg, #EF4444, #F87171); }
 .funnel-bar.aborts       { background: linear-gradient(90deg, #F59E0B, #FCD34D); }

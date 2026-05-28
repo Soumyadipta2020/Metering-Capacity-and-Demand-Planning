@@ -149,6 +149,7 @@ Object.assign(IMSERV, {
     if (t.includes('request')) return 'clipboard';
     if (t.includes('contact') || t.includes('volume') || t.includes('phone')) return 'phone';
     if (t.includes('customer')) return 'user';
+    if (t.includes('visit')) return 'map';
     if (t.includes('booking')) return 'calendar';
     if (t.includes('cancel')) return 'alert';
     if (t.includes('abort') || t.includes('abandon')) return 'xCircle';
