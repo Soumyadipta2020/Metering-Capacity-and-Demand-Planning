@@ -60,7 +60,15 @@ def get_field_ops_kpis(region_code: str = None, year: int = 2025) -> dict:
         elif status == "Training":
             training_days += 1
 
-    avg_utilisation = round(statistics.mean(util_values), 1) if util_values else 0.0
+    capacity_rows = [
+        r for r in get_capacity_demand()
+        if to_int(r.get("year")) == year and (not region_code or r.get("region_code") == region_code)
+    ]
+    total_capacity_jobs = sum(to_float(r.get("capacity_jobs")) for r in capacity_rows)
+    total_demand_jobs = sum(to_float(r.get("demand_jobs")) for r in capacity_rows)
+    avg_utilisation = safe_pct(total_demand_jobs, total_capacity_jobs)
+    if not capacity_rows and util_values:
+        avg_utilisation = round(statistics.mean(util_values), 1)
 
     productivity = round(total_jobs / max(total_available_days, 1), 2)
     completion_rate = safe_pct(total_jobs, target_jobs)

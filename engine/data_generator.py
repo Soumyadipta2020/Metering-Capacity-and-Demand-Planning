@@ -23,14 +23,14 @@ INPUTS_DIR = BASE_DIR / "data" / "inputs"
 INPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
 REGIONS = {
-    "NW": {"name": "North West", "base_jobs": 420, "engineers": 38, "patches": 6},
-    "NE": {"name": "North East", "base_jobs": 310, "engineers": 28, "patches": 5},
-    "MID": {"name": "Midlands", "base_jobs": 510, "engineers": 46, "patches": 7},
-    "SE": {"name": "South East", "base_jobs": 580, "engineers": 52, "patches": 8},
-    "SW": {"name": "South West", "base_jobs": 270, "engineers": 24, "patches": 4},
-    "WAL": {"name": "Wales", "base_jobs": 220, "engineers": 20, "patches": 3},
-    "SCO": {"name": "Scotland", "base_jobs": 290, "engineers": 26, "patches": 4},
-    "YRK": {"name": "Yorkshire", "base_jobs": 380, "engineers": 34, "patches": 5},
+    "NW": {"name": "North West", "base_jobs": 1890, "engineers": 38, "patches": 6},
+    "NE": {"name": "North East", "base_jobs": 1395, "engineers": 28, "patches": 5},
+    "MID": {"name": "Midlands", "base_jobs": 2295, "engineers": 46, "patches": 7},
+    "SE": {"name": "South East", "base_jobs": 2610, "engineers": 52, "patches": 8},
+    "SW": {"name": "South West", "base_jobs": 1215, "engineers": 24, "patches": 4},
+    "WAL": {"name": "Wales", "base_jobs": 990, "engineers": 20, "patches": 3},
+    "SCO": {"name": "Scotland", "base_jobs": 1305, "engineers": 26, "patches": 4},
+    "YRK": {"name": "Yorkshire", "base_jobs": 1710, "engineers": 34, "patches": 5},
 }
 
 METER_TYPES = ["SMETS1", "SMETS2", "SMETS2_GAS", "IHD"]
