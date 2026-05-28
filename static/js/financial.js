@@ -4,16 +4,22 @@ async function loadFinancialDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
+  const loadingTargets = ['fin-monthly-chart', 'fin-jobtype-chart', 'forecast-profit-chart'];
+  IMSERV.setLoading(loadingTargets, true);
 
-  const [kpis, forecast] = await Promise.all([
-    IMSERV.apiFetch('/api/financial/kpis' + qs),
-    IMSERV.apiFetch('/api/financial/forecast-profitability' + (region ? `?region=${region}` : '')),
-  ]);
+  try {
+    const [kpis, forecast] = await Promise.all([
+      IMSERV.apiFetch('/api/financial/kpis' + qs),
+      IMSERV.apiFetch('/api/financial/forecast-profitability' + (region ? `?region=${region}` : '')),
+    ]);
 
-  if (kpis)     renderFinancialKPIs(kpis);
-  if (kpis)     renderMonthlyChart(kpis.monthly_trend || []);
-  if (kpis)     renderJobTypeChart(kpis.job_type_breakdown || []);
-  if (forecast) renderForecastProfit(forecast);
+    if (kpis)     renderFinancialKPIs(kpis);
+    if (kpis)     renderMonthlyChart(kpis.monthly_trend || []);
+    if (kpis)     renderJobTypeChart(kpis.job_type_breakdown || []);
+    if (forecast) renderForecastProfit(forecast);
+  } finally {
+    IMSERV.setLoading(loadingTargets, false);
+  }
 }
 
 function renderFinancialKPIs(kpis) {
@@ -34,6 +40,7 @@ function renderMonthlyChart(trend) {
   const ctx = document.getElementById('fin-monthly-chart');
   if (!ctx || !trend.length) return;
   const labels = trend.map(t => t.month.substring(0, 7));
+  IMSERV.destroyChart('fin-monthly');
   IMSERV.registerChart('fin-monthly', new Chart(ctx, {
     type: 'bar',
     data: {
@@ -62,6 +69,7 @@ function renderJobTypeChart(breakdown) {
   const ctx = document.getElementById('fin-jobtype-chart');
   if (!ctx || !breakdown.length) return;
   const labels = breakdown.map(j => j.job_type.replace('_', ' '));
+  IMSERV.destroyChart('fin-jobtype');
   IMSERV.registerChart('fin-jobtype', new Chart(ctx, {
     type: 'bar',
     data: {
@@ -84,6 +92,7 @@ function renderForecastProfit(data) {
   const ctx = document.getElementById('forecast-profit-chart');
   if (!ctx || !data.monthly_forecast?.length) return;
   const mf = data.monthly_forecast;
+  IMSERV.destroyChart('forecast-profit');
   IMSERV.registerChart('forecast-profit', new Chart(ctx, {
     type: 'line',
     data: {
@@ -127,15 +136,23 @@ async function runScenario() {
     region_code: IMSERV.getRegion() || null,
   };
 
-  const resp = await fetch('/api/financial/scenario', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  const panel = document.getElementById('scenario-results');
+  if (panel) panel.style.display = 'block';
+  IMSERV.setLoading('waterfall-chart', true);
 
-  if (!resp.ok) return;
-  const data = await resp.json();
-  renderScenarioResults(data);
+  try {
+    const resp = await fetch('/api/financial/scenario', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) return;
+    const data = await resp.json();
+    renderScenarioResults(data);
+  } finally {
+    IMSERV.setLoading('waterfall-chart', false);
+  }
 }
 
 function renderScenarioResults(data) {
@@ -161,6 +178,7 @@ function renderScenarioResults(data) {
   if (ctx && data.waterfall) {
     const wf = data.waterfall;
     const colors = wf.map(b => b.type === 'base' ? 'rgba(0,82,204,0.7)' : (b.type === 'cost' ? 'rgba(239,68,68,0.65)' : (b.value >= 0 ? 'rgba(16,185,129,0.65)' : 'rgba(239,68,68,0.5)')));
+    IMSERV.destroyChart('waterfall');
     IMSERV.registerChart('waterfall', new Chart(ctx, {
       type: 'bar',
       data: {

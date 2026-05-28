@@ -11,11 +11,16 @@ async function loadFieldOpsDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
+  IMSERV.setLoading(['capacity-matrix-chart', 'patch-plan-body', 'understaff-chart'], true);
 
-  const kpis = await IMSERV.apiFetch('/api/field-ops/kpis' + qs);
-  if (kpis) renderFieldOpsKPIs(kpis);
+  try {
+    const kpis = await IMSERV.apiFetch('/api/field-ops/kpis' + qs);
+    if (kpis) renderFieldOpsKPIs(kpis);
 
-  loadActiveOpsTabData();
+    await loadActiveOpsTabData();
+  } finally {
+    IMSERV.setLoading(['capacity-matrix-chart', 'patch-plan-body', 'understaff-chart'], false);
+  }
 }
 
 function renderFieldOpsKPIs(kpis) {
@@ -37,11 +42,18 @@ function renderFieldOpsKPIs(kpis) {
 
 async function loadCapacityMatrix() {
   const year = IMSERV.getYear();
+  IMSERV.setLoading('capacity-matrix-chart', true);
   const data = await IMSERV.apiFetch('/api/field-ops/capacity-matrix?year=' + year);
-  if (!data) return;
+  if (!data) {
+    IMSERV.setLoading('capacity-matrix-chart', false);
+    return;
+  }
 
   const ctx = document.getElementById('capacity-matrix-chart');
-  if (!ctx) return;
+  if (!ctx) {
+    IMSERV.setLoading('capacity-matrix-chart', false);
+    return;
+  }
 
   // Aggregate by region
   const byRegion = {};
@@ -69,6 +81,7 @@ async function loadCapacityMatrix() {
     return after ? after.utilisation_after : parseFloat((demVals[i] / Math.max(capVals[i], 1) * 100).toFixed(1));
   });
 
+  IMSERV.destroyChart('capacity-matrix');
   IMSERV.registerChart('capacity-matrix', new Chart(ctx, {
     type: 'bar',
     data: {
@@ -92,17 +105,23 @@ async function loadCapacityMatrix() {
       },
     },
   }));
+  IMSERV.setLoading('capacity-matrix-chart', false);
 }
 
 async function loadPatchPlan() {
   const region = document.getElementById('patch-region-filter')?.value || 'NW';
   const year   = IMSERV.getYear();
+  IMSERV.setLoading('patch-plan-body', true);
   const data   = await IMSERV.apiFetch(`/api/field-ops/patch-plan?region=${region}&year=${year}`);
   const body   = document.getElementById('patch-plan-body');
-  if (!body || !data) return;
+  if (!body || !data) {
+    IMSERV.setLoading('patch-plan-body', false);
+    return;
+  }
 
   if (!data.length) {
     body.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No patch data available</div></div>';
+    IMSERV.setLoading('patch-plan-body', false);
     return;
   }
 
@@ -125,6 +144,7 @@ async function loadPatchPlan() {
       </div>
     `;
   }).join('');
+  IMSERV.setLoading('patch-plan-body', false);
 }
 
 async function loadEngineerPerformance() {
@@ -157,12 +177,17 @@ async function loadEngineerPerformance() {
 
 async function loadUnderstaffing() {
   const region = document.getElementById('understaff-region')?.value || 'NW';
+  IMSERV.setLoading('understaff-chart', true);
   const data   = await IMSERV.apiFetch(`/api/field-ops/understaffing-forecast?region=${region}&weeks=8`);
-  if (!data) return;
+  if (!data) {
+    IMSERV.setLoading('understaff-chart', false);
+    return;
+  }
 
   // Chart
   const ctx = document.getElementById('understaff-chart');
   if (ctx) {
+    IMSERV.destroyChart('understaff');
     IMSERV.registerChart('understaff', new Chart(ctx, {
       type: 'line',
       data: {
@@ -184,6 +209,7 @@ async function loadUnderstaffing() {
       },
     }));
   }
+  IMSERV.setLoading('understaff-chart', false);
 
   // Table
   const tbody = document.getElementById('understaff-table-body');
@@ -469,17 +495,18 @@ function switchOpsSidebarTab(name, el) {
 
 function loadActiveOpsTabData() {
   if (_activeOpsTab === 'capacity') {
-    loadCapacityMatrix();
+    return loadCapacityMatrix();
   } else if (_activeOpsTab === 'patch') {
-    loadPatchPlan();
+    return loadPatchPlan();
   } else if (_activeOpsTab === 'engineers') {
-    loadEngineerPerformance();
+    return loadEngineerPerformance();
   } else if (_activeOpsTab === 'forecast') {
-    loadUnderstaffing();
+    return loadUnderstaffing();
   } else if (_activeOpsTab === 'optimise') {
     if (_appliedOptimisation) {
       renderOptimisationResult(_appliedOptimisation, true);
       updateOptimisationButtons();
     }
   }
+  return Promise.resolve();
 }

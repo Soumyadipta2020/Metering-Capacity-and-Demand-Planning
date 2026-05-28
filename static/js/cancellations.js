@@ -4,17 +4,23 @@ async function loadCancellationsDashboard() {
   const region = IMSERV.getRegion();
   const year = IMSERV.getYear();
   const qs = `?region=${region}&year=${year}`;
+  const loadingTargets = ['pareto-chart', 'category-chart', 'recovery-constellation-stage'];
+  IMSERV.setLoading(loadingTargets, true);
 
-  const [kpis, rootCauses, rebook] = await Promise.all([
-    IMSERV.apiFetch('/api/cancellations/kpis' + qs),
-    IMSERV.apiFetch('/api/cancellations/root-causes' + qs),
-    IMSERV.apiFetch('/api/cancellations/rebooking' + qs),
-  ]);
+  try {
+    const [kpis, rootCauses, rebook] = await Promise.all([
+      IMSERV.apiFetch('/api/cancellations/kpis' + qs),
+      IMSERV.apiFetch('/api/cancellations/root-causes' + qs),
+      IMSERV.apiFetch('/api/cancellations/rebooking' + qs),
+    ]);
 
-  if (kpis) renderCancelKPIs(kpis);
-  if (rootCauses) renderParetoChart(rootCauses);
-  if (rootCauses) renderCategoryChart(rootCauses);
-  if (rebook) renderRebooking(rebook);
+    if (kpis) renderCancelKPIs(kpis);
+    if (rootCauses) renderParetoChart(rootCauses);
+    if (rootCauses) renderCategoryChart(rootCauses);
+    if (rebook) renderRebooking(rebook);
+  } finally {
+    IMSERV.setLoading(loadingTargets, false);
+  }
 }
 
 function renderCancelKPIs(kpis) {
@@ -206,11 +212,15 @@ function renderCancelRegional(data) {
   container.innerHTML = `<div class="regional-risk-grid">${cells}</div>`;
 }
 
-async function loadCancellationRisk() {
+async function loadCancellationRisk(showLoading = true) {
   const region = IMSERV.getRegion();
+  if (showLoading) IMSERV.setLoading('cancel-risk-panel', true);
   const data = await IMSERV.apiFetch('/api/cancellations/predict' + (region ? `?region=${region}` : ''));
   const panel = document.getElementById('cancel-risk-panel');
-  if (!panel || !data) return;
+  if (!panel || !data) {
+    if (showLoading) IMSERV.setLoading('cancel-risk-panel', false);
+    return;
+  }
 
   let gaugeColor = 'var(--ok)';
   let shadowColor = 'rgba(16, 185, 129, 0.2)';
@@ -268,6 +278,7 @@ async function loadCancellationRisk() {
       </div>
     </div>
   `;
+  if (showLoading) IMSERV.setLoading('cancel-risk-panel', false);
 }
 
 /* ── Recovery Constellation ───────────────────────────────── */

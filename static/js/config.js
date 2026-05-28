@@ -72,6 +72,28 @@ const IMSERV = {
     this.apiCache.clear();
   },
 
+  setLoading(targets, isLoading, label = 'Loading...') {
+    const list = Array.isArray(targets) ? targets : [targets];
+    list.forEach(target => {
+      const raw = typeof target === 'string' ? document.getElementById(target) : target;
+      if (!raw) return;
+      const el = raw.tagName === 'CANVAS' ? raw.closest('.chart-wrap') || raw.parentElement : raw;
+      if (!el) return;
+
+      if (isLoading) {
+        if (el.querySelector(':scope > .visual-loading-overlay')) return;
+        el.classList.add('visual-loading-host', 'is-loading');
+        const overlay = document.createElement('div');
+        overlay.className = 'visual-loading-overlay';
+        overlay.innerHTML = `<div class="loading"><span class="spinner"></span>${label ? ` ${label}` : ''}</div>`;
+        el.appendChild(overlay);
+      } else {
+        el.classList.remove('is-loading');
+        el.querySelectorAll(':scope > .visual-loading-overlay').forEach(node => node.remove());
+      }
+    });
+  },
+
   async apiFetch(url, options = {}) {
     const now = Date.now();
     const cached = this.apiCache.get(url);

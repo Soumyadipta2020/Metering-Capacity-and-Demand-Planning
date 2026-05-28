@@ -7,26 +7,38 @@ async function loadJourneyDashboard() {
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
   refreshJourneyVisualLabels();
+  const loadingTargets = [
+    'funnel-chart',
+    'journey-trend-chart',
+    'funnel-metrics-body',
+    'regional-heatmap-grid',
+    'channel-comparison-grid',
+  ];
+  IMSERV.setLoading(loadingTargets, true);
 
-  // Keep the first paint light; AI recommendations load after the main dashboard.
-  const [kpis, heatmap, trend, funnel] = await Promise.all([
-    IMSERV.apiFetch('/api/journey/kpis' + qs),
-    IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
-    IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
-    IMSERV.apiFetch('/api/forecasting/funnel' + qs),
-  ]);
+  try {
+    // Keep the first paint light; AI recommendations load after the main dashboard.
+    const [kpis, heatmap, trend, funnel] = await Promise.all([
+      IMSERV.apiFetch('/api/journey/kpis' + qs),
+      IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
+      IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
+      IMSERV.apiFetch('/api/forecasting/funnel' + qs),
+    ]);
 
-  if (kpis)    renderJourneyKPIs(kpis);
-  if (heatmap) renderRegionalHeatmap(heatmap);
+    if (kpis)    renderJourneyKPIs(kpis);
+    if (heatmap) renderRegionalHeatmap(heatmap);
 
-  if (trend) renderJourneyTrend(trend);
+    if (trend) renderJourneyTrend(trend);
 
-  // Render funnel (uses KPI data)
-  if (kpis) renderFunnel(kpis);
+    // Render funnel (uses KPI data)
+    if (kpis) renderFunnel(kpis);
 
-  if (funnel) renderFunnelMetrics(funnel);
+    if (funnel) renderFunnelMetrics(funnel);
 
-  loadChannelComparison();
+    await loadChannelComparison(false);
+  } finally {
+    IMSERV.setLoading(loadingTargets, false);
+  }
 
   window.setTimeout(async () => {
     const ai = await IMSERV.apiFetch('/api/ai/dashboard?year=' + year + '&max=8');
@@ -515,16 +527,24 @@ function updateAiTriggerState(data) {
       : 'AI Insights: stable';
 }
 
-async function loadChannelComparison() {
+async function loadChannelComparison(showLoading = true) {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
+  if (showLoading) IMSERV.setLoading('channel-comparison-grid', true);
   const kpis = await IMSERV.apiFetch('/api/forecasting/channel-kpis?region=' + region + '&year=' + year);
-  if (!kpis) return;
+  if (!kpis) {
+    if (showLoading) IMSERV.setLoading('channel-comparison-grid', false);
+    return;
+  }
   const container = document.getElementById('channel-comparison-grid');
-  if (!container) return;
+  if (!container) {
+    if (showLoading) IMSERV.setLoading('channel-comparison-grid', false);
+    return;
+  }
   const channels = kpis.channel_breakdown || [];
   if (!channels.length) {
      container.innerHTML = '<div class="empty-state"><div class="empty-title">No data available</div></div>';
+     if (showLoading) IMSERV.setLoading('channel-comparison-grid', false);
      return;
   }
 
@@ -657,4 +677,5 @@ async function loadChannelComparison() {
       </div>
     </div>
   `;
+  if (showLoading) IMSERV.setLoading('channel-comparison-grid', false);
 }

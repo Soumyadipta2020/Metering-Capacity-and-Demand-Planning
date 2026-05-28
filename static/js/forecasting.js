@@ -8,15 +8,32 @@ async function loadForecastingDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
+  IMSERV.setLoading([
+    'forecast-chart',
+    'model-accuracy-body',
+    'model-comparison-chart',
+    'cancel-trend-chart',
+    'cancel-risk-panel',
+  ], true);
 
-  const [kpis, funnel] = await Promise.all([
-    IMSERV.apiFetch('/api/forecasting/channel-kpis' + qs),
-    IMSERV.apiFetch('/api/forecasting/funnel' + qs),
-  ]);
+  try {
+    const [kpis, funnel] = await Promise.all([
+      IMSERV.apiFetch('/api/forecasting/channel-kpis' + qs),
+      IMSERV.apiFetch('/api/forecasting/funnel' + qs),
+    ]);
 
-  if (kpis) renderForecastKPIs(kpis, funnel);
+    if (kpis) renderForecastKPIs(kpis, funnel);
 
-  loadActiveForecastTabData();
+    await loadActiveForecastTabData(false);
+  } finally {
+    IMSERV.setLoading([
+      'forecast-chart',
+      'model-accuracy-body',
+      'model-comparison-chart',
+      'cancel-trend-chart',
+      'cancel-risk-panel',
+    ], false);
+  }
 }
 
 function renderForecastKPIs(kpis, funnel) {
@@ -37,6 +54,7 @@ function renderChannelBreakdown(kpis) {
   const ctx = document.getElementById('channel-breakdown-chart');
   if (ctx && channels.length) {
     const colours = ['#0052CC','#00B8D9','#10B981','#F59E0B','#EF4444','#8B5CF6'];
+    IMSERV.destroyChart('channel-breakdown');
     IMSERV.registerChart('channel-breakdown', new Chart(ctx, {
       type: 'doughnut',
       data: {
@@ -78,27 +96,35 @@ async function loadForecast() {
   const region  = IMSERV.getRegion();
   const channel = document.getElementById('forecast-channel-filter')?.value || '';
   const qs = `?region=${region}&channel=${channel}&weeks=52`;
+  IMSERV.setLoading(['forecast-chart', 'model-accuracy-body', 'model-comparison-chart', 'cancel-trend-chart', 'cancel-risk-panel'], true);
 
-  const data = await IMSERV.apiFetch('/api/forecasting/forecast' + qs);
-  if (!data) return;
-  _lastForecastData = data;
+  try {
+    const data = await IMSERV.apiFetch('/api/forecasting/forecast' + qs);
+    if (!data) return;
+    _lastForecastData = data;
 
-  renderForecastChart(data);
-  renderModelAccuracy(data.model_accuracy || {});
+    renderForecastChart(data);
+    renderModelAccuracy(data.model_accuracy || {});
+    renderModelComparison(data);
 
-  // Load cancellation trend and risk prediction below the forecast model comparisons
-  const cancelTrends = await IMSERV.apiFetch('/api/cancellations/trends' + (region ? `?region=${region}` : ''));
-  if (cancelTrends && typeof renderCancelTrend === 'function') {
-    renderCancelTrend(cancelTrends);
-  }
-  if (typeof loadCancellationRisk === 'function') {
-    loadCancellationRisk();
+    // Load cancellation trend and risk prediction below the forecast model comparisons
+    const cancelTrends = await IMSERV.apiFetch('/api/cancellations/trends' + (region ? `?region=${region}` : ''));
+    if (cancelTrends && typeof renderCancelTrend === 'function') {
+      renderCancelTrend(cancelTrends);
+    }
+    if (typeof loadCancellationRisk === 'function') {
+      await loadCancellationRisk(false);
+    }
+  } finally {
+    IMSERV.setLoading(['forecast-chart', 'model-accuracy-body', 'model-comparison-chart', 'cancel-trend-chart', 'cancel-risk-panel'], false);
   }
 }
 
 function onForecastModelChange() {
+  IMSERV.setLoading('forecast-chart', true);
   if (_lastForecastData) {
     renderForecastChart(_lastForecastData);
+    requestAnimationFrame(() => IMSERV.setLoading('forecast-chart', false));
   } else {
     loadForecast();
   }
@@ -271,6 +297,7 @@ function renderModelComparison(data) {
     borderColor: modelColors[m] || IMSERV.colors.accent,
     fill: false, tension: 0.4, pointRadius: 0, borderWidth: 1.5,
   }));
+  IMSERV.destroyChart('model-comparison');
   IMSERV.registerChart('model-comparison', new Chart(ctx, {
     type: 'line',
     data: { labels: data.labels.slice(0, 26), datasets },
@@ -287,11 +314,18 @@ function renderModelComparison(data) {
 async function loadConversionTrend() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
+  IMSERV.setLoading('conversion-trend-chart', true);
   const funnel = await IMSERV.apiFetch('/api/forecasting/funnel?region=' + region + '&year=' + year);
-  if (!funnel) return;
+  if (!funnel) {
+    IMSERV.setLoading('conversion-trend-chart', false);
+    return;
+  }
 
   const ctx = document.getElementById('conversion-trend-chart');
-  if (!ctx) return;
+  if (!ctx) {
+    IMSERV.setLoading('conversion-trend-chart', false);
+    return;
+  }
 
   const trend = funnel.weekly_trend || [];
   const labels  = trend.map(t => t.week.substring(0, 10));
@@ -299,6 +333,7 @@ async function loadConversionTrend() {
   const cp = trend.map(t => t.completions);
   const cr = trend.map(t => t.completion_rate);
 
+  IMSERV.destroyChart('conversion-trend');
   IMSERV.registerChart('conversion-trend', new Chart(ctx, {
     type: 'bar',
     data: {
@@ -321,6 +356,7 @@ async function loadConversionTrend() {
       },
     },
   }));
+  IMSERV.setLoading('conversion-trend-chart', false);
 }
 
 function switchForecastTab(name, el) {
@@ -342,6 +378,24 @@ function switchForecastSidebarTab(name, el) {
   switchForecastTab(name, el);
 }
 
-function loadActiveForecastTabData() {
-  loadForecast();
+function loadActiveForecastTabData(showLoading = true) {
+  if (_activeForecastTab === 'overview') {
+    return loadForecastingOverview(showLoading);
+  }
+  if (_activeForecastTab === 'funnel') {
+    return loadConversionTrend();
+  }
+  return loadForecast();
+}
+
+async function loadForecastingOverview(showLoading = true) {
+  const region = IMSERV.getRegion();
+  const year = IMSERV.getYear();
+  if (showLoading) IMSERV.setLoading('channel-breakdown-chart', true);
+  try {
+    const kpis = await IMSERV.apiFetch(`/api/forecasting/channel-kpis?region=${region}&year=${year}`);
+    if (kpis) renderChannelBreakdown(kpis);
+  } finally {
+    if (showLoading) IMSERV.setLoading('channel-breakdown-chart', false);
+  }
 }
