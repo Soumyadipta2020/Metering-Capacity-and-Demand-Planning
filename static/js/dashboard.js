@@ -32,9 +32,9 @@ async function loadJourneyDashboard() {
 
 function refreshJourneyVisualLabels() {
   const updates = [
-    ['Journey Funnel', 'Journey Funnel', 'Requests to completions pipeline'],
-    ['Weekly Trend Analysis', 'Quarter Pulse', 'Four seasonal pulses summarise movement without week-by-week clutter'],
-    ['Regional Operations Heatmap', 'Regional Constellation', 'One network view with focused regional callouts'],
+    ['Smart Meter Request to Completion Funnel', 'Smart Meter Request to Completion Funnel', 'Shows how incoming requests progress through contact, booking, cancellation, abort and completion stages'],
+    ['Weekly Smart Meter Demand and Completion Trend', 'Weekly Smart Meter Demand and Completion Trend', 'Compares weekly bookings, completed jobs, cancellations and aborts'],
+    ['Regional Demand and Completion Status', 'Regional Demand and Completion Status', 'Shows request volume, completion rate and regional RAG status'],
   ];
 
   document.querySelectorAll('#view-journey .card-title').forEach(title => {

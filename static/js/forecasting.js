@@ -104,28 +104,28 @@ function renderForecastChart(data) {
       labels: allLabels,
       datasets: [
         {
-          label: 'Historical',
+          label: 'Historical Request Contacts',
           data: [...histValues, ...histPad],
           borderColor: IMSERV.colors.info,
           backgroundColor: 'rgba(59,130,246,0.08)',
           fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2,
         },
         {
-          label: 'P50 Forecast',
+          label: 'P50 Demand Forecast',
           data: [...forecastPad, ...data.p50],
           borderColor: IMSERV.colors.accent,
           backgroundColor: 'rgba(0,184,217,0.10)',
           fill: false, tension: 0.4, pointRadius: 0, borderWidth: 2.5, borderDash: [6,3],
         },
         {
-          label: 'P90',
+          label: 'P90 High Demand',
           data: [...forecastPad, ...data.p90],
           borderColor: 'rgba(245,158,11,0.5)',
           backgroundColor: 'rgba(245,158,11,0.06)',
           fill: '+1', tension: 0.4, pointRadius: 0, borderWidth: 1, borderDash: [3,3],
         },
         {
-          label: 'P10',
+          label: 'P10 Low Demand',
           data: [...forecastPad, ...data.p10],
           borderColor: 'rgba(245,158,11,0.5)',
           backgroundColor: 'rgba(245,158,11,0.06)',
@@ -271,9 +271,9 @@ async function loadConversionTrend() {
     data: {
       labels,
       datasets: [
-        { label: 'Bookings',    data: bk, backgroundColor: 'rgba(0,82,204,0.5)',  yAxisID: 'y' },
-        { label: 'Completions', data: cp, backgroundColor: 'rgba(16,185,129,0.5)',yAxisID: 'y' },
-        { label: 'Completion %',data: cr, borderColor: IMSERV.colors.accent, type: 'line', fill: false, tension: 0.4, pointRadius: 0, yAxisID: 'y1' },
+        { label: 'Booked Meter Jobs',    data: bk, backgroundColor: 'rgba(0,82,204,0.5)',  yAxisID: 'y' },
+        { label: 'Completed Meter Jobs', data: cp, backgroundColor: 'rgba(16,185,129,0.5)',yAxisID: 'y' },
+        { label: 'Completion Rate %',    data: cr, borderColor: IMSERV.colors.accent, type: 'line', fill: false, tension: 0.4, pointRadius: 0, yAxisID: 'y1' },
       ],
     },
     options: {

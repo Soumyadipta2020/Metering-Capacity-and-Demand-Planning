@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IMSERV — Smart Meter Field Planning Platform</title>
+  <title>IMSERV - Smart Meter Demand and Resource Planning</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/style.css" />
@@ -29,18 +29,18 @@
     <nav class="sidebar-nav">
 
       <div class="nav-section">
-        <div class="nav-section-label">Overview</div>
+        <div class="nav-section-label">Demand</div>
         <div class="nav-item active" data-view="journey" onclick="switchView('journey', this)">
           <span class="nav-icon">📊</span>
-          <span class="nav-label">Bookings Journey</span>
+          <span class="nav-label">Request Demand</span>
         </div>
       </div>
 
       <div class="nav-section">
-        <div class="nav-section-label">Contact Centre</div>
+        <div class="nav-section-label">Forecasting</div>
         <div class="nav-item" data-view="forecasting" onclick="switchView('forecasting', this)">
           <span class="nav-icon">📞</span>
-          <span class="nav-label">CC Forecasting</span>
+          <span class="nav-label">Demand Forecast</span>
         </div>
       </div>
 
@@ -48,11 +48,11 @@
         <div class="nav-section-label">Operations</div>
         <div class="nav-item" data-view="cancellations" onclick="switchView('cancellations', this)">
           <span class="nav-icon">❌</span>
-          <span class="nav-label">Cancellations</span>
+          <span class="nav-label">Risk & Recovery</span>
         </div>
         <div class="nav-item" data-view="field-ops" onclick="switchView('field-ops', this)">
           <span class="nav-icon">🔧</span>
-          <span class="nav-label">Field Operations</span>
+          <span class="nav-label">Resource Planning</span>
         </div>
       </div>
 
@@ -60,7 +60,7 @@
         <div class="nav-section-label">Finance</div>
         <div class="nav-item" data-view="financial" onclick="switchView('financial', this)">
           <span class="nav-icon">💷</span>
-          <span class="nav-label">Financial Planning</span>
+          <span class="nav-label">Scenario Impact</span>
         </div>
       </div>
 
@@ -83,8 +83,8 @@
     <!-- Top Header -->
     <header class="top-header">
       <div class="header-title">
-        <h1 id="page-title">Bookings to Completions Journey</h1>
-        <div class="breadcrumb" id="page-breadcrumb">IMSERV / Overview / Journey Dashboard</div>
+        <h1 id="page-title">Smart Meter Request Demand Overview</h1>
+        <div class="breadcrumb" id="page-breadcrumb">IMSERV / Demand / Request to Completion</div>
       </div>
       <div class="header-actions">
         <div class="filter-bar">
@@ -141,8 +141,8 @@
           <div class="card">
             <div class="card-header">
               <div>
-                <div class="card-title">📊 Journey Funnel</div>
-                <div class="card-subtitle">Requests → Completions pipeline</div>
+                <div class="card-title">📊 Smart Meter Request to Completion Funnel</div>
+                <div class="card-subtitle">Shows how incoming requests progress through contact, booking, cancellation, abort and completion stages</div>
               </div>
             </div>
             <div class="card-body">
@@ -154,8 +154,8 @@
           <div class="card">
             <div class="card-header">
               <div>
-                <div class="card-title">📈 Weekly Trend Analysis</div>
-                <div class="card-subtitle">Bookings, completions and cancellations</div>
+                <div class="card-title">📈 Weekly Smart Meter Demand and Completion Trend</div>
+                <div class="card-subtitle">Compares weekly bookings, completed jobs, cancellations and aborts</div>
               </div>
             </div>
             <div class="card-body">
@@ -169,8 +169,8 @@
         <div class="card mb-16">
           <div class="card-header">
             <div>
-              <div class="card-title">🗺️ Regional Operations Heatmap</div>
-              <div class="card-subtitle">Completion rate by region — RAG status</div>
+              <div class="card-title">🗺️ Regional Demand and Completion Status</div>
+              <div class="card-subtitle">Shows request volume, completion rate and regional RAG status</div>
             </div>
           </div>
           <div class="card-body">
@@ -191,14 +191,14 @@
         <!-- Sub-tabs -->
         <div class="tab-bar">
           <div class="tab-item active" onclick="switchForecastTab('overview', this)">Overview</div>
-          <div class="tab-item" onclick="switchForecastTab('forecast', this)">Forecast Models</div>
-          <div class="tab-item" onclick="switchForecastTab('funnel', this)">Conversion Funnel</div>
-          <div class="tab-item" onclick="switchForecastTab('channels', this)">Channel Comparison</div>
+          <div class="tab-item" onclick="switchForecastTab('forecast', this)">Demand Forecast</div>
+          <div class="tab-item" onclick="switchForecastTab('funnel', this)">Request Funnel</div>
+          <div class="tab-item" onclick="switchForecastTab('channels', this)">Channel Demand</div>
         </div>
 
         <!-- Forecast KPIs -->
         <div class="kpi-grid" id="forecast-kpis">
-          <div class="kpi-card info"><div class="kpi-label">Total Volume</div><div class="kpi-value" id="fc-kpi-volume">—</div><div class="kpi-icon">📞</div></div>
+          <div class="kpi-card info"><div class="kpi-label">Request Contacts</div><div class="kpi-value" id="fc-kpi-volume">—</div><div class="kpi-icon">📞</div></div>
           <div class="kpi-card ok"><div class="kpi-label">Bookings</div><div class="kpi-value" id="fc-kpi-bookings">—</div><div class="kpi-icon">📅</div></div>
           <div class="kpi-card ok"><div class="kpi-label">Conversion Rate</div><div class="kpi-value" id="fc-kpi-conversion">—</div><div class="kpi-icon">🎯</div></div>
           <div class="kpi-card warn"><div class="kpi-label">Abandonment Rate</div><div class="kpi-value" id="fc-kpi-abandon">—</div><div class="kpi-icon">📵</div></div>
@@ -211,7 +211,7 @@
             <div class="grid-2">
               <div class="card">
                 <div class="card-header">
-                  <div><div class="card-title">📊 Channel Volume Breakdown</div></div>
+                  <div><div class="card-title">📊 Smart Meter Request Channel Mix</div></div>
                 </div>
                 <div class="card-body">
                   <div class="chart-wrap chart-h-300">
@@ -221,12 +221,12 @@
               </div>
               <div class="card">
                 <div class="card-header">
-                  <div><div class="card-title">🎯 Agent Performance by Channel</div></div>
+                  <div><div class="card-title">🎯 Booking Conversion by Request Channel</div></div>
                 </div>
                 <div class="card-body">
                   <table class="data-table" id="channel-table">
                     <thead>
-                      <tr><th>Channel</th><th>Volume</th><th>Bookings</th><th>Conversion</th><th>Abandon</th></tr>
+                      <tr><th>Channel</th><th>Request Contacts</th><th>Bookings</th><th>Conversion</th><th>Abandon</th></tr>
                     </thead>
                     <tbody id="channel-table-body">
                       <tr><td colspan="5"><div class="loading"><span class="spinner"></span></div></td></tr>
@@ -242,8 +242,8 @@
             <div class="card mb-16">
               <div class="card-header">
                 <div>
-                  <div class="card-title">📈 26-Week Volume Forecast — Multi-Model Ensemble</div>
-                  <div class="card-subtitle">Prophet · ARIMA · XGBoost · LightGBM with P10/P50/P90 confidence bands</div>
+                  <div class="card-title">📈 26-Week Smart Meter Request Demand Forecast</div>
+                  <div class="card-subtitle">Projected request/contact volume with P10, P50 and P90 confidence bands from multiple models</div>
                 </div>
                 <div class="card-actions">
                   <div class="filter-bar">
@@ -266,7 +266,7 @@
             </div>
             <div class="grid-2">
               <div class="card">
-                <div class="card-header"><div class="card-title">🔬 Model Accuracy Metrics</div></div>
+                <div class="card-header"><div class="card-title">🔬 Demand Forecast Model Accuracy</div></div>
                 <div class="card-body">
                   <table class="data-table" id="model-accuracy-table">
                     <thead><tr><th>Model</th><th>MAE</th><th>RMSE</th><th>MAPE %</th></tr></thead>
@@ -275,7 +275,7 @@
                 </div>
               </div>
               <div class="card">
-                <div class="card-header"><div class="card-title">📊 Individual Model Forecasts</div></div>
+                <div class="card-header"><div class="card-title">📊 Forecast Comparison by Model</div></div>
                 <div class="card-body">
                   <div class="chart-wrap chart-h-260">
                     <canvas id="model-comparison-chart"></canvas>
@@ -288,13 +288,13 @@
           <!-- Conversion Funnel Tab -->
           <div class="forecast-tab-panel" id="ftab-funnel">
             <div class="card mb-16">
-              <div class="card-header"><div class="card-title">🎯 Funnel Metrics</div></div>
+              <div class="card-header"><div class="card-title">🎯 Request to Booking Funnel Metrics</div></div>
               <div class="card-body" id="funnel-metrics-body">
                 <div class="loading"><span class="spinner"></span></div>
               </div>
             </div>
             <div class="card">
-              <div class="card-header"><div class="card-title">📉 Weekly Booking Conversion Trend</div></div>
+              <div class="card-header"><div class="card-title">📉 Weekly Request to Completion Conversion Trend</div></div>
               <div class="card-body">
                 <div class="chart-wrap chart-h-300">
                   <canvas id="conversion-trend-chart"></canvas>
@@ -308,8 +308,8 @@
             <div class="channel-lab">
               <div class="channel-lab-topline">
                 <div>
-                  <div class="channel-lab-title">Channel Signal Map</div>
-                  <div class="channel-lab-subtitle">Volume, conversion, abandonment, and booking contribution in one view</div>
+                  <div class="channel-lab-title">Smart Meter Request Channel Signal Map</div>
+                  <div class="channel-lab-subtitle">Shows contact demand, booking conversion, abandonment and booking contribution by channel</div>
                 </div>
                 <div class="channel-lab-legend">
                   <span><i class="legend-dot volume"></i>Bubble size = volume</span>
@@ -344,8 +344,8 @@
           <section class="cancel-visual-panel cause-panel">
             <div class="cancel-panel-header">
               <div>
-                <div class="cancel-panel-title">Root Cause Constellation</div>
-                <div class="cancel-panel-subtitle">Ranked drivers with event volume, share, and cumulative Pareto pressure</div>
+                <div class="cancel-panel-title">Cancellation and Abort Root Cause Drivers</div>
+                <div class="cancel-panel-subtitle">Ranks the causes reducing smart meter job completion, with volume share and Pareto impact</div>
               </div>
             </div>
             <div id="pareto-chart" class="cause-constellation">
@@ -356,8 +356,8 @@
           <section class="cancel-visual-panel taxonomy-panel">
             <div class="cancel-panel-header">
               <div>
-                <div class="cancel-panel-title">Cause Taxonomy Lens</div>
-                <div class="cancel-panel-subtitle">Root causes grouped into operational failure families</div>
+                <div class="cancel-panel-title">Cancellation and Abort Cause Groups</div>
+                <div class="cancel-panel-subtitle">Groups root causes into operational categories for action planning</div>
               </div>
             </div>
             <div id="category-chart" class="category-lens">
@@ -372,8 +372,8 @@
           <section class="cancel-visual-panel pulse-panel">
             <div class="cancel-panel-header">
               <div>
-                <div class="cancel-panel-title">Cancellation Pulse</div>
-                <div class="cancel-panel-subtitle">Actual pressure current with forward risk drift</div>
+                <div class="cancel-panel-title">Cancellation Rate Trend and Forecast</div>
+                <div class="cancel-panel-subtitle">Shows recent cancellation pressure and the forward risk direction</div>
               </div>
             </div>
             <div id="cancel-trend-chart" class="cancel-pulse">
@@ -384,8 +384,8 @@
           <section class="cancel-visual-panel region-panel">
             <div class="cancel-panel-header">
               <div>
-                <div class="cancel-panel-title">Regional Risk Field</div>
-                <div class="cancel-panel-subtitle">Cancel and abort pressure by operating region</div>
+                <div class="cancel-panel-title">Regional Cancellation and Abort Risk</div>
+                <div class="cancel-panel-subtitle">Compares cancellation and abort pressure across operating regions</div>
               </div>
             </div>
             <div id="cancel-regional-chart" class="regional-risk-field">
@@ -398,7 +398,7 @@
         <!-- AI Risk Prediction -->
         <div class="card mb-16">
           <div class="card-header">
-            <div><div class="card-title">🤖 AI Cancellation Risk Prediction</div><div class="card-subtitle">Predictive risk scoring with prevention recommendations</div></div>
+            <div><div class="card-title">🤖 Smart Meter Cancellation Risk Prediction</div><div class="card-subtitle">Predicts cancellation risk for the selected region and suggests prevention actions</div></div>
             <div class="card-actions">
               <select class="filter-select" id="cancel-predict-region" onchange="loadCancellationRisk()">
                 <option value="NW">North West</option><option value="NE">North East</option>
@@ -415,7 +415,7 @@
 
         <!-- Rebooking Analytics -->
         <div class="card">
-          <div class="card-header"><div class="card-title">🔄 Rebooking Analytics</div></div>
+          <div class="card-header"><div class="card-title">🔄 Rebooking Recovery by Region</div></div>
           <div class="card-body">
             <table class="data-table">
               <thead><tr><th>Region</th><th>Rebook Rate</th><th>Avg Lag (days)</th><th>Success Rate</th></tr></thead>
@@ -444,18 +444,18 @@
 
         <!-- Sub-tabs -->
         <div class="tab-bar">
-          <div class="tab-item active" onclick="switchOpsTab('capacity', this)">Capacity Matrix</div>
-          <div class="tab-item" onclick="switchOpsTab('patch', this)">Patch Planning</div>
+          <div class="tab-item active" onclick="switchOpsTab('capacity', this)">Demand vs Capacity</div>
+          <div class="tab-item" onclick="switchOpsTab('patch', this)">Patch Resources</div>
           <div class="tab-item" onclick="switchOpsTab('engineers', this)">Engineer Performance</div>
-          <div class="tab-item" onclick="switchOpsTab('forecast', this)">Understaffing Forecast</div>
-          <div class="tab-item" onclick="switchOpsTab('optimise', this)">Optimisation</div>
+          <div class="tab-item" onclick="switchOpsTab('forecast', this)">Capacity Gap Forecast</div>
+          <div class="tab-item" onclick="switchOpsTab('optimise', this)">Resource Optimisation</div>
         </div>
 
         <!-- Capacity Matrix -->
         <div class="ops-tab-panel active" id="opstab-capacity">
           <div class="card">
             <div class="card-header">
-              <div><div class="card-title">📊 Regional Capacity vs Demand Matrix</div></div>
+              <div><div class="card-title">📊 Engineer Capacity vs Smart Meter Demand by Region</div></div>
             </div>
             <div class="card-body">
               <div class="chart-wrap chart-h-360">
@@ -469,7 +469,7 @@
         <div class="ops-tab-panel" id="opstab-patch">
           <div class="card">
             <div class="card-header">
-              <div><div class="card-title">🗺️ Patch-Level Planning</div></div>
+              <div><div class="card-title">🗺️ Patch-Level Demand and Capacity Plan</div></div>
               <div class="card-actions">
                 <select class="filter-select" id="patch-region-filter" onchange="loadPatchPlan()">
                   <option value="NW">North West</option><option value="NE">North East</option>
@@ -488,7 +488,7 @@
         <!-- Engineer Performance -->
         <div class="ops-tab-panel" id="opstab-engineers">
           <div class="card">
-            <div class="card-header"><div class="card-title">🏆 Engineer Performance — Top 20</div></div>
+            <div class="card-header"><div class="card-title">🏆 Engineer Completion Performance - Top 20</div></div>
             <div class="card-body">
               <table class="data-table">
                 <thead><tr><th>Engineer</th><th>Region</th><th>Patch</th><th>Type</th><th>Days</th><th>Jobs</th><th>Avg/Day</th><th>Achievement</th></tr></thead>
@@ -504,7 +504,7 @@
         <div class="ops-tab-panel" id="opstab-forecast">
           <div class="card">
             <div class="card-header">
-              <div><div class="card-title">⚠️ Understaffing Prediction — 8 Week Horizon</div></div>
+              <div><div class="card-title">⚠️ 8-Week Engineer Capacity Gap Forecast</div></div>
               <div class="card-actions">
                 <select class="filter-select" id="understaff-region" onchange="loadUnderstaffing()">
                   <option value="NW">North West</option><option value="NE">North East</option>
@@ -519,7 +519,7 @@
                 <canvas id="understaff-chart"></canvas>
               </div>
               <table class="data-table">
-                <thead><tr><th>Week</th><th>Capacity</th><th>Demand</th><th>Gap</th><th>Utilisation</th><th>Risk</th><th>Recommendation</th></tr></thead>
+                <thead><tr><th>Week</th><th>Engineer Capacity</th><th>Meter Demand</th><th>Gap</th><th>Utilisation</th><th>Risk</th><th>Recommendation</th></tr></thead>
                 <tbody id="understaff-table-body">
                   <tr><td colspan="7"><div class="loading"><span class="spinner"></span></div></td></tr>
                 </tbody>
@@ -532,7 +532,7 @@
         <div class="ops-tab-panel" id="opstab-optimise">
           <div class="card">
             <div class="card-header">
-              <div><div class="card-title">🎯 AI Workforce Optimisation Recommendations</div></div>
+              <div><div class="card-title">🎯 Engineer Resource Rebalancing Recommendations</div></div>
               <div class="card-actions">
                 <button class="btn btn-primary btn-sm" onclick="loadOptimisation()">▶ Run Optimisation</button>
               </div>
@@ -565,7 +565,7 @@
 
         <div class="grid-2 mb-16">
           <div class="card">
-            <div class="card-header"><div class="card-title">📊 Monthly Revenue vs Cost</div></div>
+            <div class="card-header"><div class="card-title">📊 Monthly Smart Meter Delivery Revenue vs Cost</div></div>
             <div class="card-body">
               <div class="chart-wrap chart-h-300">
                 <canvas id="fin-monthly-chart"></canvas>
@@ -573,7 +573,7 @@
             </div>
           </div>
           <div class="card">
-            <div class="card-header"><div class="card-title">🎯 Margin by Job Type</div></div>
+            <div class="card-header"><div class="card-title">🎯 Margin by Smart Meter Job Type</div></div>
             <div class="card-body">
               <div class="chart-wrap chart-h-300">
                 <canvas id="fin-jobtype-chart"></canvas>
@@ -585,7 +585,7 @@
         <!-- Scenario Builder -->
         <div class="card mb-16">
           <div class="card-header">
-            <div><div class="card-title">⚙️ Financial Scenario Builder</div><div class="card-subtitle">Adjust parameters to simulate P&L outcomes</div></div>
+            <div><div class="card-title">⚙️ Demand and Resource Financial Scenario Builder</div><div class="card-subtitle">Adjust job volume, completion rates and engineer capacity to simulate P&L outcomes</div></div>
             <div class="card-actions">
               <button class="btn btn-secondary btn-sm" onclick="resetScenario()">Reset</button>
               <button class="btn btn-primary" onclick="runScenario()">▶ Run Scenario</button>
@@ -598,7 +598,7 @@
                 <input class="form-input" type="text" id="sc-name" value="Base Case 2026" />
               </div>
               <div class="form-group">
-                <label class="form-label">Job Volume</label>
+                <label class="form-label">Meter Job Demand</label>
                 <input class="form-input" type="number" id="sc-volume" value="85000" />
               </div>
               <div class="form-group">
@@ -647,7 +647,7 @@
         <!-- Scenario Results -->
         <div class="card mb-16" id="scenario-results" style="display:none">
           <div class="card-header">
-            <div><div class="card-title" id="sc-result-title">Scenario Results</div></div>
+            <div><div class="card-title" id="sc-result-title">Demand Scenario Results</div></div>
           </div>
           <div class="card-body">
             <div class="grid-2">
@@ -670,7 +670,7 @@
 
         <!-- 2026 Forecast Profitability -->
         <div class="card">
-          <div class="card-header"><div class="card-title">🔮 2026 Forecast Profitability</div></div>
+          <div class="card-header"><div class="card-title">🔮 Forecast Profitability from Planned Meter Demand</div></div>
           <div class="card-body">
             <div class="chart-wrap chart-h-300">
               <canvas id="forecast-profit-chart"></canvas>

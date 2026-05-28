@@ -58,8 +58,8 @@ async function loadCapacityMatrix() {
     data: {
       labels: regions,
       datasets: [
-        { label: 'Avg Weekly Capacity', data: capVals, backgroundColor: 'rgba(0,82,204,0.55)',   yAxisID: 'y'  },
-        { label: 'Avg Weekly Demand',   data: demVals, backgroundColor: 'rgba(0,184,217,0.55)',  yAxisID: 'y'  },
+        { label: 'Avg Weekly Engineer Capacity', data: capVals, backgroundColor: 'rgba(0,82,204,0.55)',   yAxisID: 'y'  },
+        { label: 'Avg Weekly Meter Job Demand',  data: demVals, backgroundColor: 'rgba(0,184,217,0.55)',  yAxisID: 'y'  },
         { label: 'Utilisation %',       data: utilVals,borderColor: IMSERV.colors.warn, type: 'line', fill: false, tension: 0.3, pointRadius: 4, yAxisID: 'y1' },
       ],
     },
@@ -69,7 +69,7 @@ async function loadCapacityMatrix() {
       plugins: IMSERV.chartDefaults.plugins,
       scales: {
         ...IMSERV.chartDefaults.scales,
-        y:  { ...IMSERV.chartDefaults.scales.y, position: 'left',  title: { display: true, text: 'Jobs / Week', color: '#4A5568' } },
+        y:  { ...IMSERV.chartDefaults.scales.y, position: 'left',  title: { display: true, text: 'Smart meter jobs / week', color: '#4A5568' } },
         y1: { ...IMSERV.chartDefaults.scales.y, position: 'right', grid: { display: false },
                ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => v + '%' },
                min: 0, max: 120 },
@@ -104,8 +104,8 @@ async function loadPatchPlan() {
         </div>
         <div class="utilisation-pct ${p.utilisation_pct > 90 ? 'text-crit' : (p.utilisation_pct > 75 ? 'text-warn' : 'text-ok')}">${p.utilisation_pct}%</div>
         <span class="rag ${p.rag}" style="flex-shrink:0">${p.rag}</span>
-        <div class="stat-chip" style="flex-shrink:0">Demand: ${IMSERV.fmt.num(p.demand_jobs)}</div>
-        <div class="stat-chip" style="flex-shrink:0">Capacity: ${IMSERV.fmt.num(p.capacity_jobs)}</div>
+        <div class="stat-chip" style="flex-shrink:0">Meter demand: ${IMSERV.fmt.num(p.demand_jobs)}</div>
+        <div class="stat-chip" style="flex-shrink:0">Engineer capacity: ${IMSERV.fmt.num(p.capacity_jobs)}</div>
       </div>
     `;
   }).join('');
@@ -153,8 +153,8 @@ async function loadUnderstaffing() {
         labels: data.map(d => 'W' + d.week_number),
         datasets: [
           { label: 'Utilisation %', data: data.map(d => d.utilisation_pct), borderColor: IMSERV.colors.accent, fill: false, tension: 0.4, pointRadius: 4 },
-          { label: 'Capacity',      data: data.map(d => d.capacity_jobs),   borderColor: IMSERV.colors.ok,    yAxisID: 'y2', fill: false, tension: 0.3, pointRadius: 0, borderDash: [4,3] },
-          { label: 'Demand',        data: data.map(d => d.demand_forecast), borderColor: IMSERV.colors.crit,  yAxisID: 'y2', fill: false, tension: 0.3, pointRadius: 0 },
+          { label: 'Engineer Capacity', data: data.map(d => d.capacity_jobs),   borderColor: IMSERV.colors.ok,    yAxisID: 'y2', fill: false, tension: 0.3, pointRadius: 0, borderDash: [4,3] },
+          { label: 'Meter Job Demand',  data: data.map(d => d.demand_forecast), borderColor: IMSERV.colors.crit,  yAxisID: 'y2', fill: false, tension: 0.3, pointRadius: 0 },
         ],
       },
       options: {

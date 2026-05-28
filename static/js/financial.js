@@ -39,8 +39,8 @@ function renderMonthlyChart(trend) {
     data: {
       labels,
       datasets: [
-        { label: 'Revenue £',  data: trend.map(t => t.revenue),  backgroundColor: 'rgba(16,185,129,0.55)', yAxisID: 'y'  },
-        { label: 'Cost £',     data: trend.map(t => t.cost),     backgroundColor: 'rgba(239,68,68,0.45)', yAxisID: 'y'  },
+        { label: 'Meter Delivery Revenue GBP', data: trend.map(t => t.revenue),  backgroundColor: 'rgba(16,185,129,0.55)', yAxisID: 'y'  },
+        { label: 'Meter Delivery Cost GBP',    data: trend.map(t => t.cost),     backgroundColor: 'rgba(239,68,68,0.45)', yAxisID: 'y'  },
         { label: 'Margin %',   data: trend.map(t => t.margin_pct),borderColor: IMSERV.colors.accent, type: 'line', fill: false, tension: 0.4, pointRadius: 0, yAxisID: 'y1' },
       ],
     },
@@ -67,9 +67,9 @@ function renderJobTypeChart(breakdown) {
     data: {
       labels,
       datasets: [
-        { label: 'Revenue £', data: breakdown.map(j => j.revenue), backgroundColor: 'rgba(0,82,204,0.6)'   },
-        { label: 'Cost £',    data: breakdown.map(j => j.cost),    backgroundColor: 'rgba(239,68,68,0.45)' },
-        { label: 'Margin £',  data: breakdown.map(j => j.margin),  backgroundColor: 'rgba(16,185,129,0.55)'},
+        { label: 'Revenue GBP', data: breakdown.map(j => j.revenue), backgroundColor: 'rgba(0,82,204,0.6)'   },
+        { label: 'Cost GBP',    data: breakdown.map(j => j.cost),    backgroundColor: 'rgba(239,68,68,0.45)' },
+        { label: 'Margin GBP',  data: breakdown.map(j => j.margin),  backgroundColor: 'rgba(16,185,129,0.55)'},
       ],
     },
     options: {
@@ -89,8 +89,8 @@ function renderForecastProfit(data) {
     data: {
       labels: mf.map(m => m.month),
       datasets: [
-        { label: '2026 Revenue £',  data: mf.map(m => m.revenue), borderColor: IMSERV.colors.ok,      fill: false, tension: 0.4, pointRadius: 0, borderDash: [5,3] },
-        { label: '2026 Cost £',     data: mf.map(m => m.cost),    borderColor: IMSERV.colors.crit,    fill: false, tension: 0.4, pointRadius: 0, borderDash: [5,3] },
+        { label: 'Forecast Revenue GBP', data: mf.map(m => m.revenue), borderColor: IMSERV.colors.ok,      fill: false, tension: 0.4, pointRadius: 0, borderDash: [5,3] },
+        { label: 'Forecast Cost GBP',    data: mf.map(m => m.cost),    borderColor: IMSERV.colors.crit,    fill: false, tension: 0.4, pointRadius: 0, borderDash: [5,3] },
         { label: '2026 Margin %',   data: mf.map(m => m.margin_pct), borderColor: IMSERV.colors.accent, fill: false, tension: 0.4, pointRadius: 3, yAxisID: 'y1' },
       ],
     },
@@ -146,7 +146,7 @@ function renderScenarioResults(data) {
   const title = document.getElementById('sc-result-title');
   if (title) {
     title.removeAttribute('data-icon-ready');
-    title.textContent = `Scenario: ${data.scenario_name}`;
+    title.textContent = `Demand Scenario: ${data.scenario_name}`;
     IMSERV.hydrateIcons(title.parentElement || document);
   }
   set('sc-res-revenue',    IMSERV.fmt.gbpM(data.revenue_gbp));

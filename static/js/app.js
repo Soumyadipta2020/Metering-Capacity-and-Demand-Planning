@@ -1,11 +1,11 @@
 /* IMSERV - Main Application Controller */
 
 const VIEW_CONFIG = {
-  journey: { title: 'Bookings to Completions Journey', breadcrumb: 'IMSERV / Overview / Journey Dashboard', loader: loadJourneyDashboard },
-  forecasting: { title: 'Contact Centre Forecasting', breadcrumb: 'IMSERV / Contact Centre / Forecasting', loader: loadForecastingDashboard },
-  cancellations: { title: 'Cancellations & Aborts', breadcrumb: 'IMSERV / Operations / Cancellations', loader: loadCancellationsDashboard },
-  'field-ops': { title: 'Field Operations & Engineer Planning', breadcrumb: 'IMSERV / Operations / Field Planning', loader: loadFieldOpsDashboard },
-  financial: { title: 'Financial Scenario Planning', breadcrumb: 'IMSERV / Finance / Scenario Planning', loader: loadFinancialDashboard },
+  journey: { title: 'Smart Meter Request Demand Overview', breadcrumb: 'IMSERV / Demand / Request to Completion', loader: loadJourneyDashboard },
+  forecasting: { title: 'Smart Meter Demand Forecasting', breadcrumb: 'IMSERV / Forecasting / Request Demand', loader: loadForecastingDashboard },
+  cancellations: { title: 'Cancellation and Abort Risk Planning', breadcrumb: 'IMSERV / Operations / Risk and Recovery', loader: loadCancellationsDashboard },
+  'field-ops': { title: 'Engineer Resource Planning', breadcrumb: 'IMSERV / Operations / Demand vs Capacity', loader: loadFieldOpsDashboard },
+  financial: { title: 'Demand and Resource Financial Planning', breadcrumb: 'IMSERV / Finance / Scenario Impact', loader: loadFinancialDashboard },
 };
 
 let _currentView = 'journey';

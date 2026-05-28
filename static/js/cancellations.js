@@ -84,7 +84,7 @@ function renderParetoChart(data) {
     <div class="cause-stage">
       <div class="cause-focus">
         <div class="cause-core">
-          <span>Total Events</span>
+          <span>Total cancellation/abort events</span>
           <strong>${IMSERV.fmt.num(data.total_events || 0)}</strong>
           <em>${cancelEscape(data.top_category || 'Root causes')}</em>
         </div>
@@ -98,15 +98,15 @@ function renderParetoChart(data) {
     </div>
     <div class="cause-summary-strip">
       <div>
-        <span>Largest driver</span>
+        <span>Largest completion blocker</span>
         <strong>${cancelEscape(top[0].reason)}</strong>
       </div>
       <div>
-        <span>Share of root causes</span>
+        <span>Share of loss causes</span>
         <strong>${IMSERV.fmt.pct(top[0].pct)}</strong>
       </div>
       <div>
-        <span>Top 8 cumulative</span>
+        <span>Top 8 cumulative impact</span>
         <strong>${IMSERV.fmt.pct(top[top.length - 1].cumulative_pct)}</strong>
       </div>
     </div>
@@ -244,7 +244,7 @@ function renderCancelRegional(data) {
           <strong>${cancelEscape(r.region_code)}</strong>
         </div>
         <div class="region-risk-copy">
-          <span>Loss Pressure</span>
+          <span>Cancellation/abort pressure</span>
           <strong>${IMSERV.fmt.pct(loss)}</strong>
           <em><b>${IMSERV.fmt.pct(r.cancel_rate)}</b> cancel</em>
           <em><b>${IMSERV.fmt.pct(r.abort_rate)}</b> abort</em>
