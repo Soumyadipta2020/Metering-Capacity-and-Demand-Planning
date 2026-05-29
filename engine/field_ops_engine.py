@@ -281,6 +281,221 @@ def predict_understaffing(region_code: str, look_ahead_weeks: int = 8) -> list:
     return forecasts
 
 
+def _aggregate_capacity(year: int, region_code: str = None, key_fields: tuple = ("region_code", "week_number")) -> list:
+    rows = [
+        r for r in get_capacity_demand()
+        if to_int(r.get("year")) == year and (not region_code or r.get("region_code") == region_code)
+    ]
+    grouped = defaultdict(lambda: {"capacity_jobs": 0.0, "demand_jobs": 0.0, "available_engineers": 0.0})
+    for row in rows:
+        key = tuple(row.get(field) for field in key_fields)
+        grouped[key]["capacity_jobs"] += to_float(row.get("capacity_jobs"))
+        grouped[key]["demand_jobs"] += to_float(row.get("demand_jobs"))
+        grouped[key]["available_engineers"] += to_float(row.get("available_engineers"))
+
+    result = []
+    for key, values in grouped.items():
+        item = dict(zip(key_fields, key))
+        item.update(values)
+        result.append(item)
+    return result
+
+
+def get_capacity_forecast_2026(
+    region_code: str = None,
+    target_utilisation_pct: float = 78,
+    jobs_per_fte_day: float = 2,
+    absence_rate_pct: float = None,
+) -> dict:
+    """
+    Demand-led 2026 resource forecast.
+    Daily required FTE = daily demand / jobs per FTE per day.
+    Net forecast FTE = required FTE - absent FTE, then converted back to
+    forecast job capacity for the weekly planning graph.
+    """
+    jobs_per_day = _clamp_number(jobs_per_fte_day, 2, 0.5, 8, float)
+    absence_override = None
+    if absence_rate_pct is not None:
+        absence_override = _clamp_number(absence_rate_pct, 15, 0, 60, float) / 100.0
+    capacity_2025 = _aggregate_capacity(2025, region_code, ("region_code", "week_number"))
+    capacity_2026 = _aggregate_capacity(2026, region_code, ("region_code", "week_number"))
+
+    available_days = defaultdict(set)
+    absent_by_day = defaultdict(float)
+    for row in iter_engineer_availability():
+        row_region = row.get("region_code")
+        if region_code and row_region != region_code:
+            continue
+        year = to_int(row.get("year"))
+        if year not in (2025, 2026):
+            continue
+        week = to_int(row.get("week"))
+        day_key = (year, week, row_region, row.get("avail_date"))
+        available_days[(year, week, row_region)].add(row.get("avail_date"))
+        if row.get("status") != "Available":
+            absent_by_day[day_key] += 1
+
+    absence_pattern = defaultdict(list)
+    for (year, week, region), days in available_days.items():
+        for day in sorted(days):
+            absence_pattern[(year, week, region)].append(absent_by_day.get((year, week, region, day), 0.0))
+
+    weekly_2025 = defaultdict(float)
+    for point in capacity_2025:
+        weekly_2025[to_int(point.get("week_number"))] += point["capacity_jobs"]
+
+    weekly_map = defaultdict(lambda: {
+        "demand_jobs": 0.0,
+        "current_capacity_jobs": 0.0,
+        "forecast_capacity_jobs": 0.0,
+        "required_fte_days": 0.0,
+        "net_forecast_fte_days": 0.0,
+        "absent_fte_days": 0.0,
+        "working_days": 0,
+    })
+    regional_map = defaultdict(lambda: {
+        "demand_jobs": 0.0,
+        "current_capacity_jobs": 0.0,
+        "forecast_capacity_jobs": 0.0,
+        "required_fte_days": 0.0,
+        "net_forecast_fte_days": 0.0,
+        "absent_fte_days": 0.0,
+        "working_days": 0,
+    })
+
+    for point in capacity_2026:
+        region = point.get("region_code")
+        week = to_int(point.get("week_number"))
+        demand = point["demand_jobs"]
+        current_capacity = point["capacity_jobs"]
+        days = sorted(available_days.get((2026, week, region)) or [])
+        historical_absences = (
+            [absent_by_day.get((2026, week, region, day), 0.0) for day in days]
+            if days else
+            absence_pattern.get((2025, week, region), [])
+        )
+        working_day_count = len(historical_absences) or 5
+        daily_demand = demand / max(working_day_count, 1)
+
+        forecast_capacity = 0.0
+        required_fte_days = 0.0
+        net_fte_days = 0.0
+        absent_fte_days = 0.0
+        for absent in (historical_absences or [0.0] * working_day_count):
+            required_fte = daily_demand / jobs_per_day
+            if absence_override is not None:
+                absent = required_fte * absence_override
+            net_fte = max(required_fte - absent, 0)
+            required_fte_days += required_fte
+            net_fte_days += net_fte
+            absent_fte_days += absent
+            forecast_capacity += net_fte * jobs_per_day
+
+        week_bucket = weekly_map[week]
+        week_bucket["demand_jobs"] += demand
+        week_bucket["current_capacity_jobs"] += current_capacity
+        week_bucket["forecast_capacity_jobs"] += forecast_capacity
+        week_bucket["required_fte_days"] += required_fte_days
+        week_bucket["net_forecast_fte_days"] += net_fte_days
+        week_bucket["absent_fte_days"] += absent_fte_days
+        week_bucket["working_days"] = max(week_bucket["working_days"], working_day_count)
+
+        region_bucket = regional_map[region]
+        region_bucket["demand_jobs"] += demand
+        region_bucket["current_capacity_jobs"] += current_capacity
+        region_bucket["forecast_capacity_jobs"] += forecast_capacity
+        region_bucket["required_fte_days"] += required_fte_days
+        region_bucket["net_forecast_fte_days"] += net_fte_days
+        region_bucket["absent_fte_days"] += absent_fte_days
+        region_bucket["working_days"] += working_day_count
+
+    weekly = []
+    for week, values in sorted(weekly_map.items()):
+        current_capacity = values["current_capacity_jobs"]
+        forecast_capacity = values["forecast_capacity_jobs"]
+        demand = values["demand_jobs"]
+        working_days = max(values["working_days"], 1)
+        capacity_2025_jobs = weekly_2025.get(week, 0)
+        weekly.append({
+            "week_number": week,
+            "demand_jobs": int(round(demand)),
+            "capacity_2025_jobs": int(round(capacity_2025_jobs)),
+            "capacity_2025_fte": round(capacity_2025_jobs / max(jobs_per_day * working_days, 1), 1),
+            "current_capacity_jobs": int(round(current_capacity)),
+            "current_capacity_fte": round(current_capacity / max(jobs_per_day * working_days, 1), 1),
+            "forecast_capacity_jobs": int(round(forecast_capacity)),
+            "gap_jobs": int(round(forecast_capacity - demand)),
+            "planned_gap_jobs": int(round(current_capacity - demand)),
+            "required_fte": round(values["required_fte_days"] / working_days, 1),
+            "net_forecast_fte": round(values["net_forecast_fte_days"] / working_days, 1),
+            "absent_fte": round(values["absent_fte_days"] / working_days, 1),
+            "fte_gap": round((values["net_forecast_fte_days"] - values["required_fte_days"]) / working_days, 1),
+            "utilisation_pct": safe_pct(demand, forecast_capacity),
+            "planned_utilisation_pct": safe_pct(demand, current_capacity),
+        })
+
+    regions = []
+    for region, values in sorted(regional_map.items()):
+        demand = values["demand_jobs"]
+        current_capacity = values["current_capacity_jobs"]
+        forecast_capacity = values["forecast_capacity_jobs"]
+        working_days = max(values["working_days"], 1)
+        required_fte = values["required_fte_days"] / working_days
+        net_fte = values["net_forecast_fte_days"] / working_days
+        absent_fte = values["absent_fte_days"] / working_days
+        gap = forecast_capacity - demand
+        util = safe_pct(demand, forecast_capacity)
+        regions.append({
+            "region_code": region,
+            "demand_jobs": int(round(demand)),
+            "current_capacity_jobs": int(round(current_capacity)),
+            "current_capacity_fte": round(current_capacity / max(jobs_per_day * working_days, 1), 1),
+            "forecast_capacity_jobs": int(round(forecast_capacity)),
+            "gap_jobs": int(round(gap)),
+            "planned_gap_jobs": int(round(current_capacity - demand)),
+            "utilisation_pct": util,
+            "planned_utilisation_pct": safe_pct(demand, current_capacity),
+            "required_fte": round(required_fte, 1),
+            "net_forecast_fte": round(net_fte, 1),
+            "absent_fte": round(absent_fte, 1),
+            "fte_gap": round(net_fte - required_fte, 1),
+            "risk": "Red" if gap < 0 else ("Amber" if util > 85 else "Green"),
+        })
+
+    total_demand = sum(item["demand_jobs"] for item in weekly)
+    total_current_capacity = sum(item["current_capacity_jobs"] for item in weekly)
+    total_forecast_capacity = sum(item["forecast_capacity_jobs"] for item in weekly)
+    total_2025_capacity = sum(item["capacity_2025_jobs"] for item in weekly)
+
+    return {
+        "year": 2026,
+        "method": {
+            "name": "Demand-led FTE forecast",
+            "jobs_per_fte_day": jobs_per_day,
+            "formula": "daily required FTE = daily demand / jobs per FTE per day; forecast FTE = required FTE - absent FTE",
+        },
+        "kpis": {
+            "total_demand_jobs": total_demand,
+            "capacity_2025_jobs": total_2025_capacity,
+            "current_capacity_jobs": total_current_capacity,
+            "forecast_capacity_jobs": total_forecast_capacity,
+            "gap_jobs": total_forecast_capacity - total_demand,
+            "planned_gap_jobs": total_current_capacity - total_demand,
+            "avg_utilisation": safe_pct(total_demand, total_forecast_capacity),
+            "planned_utilisation": safe_pct(total_demand, total_current_capacity),
+            "avg_required_fte": round(sum(item["required_fte"] for item in weekly) / max(len(weekly), 1), 1),
+            "avg_net_forecast_fte": round(sum(item["net_forecast_fte"] for item in weekly) / max(len(weekly), 1), 1),
+            "avg_absent_fte": round(sum(item["absent_fte"] for item in weekly) / max(len(weekly), 1), 1),
+            "avg_2025_capacity_fte": round(sum(item["capacity_2025_fte"] for item in weekly) / max(len(weekly), 1), 1),
+            "avg_current_capacity_fte": round(sum(item["current_capacity_fte"] for item in weekly) / max(len(weekly), 1), 1),
+            "avg_fte_gap": round(sum(item["fte_gap"] for item in weekly) / max(len(weekly), 1), 1),
+            "red_regions": sum(1 for region in regions if region["risk"] == "Red"),
+        },
+        "weekly": weekly,
+        "regions": regions,
+    }
+
+
 def _clamp_number(value, default, min_value, max_value, cast=float):
     try:
         value = cast(value)
@@ -290,185 +505,183 @@ def _clamp_number(value, default, min_value, max_value, cast=float):
 
 
 def optimise_workforce_allocation(
-    year: int = 2025,
-    target_utilisation_pct: float = 80,
-    tolerance_pct: float = 4,
-    max_engineers_per_move: int = 5,
-    min_engineers_per_move: int = 1,
-    max_relocation_distance: int = 50,
+    year: int = 2026,
+    target_utilisation_pct: float = 72,
+    jobs_per_fte_day: float = 2,
+    absence_rate_pct: float = 15,
+    **kwargs,  # Accept legacy params silently
 ) -> dict:
     """
-    Workforce rebalancing recommendations across all regions.
-    Identifies regions outside a user-adjustable target utilisation band and
-    suggests engineer transfers without mutating the source datasets.
-
-    Returns:
-        dict with rebalancing recommendations and efficiency gain estimate
+    Workforce rebalancing recommendations based strictly on Demand vs Capacity FTE.
+    Capacity Forecast FTE = (Engineers - (Engineers * absence rate)) * utilization
+    Required FTE = demand_jobs / (jobs_per_fte_day * 5 * 52)
     """
-    target = _clamp_number(target_utilisation_pct, 80, 60, 95, float)
-    tolerance = _clamp_number(tolerance_pct, 4, 1, 20, float)
-    max_move = int(_clamp_number(max_engineers_per_move, 5, 1, 25, int))
-    min_move = int(_clamp_number(min_engineers_per_move, 1, 1, max_move, int))
-    lower_bound = max(40.0, target - tolerance)
-    upper_bound = min(120.0, target + tolerance)
+    target_util = _clamp_number(target_utilisation_pct, 72, 10, 200, float) / 100.0
+    jobs_day    = _clamp_number(jobs_per_fte_day, 2, 0.5, 8, float)
+    absence     = _clamp_number(absence_rate_pct, 15, 0, 60, float) / 100.0
+
+    # ── Pull demand-forecast data ─────────────────────────────────────────────
+    forecast = get_capacity_forecast_2026(
+        region_code=None,
+        target_utilisation_pct=target_utilisation_pct,
+        jobs_per_fte_day=jobs_day,
+        absence_rate_pct=absence_rate_pct,
+    )
+    forecast_regions = {r["region_code"]: r for r in forecast.get("regions", [])}
 
     region_codes = ["NW", "NE", "MID", "SE", "SW", "WAL", "SCO", "YRK"]
-    capacity_rows = get_region_capacity_matrix(year)
-    regional_capacity = defaultdict(lambda: {"capacity_jobs": 0.0, "demand_jobs": 0.0, "weeks": set()})
-    for row in capacity_rows:
-        rc = row["region_code"]
-        regional_capacity[rc]["capacity_jobs"] += to_float(row.get("capacity_jobs"))
-        regional_capacity[rc]["demand_jobs"] += to_float(row.get("demand_jobs"))
-        regional_capacity[rc]["weeks"].add(to_int(row.get("week_number")))
-
-    region_state = {}
+    engineer_counts = {}
     for rc in region_codes:
         kpis = get_field_ops_kpis(rc, year)
-        cap = regional_capacity[rc]["capacity_jobs"]
-        dem = regional_capacity[rc]["demand_jobs"]
-        engineers = kpis["total_engineers"]
-        if cap <= 0:
-            cap = dem / max(kpis["avg_utilisation"] / 100, 0.01)
-        capacity_per_engineer = cap / max(engineers, 1)
-        util = safe_pct(dem, cap)
-        weeks = len(regional_capacity[rc]["weeks"]) or 52
+        engineer_counts[rc] = kpis["total_engineers"]
+
+    # ── Build region state ───────────────────────────────────────────────────
+    region_state = {}
+    for rc in region_codes:
+        fr = forecast_regions.get(rc, {})
+        engineers    = engineer_counts.get(rc, 0)
+        required_fte = fr.get("required_fte", 0.0)
+        # Baseline comes from the 2026 demand-led capacity forecast line.
+        capacity_fte = fr.get("net_forecast_fte", 0.0)
+        fte_gap = capacity_fte - required_fte
+
         region_state[rc] = {
-            "region_code": rc,
-            "engineers_before": engineers,
-            "engineers_after": engineers,
-            "capacity_before": cap,
-            "capacity_after": cap,
-            "demand_jobs": dem,
-            "capacity_per_engineer": capacity_per_engineer,
-            "utilisation_before": util,
-            "utilisation_after": util,
-            "weeks": weeks,
+            "region_code":          rc,
+            "engineers_before":     engineers,
+            "engineers_after":      engineers,
+            "required_fte":         required_fte,
+            "forecast_capacity_fte": capacity_fte,
+            "capacity_fte_before":  capacity_fte,
+            "capacity_fte_after":   capacity_fte,
+            "demand_jobs":          fr.get("demand_jobs", 0),
+            "fte_gap_before":       fte_gap,
+            "fte_gap_after":        fte_gap,
         }
 
-    sources = []
+    # ── Classify sources (surplus) and destinations (deficit) ────────────────
+    sources      = []
     destinations = []
-    target_ratio = target / 100
+    
+    # 1 engineer provides this much productive FTE
+    fte_per_engineer = (1.0 - absence) * target_util
 
     for rc, state in region_state.items():
-        cap = state["capacity_before"]
-        dem = state["demand_jobs"]
-        cpe = max(state["capacity_per_engineer"], 1)
-        util = state["utilisation_before"]
+        gap = state["fte_gap_before"]
+        if gap > 0 and state["engineers_before"] > 0:
+            surplus_engineers = int(gap / max(fte_per_engineer, 0.01))
+            if surplus_engineers > 0:
+                sources.append({"region_code": rc, "available": surplus_engineers, "gap": gap})
+        elif gap < 0:
+            needed_engineers = math.ceil(abs(gap) / max(fte_per_engineer, 0.01))
+            if needed_engineers > 0:
+                destinations.append({"region_code": rc, "needed": needed_engineers, "gap": gap})
 
-        if util < lower_bound:
-            removable_capacity = max(0, cap - (dem / max(target_ratio, 0.01)))
-            surplus_engineers = int(removable_capacity // cpe)
-            if surplus_engineers >= min_move:
-                sources.append({
-                    "region_code": rc,
-                    "available": surplus_engineers,
-                    "utilisation": util,
-                })
+    # Most surplus first, most deficit first
+    sources.sort(key=lambda x: x["gap"], reverse=True)
+    destinations.sort(key=lambda x: x["gap"])
 
-        if util > upper_bound:
-            required_capacity = max(0, (dem / max(target_ratio, 0.01)) - cap)
-            needed_engineers = math.ceil(required_capacity / cpe)
-            if needed_engineers >= min_move:
-                destinations.append({
-                    "region_code": rc,
-                    "needed": needed_engineers,
-                    "utilisation": util,
-                })
-
-    sources.sort(key=lambda item: item["utilisation"])
-    destinations.sort(key=lambda item: item["utilisation"], reverse=True)
-
+    # ── Greedy rebalancing loop ───────────────────────────────────────────────
     recommendations = []
+    
     for dest in destinations:
         for src in sources:
-            if dest["needed"] < min_move:
+            if dest["needed"] <= 0:
                 break
-            if src["available"] < min_move:
+            if src["available"] <= 0:
                 continue
 
-            engineers = min(src["available"], dest["needed"], max_move)
-            if engineers < min_move:
+            engineers_to_move = min(src["available"], dest["needed"])
+            if engineers_to_move <= 0:
                 continue
 
-            src_state = region_state[src["region_code"]]
+            src_state  = region_state[src["region_code"]]
             dest_state = region_state[dest["region_code"]]
-            src_capacity_delta = engineers * src_state["capacity_per_engineer"]
-            dest_capacity_delta = engineers * dest_state["capacity_per_engineer"]
 
-            src_before = src_state["utilisation_after"]
-            dest_before = dest_state["utilisation_after"]
+            # Update source
+            src_state["engineers_after"]     -= engineers_to_move
+            src_state["capacity_fte_after"]  -= engineers_to_move * fte_per_engineer
+            src_state["fte_gap_after"]        = src_state["capacity_fte_after"] - src_state["required_fte"]
 
-            src_state["capacity_after"] = max(src_state["capacity_after"] - src_capacity_delta, 1)
-            src_state["engineers_after"] -= engineers
-            src_state["utilisation_after"] = safe_pct(src_state["demand_jobs"], src_state["capacity_after"])
+            # Update destination
+            dest_state["engineers_after"]    += engineers_to_move
+            dest_state["capacity_fte_after"] += engineers_to_move * fte_per_engineer
+            dest_state["fte_gap_after"]       = dest_state["capacity_fte_after"] - dest_state["required_fte"]
 
-            dest_state["capacity_after"] += dest_capacity_delta
-            dest_state["engineers_after"] += engineers
-            dest_state["utilisation_after"] = safe_pct(dest_state["demand_jobs"], dest_state["capacity_after"])
-
-            src["available"] -= engineers
-            dest["needed"] -= engineers
+            src["available"] -= engineers_to_move
+            dest["needed"]   -= engineers_to_move
 
             recommendations.append({
-                "from_region": src["region_code"],
-                "to_region": dest["region_code"],
-                "engineers": engineers,
-                "from_utilisation_before": round(src_before, 1),
-                "from_utilisation_after": src_state["utilisation_after"],
-                "to_utilisation_before": round(dest_before, 1),
-                "to_utilisation_after": dest_state["utilisation_after"],
+                "from_region":     src["region_code"],
+                "to_region":       dest["region_code"],
+                "action":          "move",
+                "engineers":       engineers_to_move,
+                "from_gap_before": round(src_state["fte_gap_before"], 1),
+                "from_gap_after":  round(src_state["fte_gap_after"], 1),
+                "to_gap_before":   round(dest_state["fte_gap_before"], 1),
+                "to_gap_after":    round(dest_state["fte_gap_after"], 1),
                 "rationale": (
-                    f"{src['region_code']} sits below the {lower_bound:.0f}% lower band; "
-                    f"{dest['region_code']} sits above the {upper_bound:.0f}% upper band."
+                    f"{src['region_code']} has a surplus of {src_state['fte_gap_before']:.1f} FTE. "
+                    f"{dest['region_code']} has a deficit of {dest_state['fte_gap_before']:.1f} FTE."
                 ),
             })
 
-    before_utils = [state["utilisation_before"] for state in region_state.values()]
-    after_utils = [state["utilisation_after"] for state in region_state.values()]
-    balance_before = statistics.mean([abs(util - target) for util in before_utils])
-    balance_after = statistics.mean([abs(util - target) for util in after_utils])
-    efficiency_gain = round(max(0, balance_before - balance_after), 1)
+        if dest["needed"] > 0:
+            dest_state = region_state[dest["region_code"]]
+            engineers_to_add = dest["needed"]
+            dest_before = dest_state["fte_gap_after"]
 
-    overstaffed = [
-        rc for rc, state in region_state.items()
-        if state["utilisation_before"] < lower_bound
-    ]
-    understaffed = [
-        rc for rc, state in region_state.items()
-        if state["utilisation_before"] > upper_bound
-    ]
+            dest_state["engineers_after"] += engineers_to_add
+            dest_state["capacity_fte_after"] += engineers_to_add * fte_per_engineer
+            dest_state["fte_gap_after"] = dest_state["capacity_fte_after"] - dest_state["required_fte"]
+            dest["needed"] = 0
+
+            recommendations.append({
+                "from_region": "Flex Pool",
+                "to_region": dest["region_code"],
+                "action": "add",
+                "engineers": engineers_to_add,
+                "from_gap_before": 0,
+                "from_gap_after": 0,
+                "to_gap_before": round(dest_before, 1),
+                "to_gap_after": round(dest_state["fte_gap_after"], 1),
+                "rationale": (
+                    f"{dest['region_code']} has no available surplus donor region. "
+                    f"Add {engineers_to_add} flexible engineers to close the forecast FTE deficit."
+                ),
+            })
+
+    total_moved = sum(r["engineers"] for r in recommendations)
+    total_gap_before = sum(s["fte_gap_before"] for s in region_state.values())
+    total_gap_after  = sum(s["fte_gap_after"] for s in region_state.values())
+
+    overstaffed = [rc for rc, s in region_state.items() if s["fte_gap_after"] > 0]
+    understaffed = [rc for rc, s in region_state.items() if s["fte_gap_after"] < 0]
 
     return {
         "parameters": {
-            "target_utilisation_pct": target,
-            "tolerance_pct": tolerance,
-            "lower_bound_pct": round(lower_bound, 1),
-            "upper_bound_pct": round(upper_bound, 1),
-            "max_engineers_per_move": max_move,
-            "min_engineers_per_move": min_move,
-            "max_relocation_distance_mi": int(max_relocation_distance),
+            "target_utilisation_pct":    target_utilisation_pct,
+            "jobs_per_fte_day":          jobs_day,
+            "absence_rate_pct":          round(absence * 100, 1),
         },
-        "overstaffed_regions": overstaffed,
+        "overstaffed_regions":  overstaffed,
         "understaffed_regions": understaffed,
-        "recommendations": recommendations,
+        "recommendations":      recommendations,
         "regional_before_after": [
             {
-                "region_code": rc,
-                "engineers_before": state["engineers_before"],
-                "engineers_after": state["engineers_after"],
-                "capacity_before": int(round(state["capacity_before"])),
-                "capacity_after": int(round(state["capacity_after"])),
-                "demand_jobs": int(round(state["demand_jobs"])),
-                "utilisation_before": round(state["utilisation_before"], 1),
-                "utilisation_after": round(state["utilisation_after"], 1),
-                "weeks": state["weeks"],
+                "region_code":          rc,
+                "engineers_before":     s["engineers_before"],
+                "engineers_after":      s["engineers_after"],
+                "demand_jobs":          s["demand_jobs"],
+                "required_fte":         round(s["required_fte"], 1),
+                "forecast_capacity_fte": round(s["forecast_capacity_fte"], 1),
+                "capacity_fte_before":  round(s["capacity_fte_before"], 1),
+                "capacity_fte_after":   round(s["capacity_fte_after"], 1),
+                "fte_gap_before":       round(s["fte_gap_before"], 1),
+                "fte_gap_after":        round(s["fte_gap_after"], 1),
             }
-            for rc, state in sorted(region_state.items())
+            for rc, s in sorted(region_state.items())
         ],
-        "total_engineers_moved": sum(item["engineers"] for item in recommendations),
-        "avg_utilisation_before": round(statistics.mean(before_utils), 1),
-        "avg_utilisation_after": round(statistics.mean(after_utils), 1),
-        "balance_gap_before_pct": round(balance_before, 1),
-        "balance_gap_after_pct": round(balance_after, 1),
-        "estimated_efficiency_gain_pct": efficiency_gain,
+        "total_engineers_moved": total_moved,
+        "total_gap_before":      round(total_gap_before, 1),
+        "total_gap_after":       round(total_gap_after, 1),
     }

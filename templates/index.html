@@ -54,13 +54,6 @@
           <span class="nav-icon">🔧</span>
           <span class="nav-label">Resource Planning</span>
         </div>
-        <div class="nav-submenu" id="field-ops-subnav">
-          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="capacity" onclick="switchOpsSidebarTab('capacity', this)">Demand vs Capacity</button>
-          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="patch" onclick="switchOpsSidebarTab('patch', this)">Patch Resources</button>
-          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="engineers" onclick="switchOpsSidebarTab('engineers', this)">Engineer Performance</button>
-          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="forecast" onclick="switchOpsSidebarTab('forecast', this)">Capacity Gap Forecast</button>
-          <button class="nav-subitem" type="button" data-parent="field-ops" data-subtab="optimise" onclick="switchOpsSidebarTab('optimise', this)">Resource Optimisation</button>
-        </div>
       </div>
 
       <div class="nav-section">
@@ -427,21 +420,55 @@
       <!-- ════════════════════════════════════════════════════
            MODULE 4 — FIELD OPERATIONS & ENGINEER PLANNING
       ════════════════════════════════════════════════════════ -->
-      <div class="view" id="view-field-ops">
+      <div class="view resource-planning-page" id="view-field-ops">
 
         <div class="kpi-grid" id="ops-kpis">
-          <div class="kpi-card info"><div class="kpi-label">Total Engineers</div><div class="kpi-value" id="ops-kpi-engineers">—</div><div class="kpi-icon">🔧</div></div>
+          <div class="kpi-card info"><div class="kpi-label">FTEs</div><div class="kpi-value" id="ops-kpi-engineers">—</div><div class="kpi-icon">🔧</div></div>
           <div class="kpi-card"><div class="kpi-label">Avg Utilisation</div><div class="kpi-value" id="ops-kpi-util">—</div><div class="kpi-icon">⚡</div></div>
           <div class="kpi-card ok"><div class="kpi-label">Jobs Completed</div><div class="kpi-value" id="ops-kpi-jobs">—</div><div class="kpi-icon">✅</div></div>
-          <div class="kpi-card"><div class="kpi-label">Productivity (jobs/day)</div><div class="kpi-value" id="ops-kpi-productivity">—</div><div class="kpi-icon">📊</div></div>
+          <div class="kpi-card"><div class="kpi-label">Jobs / Day</div><div class="kpi-value" id="ops-kpi-productivity">—</div><div class="kpi-icon">📊</div></div>
           <div class="kpi-card warn"><div class="kpi-label">Absence Rate</div><div class="kpi-value" id="ops-kpi-absence">—</div><div class="kpi-icon">🏥</div></div>
+          <div class="kpi-card" id="ops-gap-card"><div class="kpi-label">FTE Gap</div><div class="kpi-value" id="ops-kpi-gap">—</div><div class="kpi-icon">📈</div></div>
+        </div>
+
+        <div class="forecast-method-strip resource-model-strip mb-16" id="resource-model-summary">
+          <strong>2026 resource forecast loading</strong>
+          <span>Demand-led FTE capacity is being calculated from demand, daily productivity and absence.</span>
+        </div>
+
+        <div class="resource-visual-grid mb-16">
+          <div class="card resource-forecast-card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">2026 Capacity Forecast from 2026 Demand</div>
+                <div class="card-subtitle">FTE required equals daily demand divided by jobs per FTE per day, adjusted for absent FTEs</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-360">
+                <canvas id="capacity-forecast-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title">Regional FTE Gap</div></div>
+            <div class="card-body">
+              <div class="chart-wrap chart-h-300">
+                <canvas id="resource-gap-chart"></canvas>
+              </div>
+              <div class="resource-model-board mt-12" id="resource-model-body">
+                <div class="loading"><span class="spinner"></span></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Capacity Matrix -->
         <div class="ops-tab-panel active" id="opstab-capacity">
-          <div class="card">
+          <div class="card mb-16">
             <div class="card-header">
-              <div><div class="card-title">📊 Engineer Capacity vs Smart Meter Demand by Region</div></div>
+              <div><div class="card-title">Engineer Capacity vs Smart Meter Demand by Region</div></div>
             </div>
             <div class="card-body">
               <div class="chart-wrap chart-h-360">
@@ -451,46 +478,11 @@
           </div>
         </div>
 
-        <!-- Patch Planning -->
-        <div class="ops-tab-panel" id="opstab-patch">
-          <div class="card">
-            <div class="card-header">
-              <div><div class="card-title">🗺️ Patch-Level Demand and Capacity Plan</div></div>
-              <div class="card-actions">
-                <select class="filter-select" id="patch-region-filter" onchange="loadPatchPlan()">
-                  <option value="NW">North West</option><option value="NE">North East</option>
-                  <option value="MID">Midlands</option><option value="SE">South East</option>
-                  <option value="SW">South West</option><option value="WAL">Wales</option>
-                  <option value="SCO">Scotland</option><option value="YRK">Yorkshire</option>
-                </select>
-              </div>
-            </div>
-            <div class="card-body" id="patch-plan-body">
-              <div class="loading"><span class="spinner"></span></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Engineer Performance -->
-        <div class="ops-tab-panel" id="opstab-engineers">
-          <div class="card">
-            <div class="card-header"><div class="card-title">🏆 Engineer Completion Performance - Top 20</div></div>
-            <div class="card-body">
-              <table class="data-table">
-                <thead><tr><th>Engineer</th><th>Region</th><th>Patch</th><th>Type</th><th>Days</th><th>Jobs</th><th>Avg/Day</th><th>Achievement</th></tr></thead>
-                <tbody id="engineer-perf-body">
-                  <tr><td colspan="8"><div class="loading"><span class="spinner"></span></div></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
         <!-- Understaffing Forecast -->
         <div class="ops-tab-panel" id="opstab-forecast">
-          <div class="card">
+          <div class="card mb-16">
             <div class="card-header">
-              <div><div class="card-title">⚠️ 8-Week Engineer Capacity Gap Forecast</div></div>
+              <div><div class="card-title">Near-Term Engineer Capacity Gap Forecast</div></div>
               <div class="card-actions">
                 <select class="filter-select" id="understaff-region" onchange="loadUnderstaffing()">
                   <option value="NW">North West</option><option value="NE">North East</option>
@@ -518,9 +510,12 @@
         <div class="ops-tab-panel" id="opstab-optimise">
           <div class="card">
             <div class="card-header">
-              <div><div class="card-title">🎯 Engineer Resource Rebalancing Recommendations</div></div>
+              <div>
+                <div class="card-title">Resource Optimisation and Implementation</div>
+                <div class="card-subtitle">Tune the optimisation parameters, implement the recommended allocation, then restore the original plan when needed</div>
+              </div>
               <div class="card-actions">
-                <button class="btn btn-primary btn-sm" onclick="loadOptimisation()">▶ Run Optimisation</button>
+                <button class="btn btn-primary btn-sm" onclick="loadOptimisation()">Run Optimisation</button>
               </div>
             </div>
             <div class="card-body optimise-controls-body">
@@ -529,36 +524,22 @@
                   <div class="form-group">
                     <label class="form-label">Target Utilisation</label>
                     <div class="range-wrap">
-                      <input class="form-range" type="range" id="opt-target" min="65" max="90" step="1" value="78" oninput="updateOptimiseRange('opt-target','opt-target-val','%')" />
-                      <span class="range-val" id="opt-target-val">78%</span>
+                      <input class="form-range" type="range" id="opt-target" min="65" max="90" step="1" value="72" oninput="updateOptimiseRange('opt-target','opt-target-val','%')" />
+                      <span class="range-val" id="opt-target-val">72%</span>
                     </div>
                   </div>
                   <div class="form-group">
-                    <label class="form-label">Action Band</label>
+                    <label class="form-label">Jobs / FTE / Day</label>
                     <div class="range-wrap">
-                      <input class="form-range" type="range" id="opt-tolerance" min="1" max="10" step="1" value="2" oninput="updateOptimiseRange('opt-tolerance','opt-tolerance-val','%')" />
-                      <span class="range-val" id="opt-tolerance-val">2%</span>
+                      <input class="form-range" type="range" id="opt-jobs-per-fte" min="1" max="5" step="0.25" value="2" oninput="updateOptimiseRange('opt-jobs-per-fte','opt-jobs-per-fte-val','')" onchange="loadCapacityForecast()" />
+                      <span class="range-val" id="opt-jobs-per-fte-val">2</span>
                     </div>
                   </div>
                   <div class="form-group">
-                    <label class="form-label">Max Engineers Per Move</label>
+                    <label class="form-label">Absence Rate %</label>
                     <div class="range-wrap">
-                      <input class="form-range" type="range" id="opt-max-move" min="1" max="10" step="1" value="5" oninput="updateOptimiseRange('opt-max-move','opt-max-move-val','')" />
-                      <span class="range-val" id="opt-max-move-val">5</span>
-                    </div>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Minimum Move Size</label>
-                    <div class="range-wrap">
-                      <input class="form-range" type="range" id="opt-min-move" min="1" max="5" step="1" value="1" oninput="updateOptimiseRange('opt-min-move','opt-min-move-val','')" />
-                      <span class="range-val" id="opt-min-move-val">1</span>
-                    </div>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Max Relocation Distance</label>
-                    <div class="range-wrap">
-                      <input class="form-range" type="range" id="opt-max-dist" min="10" max="200" step="10" value="50" oninput="updateOptimiseRange('opt-max-dist','opt-max-dist-val',' mi')" />
-                      <span class="range-val" id="opt-max-dist-val">50 mi</span>
+                      <input class="form-range" type="range" id="opt-absence-rate" min="0" max="40" step="1" value="15" oninput="updateOptimiseRange('opt-absence-rate','opt-absence-rate-val','%')" onchange="loadCapacityForecast()" />
+                      <span class="range-val" id="opt-absence-rate-val">15%</span>
                     </div>
                   </div>
                 </div>

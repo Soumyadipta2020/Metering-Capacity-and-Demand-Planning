@@ -1799,6 +1799,37 @@ body {
   overflow-x: auto;
 }
 
+.resource-planning-page .ops-tab-panel {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.resource-visual-grid {
+  display: grid;
+  grid-template-columns: minmax(620px, 1.65fr) minmax(360px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.resource-forecast-card {
+  border-color: rgba(16,185,129,0.32);
+}
+
+.resource-model-strip {
+  margin-bottom: 14px;
+}
+
+.resource-model-board {
+  display: grid;
+  gap: 12px;
+}
+
+.resource-mini-table th,
+.resource-mini-table td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 .patch-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -4417,7 +4448,8 @@ body {
   .cancel-insight-grid { grid-template-columns: 1fr; }
   .combined-risk-grid { grid-template-columns: 1fr; }
   .forecast-kpi-row,
-  .forecast-plan-grid {
+  .forecast-plan-grid,
+  .resource-visual-grid {
     grid-template-columns: 1fr;
   }
   .combined-risk-pane + .combined-risk-pane {

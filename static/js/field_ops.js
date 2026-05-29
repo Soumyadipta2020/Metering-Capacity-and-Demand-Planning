@@ -11,15 +11,20 @@ async function loadFieldOpsDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
-  IMSERV.setLoading(['capacity-matrix-chart', 'patch-plan-body', 'understaff-chart'], true);
+  IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body', 'understaff-chart'], true);
 
   try {
     const kpis = await IMSERV.apiFetch('/api/field-ops/kpis' + qs);
     if (kpis) renderFieldOpsKPIs(kpis);
 
-    await loadActiveOpsTabData();
+    await Promise.all([
+      loadCapacityForecast(),
+      loadCapacityMatrix(),
+      loadUnderstaffing(),
+    ]);
+    if (_appliedOptimisation) renderOptimisationResult(_appliedOptimisation, true);
   } finally {
-    IMSERV.setLoading(['capacity-matrix-chart', 'patch-plan-body', 'understaff-chart'], false);
+    IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body', 'understaff-chart'], false);
   }
 }
 
@@ -37,6 +42,160 @@ function renderFieldOpsKPIs(kpis) {
   if (utilCard) {
     const u = Number((document.getElementById('ops-kpi-util')?.textContent || '').replace('%', '')) || kpis.avg_utilisation;
     utilCard.className = `kpi-card ${u > 90 ? 'crit' : (u > 75 ? 'warn' : 'ok')}`;
+  }
+}
+
+function optimisationScaleForCapacityForecast(data) {
+  if (!_appliedOptimisation || !data?.regions?.length) return null;
+  const selectedRegion = IMSERV.getRegion();
+  const map = getAppliedRegionalMap();
+  if (selectedRegion && map[selectedRegion]?.capacity_before > 0) {
+    return map[selectedRegion].capacity_after / map[selectedRegion].capacity_before;
+  }
+  let before = 0;
+  let after = 0;
+  Object.values(map).forEach(region => {
+    before += Number(region.capacity_before) || 0;
+    after += Number(region.capacity_after) || 0;
+  });
+  return before > 0 ? after / before : null;
+}
+
+function setCapacityGapKPI(gap, clsSource) {
+  const gapEl = document.getElementById('ops-kpi-gap');
+  const gapCard = document.getElementById('ops-gap-card');
+  if (gapEl) gapEl.textContent = `${gap >= 0 ? '+' : ''}${IMSERV.fmt.num(gap)}`;
+  if (gapCard) {
+    gapCard.className = `kpi-card ${clsSource < 0 ? 'crit' : (clsSource < 1000 ? 'warn' : 'ok')}`;
+  }
+}
+
+async function loadCapacityForecast() {
+  const region = IMSERV.getRegion();
+  const target = Number(document.getElementById('opt-target')?.value || 72);
+  const jobsPerFteDay = Number(document.getElementById('opt-jobs-per-fte')?.value || 2);
+  const absenceRate = Number(document.getElementById('opt-absence-rate')?.value || 15);
+  const qs = new URLSearchParams({ target, jobs_per_fte_day: jobsPerFteDay, absence_rate: absenceRate });
+  if (region) qs.set('region', region);
+  IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart'], true);
+
+  const data = await IMSERV.apiFetch('/api/field-ops/capacity-forecast?' + qs.toString(), { force: true });
+  if (!data) {
+    IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart'], false);
+    return;
+  }
+  renderCapacityForecast(data);
+  IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart'], false);
+}
+
+function renderCapacityForecast(data) {
+  const weekly = data.weekly || [];
+  const regions = data.regions || [];
+  const scale = optimisationScaleForCapacityForecast(data);
+  const rawGap = Number(data.kpis?.avg_fte_gap) || 0;
+  const displayGap = rawGap;
+  setCapacityGapKPI(displayGap, displayGap);
+
+  const summary = document.getElementById('resource-model-summary');
+  const method = data.method || {};
+  if (summary) {
+    summary.innerHTML = `
+      <strong>${method.name || 'Demand-led FTE forecast'}: ${method.jobs_per_fte_day || 2} jobs/FTE/day</strong>
+      <span>Avg required FTE/day ${IMSERV.fmt.num(data.kpis?.avg_required_fte)}, avg absent FTE/day ${IMSERV.fmt.num(data.kpis?.avg_absent_fte)}, net forecast FTE/day ${IMSERV.fmt.num(data.kpis?.avg_net_forecast_fte)}.</span>
+    `;
+  }
+
+  const forecastCtx = document.getElementById('capacity-forecast-chart');
+  if (forecastCtx && weekly.length) {
+    const datasets = [
+      { label: 'Demand 2026', data: weekly.map(w => w.required_fte), borderColor: IMSERV.colors.crit, backgroundColor: 'rgba(239,68,68,0.10)', fill: true, tension: 0.32, pointRadius: 0 },
+      { label: '2025 Capacity FTE', data: weekly.map(w => w.capacity_2025_fte), borderColor: IMSERV.colors.muted, backgroundColor: 'rgba(74,85,104,0.08)', borderDash: [3, 3], fill: false, tension: 0.25, pointRadius: 0 },
+      { label: 'Capacity 2026', data: weekly.map(w => w.net_forecast_fte), borderColor: IMSERV.colors.ok, backgroundColor: 'rgba(16,185,129,0.08)', borderDash: [6, 4], fill: false, tension: 0.28, pointRadius: 0 },
+    ];
+    if (scale) {
+      datasets.push({
+        label: 'Implemented Optimised FTE',
+        data: weekly.map(w => Number((w.current_capacity_fte * scale).toFixed(1))),
+        borderColor: IMSERV.colors.orange,
+        backgroundColor: 'rgba(255,139,0,0.08)',
+        fill: false,
+        tension: 0.28,
+        pointRadius: 0,
+      });
+    }
+    IMSERV.destroyChart('capacity-forecast');
+    IMSERV.registerChart('capacity-forecast', new Chart(forecastCtx, {
+      type: 'line',
+      data: { labels: weekly.map(w => 'W' + w.week_number), datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: IMSERV.chartDefaults.plugins,
+        scales: {
+          ...IMSERV.chartDefaults.scales,
+          y: { ...IMSERV.chartDefaults.scales.y, title: { display: true, text: 'FTE / day', color: '#4A5568' } },
+        },
+      },
+    }));
+  }
+
+  const gapCtx = document.getElementById('resource-gap-chart');
+  if (gapCtx && regions.length) {
+    const map = getAppliedRegionalMap();
+    const gaps = regions.map(r => {
+      const after = map[r.region_code];
+      return after ? Number(((after.engineers_after || 0) - r.required_fte).toFixed(1)) : r.fte_gap;
+    });
+    IMSERV.destroyChart('resource-gap');
+    IMSERV.registerChart('resource-gap', new Chart(gapCtx, {
+      type: 'bar',
+      data: {
+        labels: regions.map(r => r.region_code),
+        datasets: [{
+          label: 'Net FTE - Required FTE',
+          data: gaps,
+          backgroundColor: gaps.map(g => g < 0 ? 'rgba(239,68,68,0.68)' : 'rgba(16,185,129,0.62)'),
+          borderColor: gaps.map(g => g < 0 ? IMSERV.colors.crit : IMSERV.colors.ok),
+          borderWidth: 1,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: IMSERV.chartDefaults.plugins,
+        scales: IMSERV.chartDefaults.scales,
+      },
+    }));
+  }
+
+  const body = document.getElementById('resource-model-body');
+  if (body) {
+    const regionRows = regions.map(r => {
+      const after = getAppliedRegionalMap()[r.region_code];
+      const afterGap = after ? Number(((after.engineers_after || 0) - r.required_fte).toFixed(1)) : null;
+      return `
+        <tr>
+          <td><strong>${r.region_code}</strong></td>
+          <td>${IMSERV.fmt.num(r.required_fte)}</td>
+          <td>${IMSERV.fmt.num(r.absent_fte)}</td>
+          <td>${IMSERV.fmt.num(r.net_forecast_fte)}</td>
+          <td>${IMSERV.fmt.pct(after ? after.utilisation_after : r.utilisation_pct)}</td>
+          <td class="${(afterGap ?? r.fte_gap) < 0 ? 'text-crit' : 'text-ok'}">${(afterGap ?? r.fte_gap) >= 0 ? '+' : ''}${IMSERV.fmt.num(afterGap ?? r.fte_gap)}</td>
+        </tr>
+      `;
+    }).join('');
+    body.innerHTML = `
+      <div class="d-flex gap-8 mb-12 flex-wrap">
+        <span class="stat-chip">Jobs/FTE/day: <strong>${IMSERV.fmt.num(data.method?.jobs_per_fte_day)}</strong></span>
+        <span class="stat-chip">2025 capacity FTE/day: <strong>${IMSERV.fmt.num(data.kpis?.avg_2025_capacity_fte)}</strong></span>
+        <span class="stat-chip">Planned capacity FTE/day: <strong>${IMSERV.fmt.num(data.kpis?.avg_current_capacity_fte)}</strong></span>
+      </div>
+      <table class="data-table resource-mini-table">
+        <thead><tr><th>Region</th><th>Req FTE/day</th><th>Absent FTE/day</th><th>Net FTE/day</th><th>Utilisation</th><th>FTE Gap</th></tr></thead>
+        <tbody>${regionRows}</tbody>
+      </table>
+    `;
   }
 }
 
@@ -109,7 +268,9 @@ async function loadCapacityMatrix() {
 }
 
 async function loadPatchPlan() {
-  const region = document.getElementById('patch-region-filter')?.value || 'NW';
+  const region = IMSERV.getRegion() || document.getElementById('patch-region-filter')?.value || 'NW';
+  const selector = document.getElementById('patch-region-filter');
+  if (selector && selector.value !== region) selector.value = region;
   const year   = IMSERV.getYear();
   IMSERV.setLoading('patch-plan-body', true);
   const data   = await IMSERV.apiFetch(`/api/field-ops/patch-plan?region=${region}&year=${year}`);
@@ -176,7 +337,9 @@ async function loadEngineerPerformance() {
 }
 
 async function loadUnderstaffing() {
-  const region = document.getElementById('understaff-region')?.value || 'NW';
+  const region = IMSERV.getRegion() || document.getElementById('understaff-region')?.value || 'NW';
+  const selector = document.getElementById('understaff-region');
+  if (selector && selector.value !== region) selector.value = region;
   IMSERV.setLoading('understaff-chart', true);
   const data   = await IMSERV.apiFetch(`/api/field-ops/understaffing-forecast?region=${region}&weeks=8`);
   if (!data) {
@@ -242,30 +405,28 @@ function updateOptimiseRange(rangeId, valId, suffix) {
 
 function getOptimiseParams() {
   const val = (id, fallback) => Number(document.getElementById(id)?.value || fallback);
-  const maxMove = val('opt-max-move', 5);
-  const minMove = Math.min(val('opt-min-move', 1), maxMove);
-  const minMoveInput = document.getElementById('opt-min-move');
-  if (minMoveInput && Number(minMoveInput.value) !== minMove) {
-    minMoveInput.value = minMove;
-    updateOptimiseRange('opt-min-move', 'opt-min-move-val', '');
-  }
   return {
-    target: val('opt-target', 78),
-    tolerance: val('opt-tolerance', 2),
-    max_move: maxMove,
-    min_move: minMove,
-    max_dist: val('opt-max-dist', 50),
+    target:          val('opt-target', 72),
+    jobs_per_fte_day: val('opt-jobs-per-fte', 2),
+    absence_rate:    val('opt-absence-rate', 15),
+    // Fixed internal defaults — not exposed to user
+    tolerance:  3,
+    max_move:   25,
+    min_move:   1,
+    overtime:   0,
   };
 }
 
 function optimisationQuery(params) {
   const qs = new URLSearchParams({
-    year: IMSERV.getYear(),
-    target: params.target,
-    tolerance: params.tolerance,
-    max_move: params.max_move,
-    min_move: params.min_move,
-    max_dist: params.max_dist,
+    year:             IMSERV.getYear(),
+    target:           params.target,
+    tolerance:        params.tolerance,
+    max_move:         params.max_move,
+    min_move:         params.min_move,
+    jobs_per_fte_day: params.jobs_per_fte_day,
+    absence_rate:     params.absence_rate,
+    overtime:         params.overtime,
   });
   return qs.toString();
 }
@@ -345,25 +506,68 @@ function renderOptimisationResult(data, applied = false) {
   if (!body || !data) return;
 
   const recs = data.recommendations || [];
-  const statusHtml = applied ? `
-    <div class="alert alert-ok mb-12">
-      Optimisation implemented. Capacity and utilisation views now show the optimised allocation.
-    </div>
-  ` : '';
 
-  const recsHtml = recs.map(r => `
-    <div class="rec-card High">
-      <div class="rec-icon"></div>
-      <div class="rec-body">
-        <div class="rec-title">Transfer ${r.engineers} engineers: ${r.from_region} to ${r.to_region}</div>
-        <div class="rec-desc">${r.rationale}</div>
-        <div class="rec-meta">
-          <span class="rec-metric">${r.from_region}: ${IMSERV.fmt.pct(r.from_utilisation_before)} to ${IMSERV.fmt.pct(r.from_utilisation_after)}</span>
-          <span class="rec-metric">${r.to_region}: ${IMSERV.fmt.pct(r.to_utilisation_before)} to ${IMSERV.fmt.pct(r.to_utilisation_after)}</span>
+  let recsHtml = '';
+  if (recs.length === 0) {
+    recsHtml = `
+      <div class="empty-state p-24 bg-subtle br-8">
+        <div class="empty-icon text-muted" data-lucide="check-circle-2"></div>
+        <div class="empty-title mt-12 fs-14">Workforce is balanced</div>
+        <div class="empty-desc fs-12">No capacity gaps found that require engineering moves.</div>
+      </div>
+    `;
+  } else {
+    recsHtml = recs.map(r => `
+      <div class="rec-card">
+        <div class="rec-header">
+          <div class="rec-route">
+            <span class="badge from">${r.from_region}</span>
+            <span class="rec-arrow text-muted" data-lucide="arrow-right"></span>
+            <span class="badge to">${r.to_region}</span>
+          </div>
+          <div class="rec-engineers text-primary fw-600">
+            ${r.action === 'add' ? 'Add' : 'Move'} ${r.engineers} Engineer${r.engineers > 1 ? 's' : ''}
+          </div>
+        </div>
+        <div class="rec-body fs-12 text-muted mt-8">
+          ${r.rationale}
+        </div>
+        <div class="rec-footer mt-8 fs-11">
+          <div class="d-flex gap-16">
+            <span><strong>${r.from_region} Gap:</strong> ${IMSERV.fmt.num(r.from_gap_before)} &rarr; ${IMSERV.fmt.num(r.from_gap_after)}</span>
+            <span><strong>${r.to_region} Gap:</strong> ${IMSERV.fmt.num(r.to_gap_before)} &rarr; ${IMSERV.fmt.num(r.to_gap_after)}</span>
+          </div>
         </div>
       </div>
-    </div>
-  `).join('') || '<div class="text-muted fs-12">No rebalancing required with the current parameters. Tighten the action band or adjust the target utilisation to test a more aggressive plan.</div>';
+    `).join('');
+  }
+
+  let statusHtml = '';
+  if (applied) {
+    statusHtml = `
+      <div class="alert alert-ok mb-12">
+        Optimisation implemented. Capacity and utilisation views now show the optimised allocation.
+      </div>
+    `;
+  } else if (data.understaffed_regions?.length > 0) {
+    statusHtml = `
+      <div class="alert alert-warn mb-16">
+        <div class="alert-icon" data-lucide="alert-triangle"></div>
+        <div class="alert-content">
+          <strong>Deficits Remain:</strong> Some regions still have a negative capacity gap. Consider adjusting parameters or increasing overall headcount.
+        </div>
+      </div>
+    `;
+  } else {
+    statusHtml = `
+      <div class="alert alert-ok mb-16">
+        <div class="alert-icon" data-lucide="check-circle-2"></div>
+        <div class="alert-content">
+          <strong>Optimal Allocation:</strong> All regional capacity deficits have been resolved.
+        </div>
+      </div>
+    `;
+  }
 
   const rows = (data.regional_before_after || []).map(r => {
     const delta = r.engineers_after - r.engineers_before;
@@ -371,9 +575,14 @@ function renderOptimisationResult(data, applied = false) {
     return `
       <tr>
         <td><strong>${r.region_code}</strong></td>
-        <td>${IMSERV.fmt.pct(r.utilisation_before)}</td>
-        <td>${IMSERV.fmt.pct(r.utilisation_after)}</td>
+        <td>${IMSERV.fmt.num(r.engineers_before)}</td>
+        <td>${IMSERV.fmt.num(r.engineers_after)}</td>
         <td class="${deltaCls}">${delta > 0 ? '+' : ''}${delta}</td>
+        <td class="text-muted">${r.required_fte != null ? IMSERV.fmt.num(r.required_fte) : '—'}</td>
+        <td class="text-muted">${r.capacity_fte_before != null ? IMSERV.fmt.num(r.capacity_fte_before) : '—'}</td>
+        <td class="text-muted">${r.capacity_fte_after != null ? IMSERV.fmt.num(r.capacity_fte_after) : '—'}</td>
+        <td class="${r.fte_gap_before < 0 ? 'text-crit' : 'text-ok'}">${r.fte_gap_before >= 0 ? '+' : ''}${IMSERV.fmt.num(r.fte_gap_before)}</td>
+        <td class="${r.fte_gap_after  < 0 ? 'text-crit' : 'text-ok'}">${r.fte_gap_after  >= 0 ? '+' : ''}${IMSERV.fmt.num(r.fte_gap_after)}</td>
       </tr>
     `;
   }).join('');
@@ -382,28 +591,28 @@ function renderOptimisationResult(data, applied = false) {
     ${statusHtml}
     <div class="grid-3 mb-12">
       <div class="kpi-card ok">
-        <div class="kpi-label">Avg Utilisation Before</div>
-        <div class="kpi-value">${IMSERV.fmt.pct(data.avg_utilisation_before)}</div>
+        <div class="kpi-label">Total Gap Before</div>
+        <div class="kpi-value">${IMSERV.fmt.num(data.total_gap_before || 0)} <span class="fs-12 fw-400 text-muted">FTE</span></div>
       </div>
       <div class="kpi-card ok">
-        <div class="kpi-label">Avg Utilisation After</div>
-        <div class="kpi-value">${IMSERV.fmt.pct(data.avg_utilisation_after)}</div>
+        <div class="kpi-label">Total Gap After</div>
+        <div class="kpi-value">${IMSERV.fmt.num(data.total_gap_after || 0)} <span class="fs-12 fw-400 text-muted">FTE</span></div>
       </div>
       <div class="kpi-card info">
-        <div class="kpi-label">Balance Gain</div>
-        <div class="kpi-value">+${IMSERV.fmt.pct(data.estimated_efficiency_gain_pct)}</div>
+        <div class="kpi-label">Engineers Moved / Added</div>
+        <div class="kpi-value">${data.total_engineers_moved || 0}</div>
       </div>
     </div>
     <div class="d-flex gap-8 mb-12 flex-wrap">
       <span class="stat-chip">Target: <strong>${IMSERV.fmt.pct(data.parameters?.target_utilisation_pct)}</strong></span>
-      <span class="stat-chip">Action band: <strong>${IMSERV.fmt.pct(data.parameters?.lower_bound_pct)}-${IMSERV.fmt.pct(data.parameters?.upper_bound_pct)}</strong></span>
-      <span class="stat-chip">Engineers moved: <strong>${data.total_engineers_moved || 0}</strong></span>
+      <span class="stat-chip">Jobs/FTE/day: <strong>${data.parameters?.jobs_per_fte_day ?? '—'}</strong></span>
+      <span class="stat-chip">Absence: <strong>${IMSERV.fmt.pct(data.parameters?.absence_rate_pct)}</strong></span>
     </div>
     <div class="grid-5-7 optimise-result-grid">
       <div>
         <div class="fs-12 fw-600 mb-8 text-muted">REGION IMPACT</div>
         <table class="data-table optimise-impact-table">
-          <thead><tr><th>Region</th><th>Before</th><th>After</th><th>Engineers</th></tr></thead>
+          <thead><tr><th>Region</th><th>Eng. Before</th><th>Eng. After</th><th>Δ</th><th>Req FTE</th><th>Cap FTE Before</th><th>Cap FTE After</th><th>Gap Before</th><th>Gap After</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -452,7 +661,8 @@ function implementOptimisation() {
   renderOptimisationResult(_lastOptimisationResult, true);
   applyOptimisationToKPIs();
   updateOptimisationButtons();
-  if (_activeOpsTab === 'capacity') loadCapacityMatrix();
+  loadCapacityMatrix();
+  loadCapacityForecast();
 }
 
 function revertOptimisation() {
@@ -494,6 +704,13 @@ function switchOpsSidebarTab(name, el) {
 }
 
 function loadActiveOpsTabData() {
+  if (document.getElementById('view-field-ops')?.classList.contains('resource-planning-page')) {
+    return Promise.all([
+      loadCapacityForecast(),
+      loadCapacityMatrix(),
+      loadUnderstaffing(),
+    ]);
+  }
   if (_activeOpsTab === 'capacity') {
     return loadCapacityMatrix();
   } else if (_activeOpsTab === 'patch') {

@@ -68,10 +68,12 @@ def _get_cancellation_engine():
 def _get_field_ops_engine():
     from engine.field_ops_engine import (
         get_field_ops_kpis, get_region_capacity_matrix, get_patch_level_plan,
-        get_engineer_performance, predict_understaffing, optimise_workforce_allocation
+        get_engineer_performance, predict_understaffing, optimise_workforce_allocation,
+        get_capacity_forecast_2026
     )
     return (get_field_ops_kpis, get_region_capacity_matrix, get_patch_level_plan,
-            get_engineer_performance, predict_understaffing, optimise_workforce_allocation)
+            get_engineer_performance, predict_understaffing, optimise_workforce_allocation,
+            get_capacity_forecast_2026)
 
 def _get_financial_engine():
     from engine.financial_engine import (
@@ -458,27 +460,42 @@ def field_ops_understaffing():
     region = request.args.get("region", "NW")
     weeks  = int(request.args.get("weeks", 8))
     try:
-        _, _, _, _, predict, _ = _get_field_ops_engine()
+        _, _, _, _, predict, *_ = _get_field_ops_engine()
         return jsonify(predict(region, weeks))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/field-ops/capacity-forecast")
+def field_ops_capacity_forecast():
+    region = request.args.get("region")
+    try:
+        *_, forecast = _get_field_ops_engine()
+        return jsonify(forecast(
+            region_code=region,
+            target_utilisation_pct=request.args.get("target", 78),
+            jobs_per_fte_day=request.args.get("jobs_per_fte_day", 2),
+            absence_rate_pct=request.args.get("absence_rate"),
+        ))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/field-ops/optimise")
 def field_ops_optimise():
-    year = _request_year()
+    year = _request_year(default=2026)
     try:
-        _, _, _, _, _, optimise = _get_field_ops_engine()
+        _, _, _, _, _, optimise, *_ = _get_field_ops_engine()
         return jsonify(optimise(
             year=year,
-            target_utilisation_pct=request.args.get("target", 80),
-            tolerance_pct=request.args.get("tolerance", 4),
-            max_engineers_per_move=request.args.get("max_move", 5),
-            min_engineers_per_move=request.args.get("min_move", 1),
-            max_relocation_distance=request.args.get("max_dist", 50),
+            target_utilisation_pct=request.args.get("target", 72),
+            jobs_per_fte_day=request.args.get("jobs_per_fte_day", 2),
+            absence_rate_pct=request.args.get("absence_rate", 15),
         ))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
