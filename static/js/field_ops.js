@@ -49,14 +49,17 @@ function optimisationScaleForCapacityForecast(data) {
   if (!_appliedOptimisation || !data?.regions?.length) return null;
   const selectedRegion = IMSERV.getRegion();
   const map = getAppliedRegionalMap();
-  if (selectedRegion && map[selectedRegion]?.capacity_before > 0) {
-    return map[selectedRegion].capacity_after / map[selectedRegion].capacity_before;
+  const getBefore = r => Number(r.capacity_fte_before || r.capacity_before) || 0;
+  const getAfter = r => Number(r.capacity_fte_after || r.capacity_after) || 0;
+
+  if (selectedRegion && getBefore(map[selectedRegion] || {}) > 0) {
+    return getAfter(map[selectedRegion]) / getBefore(map[selectedRegion]);
   }
   let before = 0;
   let after = 0;
   Object.values(map).forEach(region => {
-    before += Number(region.capacity_before) || 0;
-    after += Number(region.capacity_after) || 0;
+    before += getBefore(region);
+    after += getAfter(region);
   });
   return before > 0 ? after / before : null;
 }
@@ -95,6 +98,19 @@ function renderCapacityForecast(data) {
   const rawGap = Number(data.kpis?.avg_fte_gap) || 0;
   const displayGap = rawGap;
   setCapacityGapKPI(displayGap, displayGap);
+
+  if (data.kpis && data.method) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('ops-kpi-jobs', IMSERV.fmt.num(data.kpis.forecast_capacity_jobs));
+    set('ops-kpi-productivity', data.method.jobs_per_fte_day?.toFixed(2) || '—');
+    const absenceRate = data.kpis.avg_required_fte 
+      ? (data.kpis.avg_absent_fte / data.kpis.avg_required_fte) * 100 
+      : 0;
+    set('ops-kpi-absence', IMSERV.fmt.pct(absenceRate));
+    
+    const jobsLabel = document.querySelector('#ops-kpi-jobs')?.previousElementSibling;
+    if (jobsLabel) jobsLabel.textContent = 'Forecast Jobs Capacity';
+  }
 
   const summary = document.getElementById('resource-model-summary');
   const method = data.method || {};
@@ -180,7 +196,7 @@ function renderCapacityForecast(data) {
           <td>${IMSERV.fmt.num(r.required_fte)}</td>
           <td>${IMSERV.fmt.num(r.absent_fte)}</td>
           <td>${IMSERV.fmt.num(r.net_forecast_fte)}</td>
-          <td>${IMSERV.fmt.pct(after ? after.utilisation_after : r.utilisation_pct)}</td>
+          <td>${IMSERV.fmt.pct(after ? (after.utilisation_after != null ? after.utilisation_after : (after.capacity_fte_after ? (after.required_fte / after.capacity_fte_after) * 100 : r.utilisation_pct)) : r.utilisation_pct)}</td>
           <td class="${(afterGap ?? r.fte_gap) < 0 ? 'text-crit' : 'text-ok'}">${(afterGap ?? r.fte_gap) >= 0 ? '+' : ''}${IMSERV.fmt.num(afterGap ?? r.fte_gap)}</td>
         </tr>
       `;
@@ -227,17 +243,29 @@ async function loadCapacityMatrix() {
 
   const regions = Object.keys(byRegion);
   const optimisedRegions = getAppliedRegionalMap();
+  const jobsPerFteDay = _appliedOptimisation?.parameters?.jobs_per_fte_day || 2;
   const capVals = regions.map(r => {
     const after = optimisedRegions[r];
-    return after ? Math.round(after.capacity_after / Math.max(after.weeks || byRegion[r].count, 1)) : Math.round(byRegion[r].cap / byRegion[r].count);
+    if (after) {
+      if (after.capacity_after != null) return Math.round(after.capacity_after / Math.max(after.weeks || byRegion[r].count, 1));
+      return Math.round(after.capacity_fte_after * jobsPerFteDay * 5);
+    }
+    return Math.round(byRegion[r].cap / byRegion[r].count);
   });
   const demVals = regions.map(r => {
     const after = optimisedRegions[r];
-    return after ? Math.round(after.demand_jobs / Math.max(after.weeks || byRegion[r].count, 1)) : Math.round(byRegion[r].dem / byRegion[r].count);
+    if (after) {
+      if (after.demand_jobs != null) return Math.round(after.demand_jobs / Math.max(after.weeks || byRegion[r].count, 1));
+    }
+    return Math.round(byRegion[r].dem / byRegion[r].count);
   });
   const utilVals= regions.map((r, i) => {
     const after = optimisedRegions[r];
-    return after ? after.utilisation_after : parseFloat((demVals[i] / Math.max(capVals[i], 1) * 100).toFixed(1));
+    if (after) {
+      if (after.utilisation_after != null) return after.utilisation_after;
+      if (after.capacity_fte_after > 0) return parseFloat(((after.required_fte / after.capacity_fte_after) * 100).toFixed(1));
+    }
+    return parseFloat((demVals[i] / Math.max(capVals[i], 1) * 100).toFixed(1));
   });
 
   IMSERV.destroyChart('capacity-matrix');
@@ -470,7 +498,20 @@ function applyOptimisationToKPIs() {
   const region = IMSERV.getRegion();
   const regionalMap = getAppliedRegionalMap();
   const regionAfter = region ? regionalMap[region] : null;
-  const utilAfter = regionAfter ? regionAfter.utilisation_after : _appliedOptimisation.avg_utilisation_after;
+  
+  let utilAfter = regionAfter ? regionAfter.utilisation_after : _appliedOptimisation.avg_utilisation_after;
+  
+  if (utilAfter == null && regionAfter && regionAfter.capacity_fte_after > 0) {
+    utilAfter = (regionAfter.required_fte / regionAfter.capacity_fte_after) * 100;
+  } else if (utilAfter == null) {
+    let totalReq = 0, totalCap = 0;
+    Object.values(regionalMap).forEach(r => {
+      totalReq += r.required_fte || 0;
+      totalCap += r.capacity_fte_after || 0;
+    });
+    utilAfter = totalCap > 0 ? (totalReq / totalCap) * 100 : null;
+  }
+  
   if (utilAfter != null) utilEl.textContent = IMSERV.fmt.pct(utilAfter);
   if (engineerEl && regionAfter?.engineers_after != null) {
     engineerEl.textContent = IMSERV.fmt.num(regionAfter.engineers_after);

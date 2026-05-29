@@ -1806,7 +1806,7 @@ body {
 
 .resource-visual-grid {
   display: grid;
-  grid-template-columns: minmax(620px, 1.65fr) minmax(360px, 1fr);
+  grid-template-columns: 1fr;
   gap: 14px;
   align-items: stretch;
 }
