@@ -71,6 +71,85 @@ def _calculate_financials(
     }
 
 
+def _historical_financial_assumptions(region_code: str = None) -> dict:
+    rows = get_financial_data()
+    if region_code:
+        rows = [r for r in rows if r.get("region_code") == region_code]
+    rows = [r for r in rows if to_int(r.get("year")) == 2025]
+
+    by_type = defaultdict(lambda: defaultdict(float))
+    total = defaultdict(float)
+    for r in rows:
+        jt = r.get("job_type")
+        requests = to_float(r.get("total_requests"))
+        completions = to_float(r.get("completions"))
+        cancellations = to_float(r.get("cancellations"))
+        aborts = to_float(r.get("aborts"))
+        revenue = to_float(r.get("revenue_gbp"))
+        direct_cost = to_float(r.get("direct_cost_gbp"))
+
+        for bucket in (by_type[jt], total):
+            bucket["requests"] += requests
+            bucket["completions"] += completions
+            bucket["cancellations"] += cancellations
+            bucket["aborts"] += aborts
+            bucket["revenue"] += revenue
+            bucket["direct_cost"] += direct_cost
+
+    def rates(bucket, jt=None):
+        completions = max(bucket["completions"], 1)
+        return {
+            "completion_rate": bucket["completions"] / max(bucket["requests"], 1),
+            "cancel_rate": bucket["cancellations"] / max(bucket["requests"], 1),
+            "abort_rate": bucket["aborts"] / max(bucket["requests"], 1),
+            "revenue_per_completion": bucket["revenue"] / completions if bucket["revenue"] else REVENUE_MAP.get(jt, 150.0),
+            "direct_cost_per_completion": bucket["direct_cost"] / completions if bucket["direct_cost"] else COST_MAP.get(jt, 80.0),
+        }
+
+    return {
+        "default": rates(total),
+        "by_type": {jt: rates(bucket, jt) for jt, bucket in by_type.items()},
+    }
+
+
+def _apply_2026_forecast_financials(rows: list, region_code: str = None) -> list:
+    assumptions = _historical_financial_assumptions(region_code)
+    result = []
+    for row in rows:
+        if to_int(row.get("year")) != 2026:
+            result.append(row)
+            continue
+
+        jt = row.get("job_type")
+        rates = assumptions["by_type"].get(jt, assumptions["default"])
+        requests = to_int(row.get("total_requests"))
+        completions = int(round(requests * rates["completion_rate"]))
+        cancellations = int(round(requests * rates["cancel_rate"]))
+        aborts = int(round(requests * rates["abort_rate"]))
+        revenue = completions * rates["revenue_per_completion"]
+        direct_cost = (completions * rates["direct_cost_per_completion"]) + (aborts * ABORT_COST)
+        overhead = direct_cost * OVERHEAD_PCT
+        total_cost = direct_cost + overhead
+        margin = revenue - total_cost
+
+        enriched = dict(row)
+        enriched.update({
+            "completions": completions,
+            "cancellations": cancellations,
+            "aborts": aborts,
+            "revenue_gbp": round(revenue, 2),
+            "direct_cost_gbp": round(direct_cost, 2),
+            "overhead_gbp": round(overhead, 2),
+            "total_cost_gbp": round(total_cost, 2),
+            "margin_gbp": round(margin, 2),
+            "margin_pct": safe_pct(margin, revenue, decimals=2),
+            "cost_per_completion": round(total_cost / max(completions, 1), 2),
+            "is_forecast": "1",
+        })
+        result.append(enriched)
+    return result
+
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 def get_financial_kpis(region_code: str = None, year: int = 2025) -> dict:
@@ -84,12 +163,16 @@ def get_financial_kpis(region_code: str = None, year: int = 2025) -> dict:
     if region_code:
         rows = [r for r in rows if r["region_code"] == region_code]
     rows = [r for r in rows if to_int(r.get("year")) == year]
+    if year == 2026:
+        rows = _apply_2026_forecast_financials(rows, region_code)
 
     total_revenue   = sum(to_float(r["revenue_gbp"])        for r in rows)
     total_cost      = sum(to_float(r["total_cost_gbp"])     for r in rows)
     total_margin    = sum(to_float(r["margin_gbp"])         for r in rows)
     total_jobs      = sum(to_int(r["completions"])          for r in rows)
     total_requests  = sum(to_int(r["total_requests"])       for r in rows)
+    total_cancellations = sum(to_int(r["cancellations"])    for r in rows)
+    total_aborts        = sum(to_int(r["aborts"])           for r in rows)
 
     avg_cpp         = round(total_cost    / max(total_jobs, 1), 2)
     avg_margin_pct  = safe_pct(total_margin, total_revenue, decimals=2)
@@ -142,6 +225,10 @@ def get_financial_kpis(region_code: str = None, year: int = 2025) -> dict:
         "total_margin_gbp":   round(total_margin, 2),
         "margin_pct":         avg_margin_pct,
         "total_completions":  total_jobs,
+        "total_requests":     total_requests,
+        "completion_rate":    safe_pct(total_jobs, total_requests),
+        "cancellation_rate":  safe_pct(total_cancellations, total_requests),
+        "abort_rate":         safe_pct(total_aborts, total_requests),
         "avg_cost_per_completion": avg_cpp,
         "monthly_trend":      monthly_trend,
         "job_type_breakdown": job_type_breakdown,
@@ -255,33 +342,25 @@ def compare_scenarios(scenarios: list) -> dict:
 
 def get_forecast_profitability(region_code: str = None) -> dict:
     """
-    2026 forecast profitability based on 2025 actuals + growth assumptions.
+    2026 forecast profitability based on 2026 forecast demand.
 
     Returns:
         dict with monthly P&L forecast for 2026
     """
-    actuals = get_financial_kpis(region_code, year=2025)
-    monthly_actuals = actuals["monthly_trend"]
+    forecast_kpis = get_financial_kpis(region_code, year=2026)
+    monthly_rows = forecast_kpis["monthly_trend"]
 
-    if not monthly_actuals:
+    if not monthly_rows:
         return {"monthly_forecast": [], "annual_summary": {}}
 
-    growth_rate   = 0.04  # 4% revenue growth
-    cost_inflation = 0.06  # 6% cost inflation
-
     monthly_forecast = []
-    for i, m in enumerate(monthly_actuals):
-        ym_parts = m["month"].split("-")
-        new_month = f"2026-{ym_parts[1]}"
-        forecast_rev  = round(m["revenue"]  * (1 + growth_rate), 2)
-        forecast_cost = round(m["cost"]     * (1 + cost_inflation), 2)
-        forecast_margin = round(forecast_rev - forecast_cost, 2)
+    for m in monthly_rows:
         monthly_forecast.append({
-            "month":       new_month,
-            "revenue":     forecast_rev,
-            "cost":        forecast_cost,
-            "margin":      forecast_margin,
-            "margin_pct":  safe_pct(forecast_margin, forecast_rev, decimals=1),
+            "month":       m["month"],
+            "revenue":     m["revenue"],
+            "cost":        m["cost"],
+            "margin":      m["margin"],
+            "margin_pct":  m["margin_pct"],
             "is_forecast": True,
         })
 
@@ -300,7 +379,6 @@ def get_forecast_profitability(region_code: str = None) -> dict:
         "monthly_forecast": monthly_forecast,
         "annual_summary":   {k: round(v, 2) for k, v in annual.items()},
         "assumptions": {
-            "revenue_growth_pct":   growth_rate * 100,
-            "cost_inflation_pct":   cost_inflation * 100,
+            "source": "2026 forecast demand with 2025 realised conversion and cost rates",
         },
     }

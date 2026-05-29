@@ -541,8 +541,9 @@ def optimise_workforce_allocation(
         fr = forecast_regions.get(rc, {})
         engineers    = engineer_counts.get(rc, 0)
         required_fte = fr.get("required_fte", 0.0)
-        # Baseline comes from the 2026 demand-led capacity forecast line.
-        capacity_fte = fr.get("net_forecast_fte", 0.0)
+        # Optimisation baseline requested by planning:
+        # capacity forecast FTE = (FTE forecast from demand - absence) * utilisation.
+        capacity_fte = (required_fte - (required_fte * absence)) * target_util
         fte_gap = capacity_fte - required_fte
 
         region_state[rc] = {

@@ -16,10 +16,29 @@ async function loadFinancialDashboard() {
     if (kpis)     renderFinancialKPIs(kpis);
     if (kpis)     renderMonthlyChart(kpis.monthly_trend || []);
     if (kpis)     renderJobTypeChart(kpis.job_type_breakdown || []);
+    if (kpis)     hydrateScenarioDefaults(kpis);
     if (forecast) renderForecastProfit(forecast);
   } finally {
     IMSERV.setLoading(loadingTargets, false);
   }
+}
+
+function hydrateScenarioDefaults(kpis) {
+  const fields = {
+    'sc-name': 'Base Case 2026',
+    'sc-volume': Math.round(kpis.total_requests || 0),
+    'sc-completion': Math.round(kpis.completion_rate || 68),
+    'sc-cancel': Math.round(kpis.cancellation_rate || 15),
+    'sc-abort': Math.round(kpis.abort_rate || 8),
+  };
+
+  Object.entries(fields).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el && value !== 0) el.value = value;
+  });
+  updateRangeVal('sc-completion', 'sc-completion-val', '%');
+  updateRangeVal('sc-cancel', 'sc-cancel-val', '%');
+  updateRangeVal('sc-abort', 'sc-abort-val', '%');
 }
 
 function renderFinancialKPIs(kpis) {
