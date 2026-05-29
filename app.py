@@ -29,10 +29,10 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.getenv("SECRET_KEY", "imserv-dev-secret-2026")
 CORS(app)
 _DATA_READY = False
-SUPPORTED_YEARS = {2025}
+SUPPORTED_YEARS = {2025, 2026}
 
 def _request_year(default: int = 2025) -> int:
-    """Return a supported actual-data year; stale years fall back to 2025."""
+    """Return a supported dashboard year; stale years fall back to 2025."""
     try:
         year = int(request.args.get("year", default))
     except (TypeError, ValueError):

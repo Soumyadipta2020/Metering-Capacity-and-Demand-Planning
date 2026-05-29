@@ -54,7 +54,10 @@ const IMSERV = {
   },
 
   getRegion: () => document.getElementById('global-region')?.value || '',
-  getYear:   () => parseInt(document.getElementById('global-year')?.value || '2025', 10),
+  getYear:   () => {
+    const activeView = document.querySelector('.view.active')?.id || 'view-journey';
+    return ['view-forecasting', 'view-field-ops', 'view-financial'].includes(activeView) ? 2026 : 2025;
+  },
 
   registerChart(key, instance) {
     if (this.charts[key]) { this.charts[key].destroy(); }

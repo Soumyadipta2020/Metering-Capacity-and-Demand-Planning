@@ -83,7 +83,7 @@ def get_financial_kpis(region_code: str = None, year: int = 2025) -> dict:
     rows = get_financial_data()
     if region_code:
         rows = [r for r in rows if r["region_code"] == region_code]
-    rows = [r for r in rows if to_int(r.get("year")) == year and r.get("is_forecast", "0") == "0"]
+    rows = [r for r in rows if to_int(r.get("year")) == year]
 
     total_revenue   = sum(to_float(r["revenue_gbp"])        for r in rows)
     total_cost      = sum(to_float(r["total_cost_gbp"])     for r in rows)

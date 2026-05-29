@@ -106,9 +106,6 @@
             <option value="SCO">Scotland</option>
             <option value="YRK">Yorkshire</option>
           </select>
-          <select class="filter-select" id="global-year" onchange="onYearChange()">
-            <option value="2025" selected>2025</option>
-          </select>
         </div>
         <div class="btn-icon" onclick="refreshCurrentView()" title="Refresh">↻</div>
         <div class="btn-icon" onclick="exportCurrentView()" title="Export">⬇</div>
@@ -222,11 +219,19 @@
       <div class="view" id="view-forecasting">
 
         <!-- Forecast KPIs -->
-        <div class="kpi-grid" id="forecast-kpis">
-          <div class="kpi-card info"><div class="kpi-label">Request Contacts</div><div class="kpi-value" id="fc-kpi-volume">—</div><div class="kpi-icon">📞</div></div>
-          <div class="kpi-card ok"><div class="kpi-label">Visits</div><div class="kpi-value" id="fc-kpi-bookings">—</div><div class="kpi-icon">📅</div></div>
-          <div class="kpi-card ok"><div class="kpi-label">Contact to Visit Rate</div><div class="kpi-value" id="fc-kpi-conversion">—</div><div class="kpi-icon">🎯</div></div>
-          <div class="kpi-card warn"><div class="kpi-label">Abandonment Rate</div><div class="kpi-value" id="fc-kpi-abandon">—</div><div class="kpi-icon">📵</div></div>
+        <div class="forecast-kpi-row">
+          <div class="kpi-grid forecast-kpi-grid" id="forecast-kpis">
+            <div class="kpi-card info"><div class="kpi-label">Request Contacts</div><div class="kpi-value" id="fc-kpi-volume">—</div><div class="kpi-icon">📞</div></div>
+            <div class="kpi-card ok"><div class="kpi-label">Visits</div><div class="kpi-value" id="fc-kpi-bookings">—</div><div class="kpi-icon">📅</div></div>
+            <div class="kpi-card ok"><div class="kpi-label">Contact to Visit Rate</div><div class="kpi-value" id="fc-kpi-conversion">—</div><div class="kpi-icon">🎯</div></div>
+            <div class="kpi-card warn"><div class="kpi-label">Abandonment Rate</div><div class="kpi-value" id="fc-kpi-abandon">—</div><div class="kpi-icon">📵</div></div>
+          </div>
+          <div class="forecast-model-toggle-card">
+            <div class="forecast-toggle-label">Forecast Model</div>
+            <div class="forecast-model-toggle" id="forecast-model-toggle">
+              <button type="button" class="active" data-model="" onclick="setForecastModel('', this)">Ensemble P50</button>
+            </div>
+          </div>
         </div>
 
         <div class="forecast-tabs-content">
@@ -268,14 +273,11 @@
             <div class="card forecast-ensemble-card">
               <div class="card-header">
                 <div>
-                  <div class="card-title">📈 52-Week Smart Meter Request Demand Forecast</div>
+                  <div class="card-title" id="forecast-chart-title">📈 52-Week Smart Meter Request Demand Forecast</div>
                   <div class="card-subtitle">2026 weekly forecast compared with 2025 same-week actuals, including P10, P50 and P90 planning bands</div>
                 </div>
                 <div class="card-actions">
                   <div class="filter-bar">
-                    <select class="filter-select" id="forecast-model-filter" onchange="onForecastModelChange()">
-                      <option value="">Ensemble P50</option>
-                    </select>
                     <select class="filter-select" id="forecast-channel-filter" onchange="loadForecast()">
                       <option value="">All Channels</option>
                       <option value="Phone">Phone</option>

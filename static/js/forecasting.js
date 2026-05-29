@@ -3,11 +3,12 @@
 let _forecastChart = null;
 let _activeForecastTab = 'forecast';
 let _lastForecastData = null;
+let _activeForecastModel = '';
+let _forecastPlanningRates = { contactToVisitRate: 0, abandonRate: 0 };
 
 async function loadForecastingDashboard() {
   const region = IMSERV.getRegion();
-  const year   = IMSERV.getYear();
-  const qs     = `?region=${region}&year=${year}`;
+  const planningQs = `?region=${region}&year=2025`;
   IMSERV.setLoading([
     'forecast-chart',
     'model-accuracy-body',
@@ -18,11 +19,11 @@ async function loadForecastingDashboard() {
 
   try {
     const [kpis, funnel] = await Promise.all([
-      IMSERV.apiFetch('/api/forecasting/channel-kpis' + qs),
-      IMSERV.apiFetch('/api/forecasting/funnel' + qs),
+      IMSERV.apiFetch('/api/forecasting/channel-kpis' + planningQs),
+      IMSERV.apiFetch('/api/forecasting/funnel' + planningQs),
     ]);
 
-    if (kpis) renderForecastKPIs(kpis, funnel);
+    if (kpis) storeForecastPlanningRates(kpis, funnel);
 
     await loadActiveForecastTabData(false);
   } finally {
@@ -36,15 +37,31 @@ async function loadForecastingDashboard() {
   }
 }
 
-function renderForecastKPIs(kpis, funnel) {
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+function setForecastKPI(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function storeForecastPlanningRates(kpis, funnel) {
   const f = funnel?.funnel || {};
   const visits = f.visits ?? Math.max((f.bookings ?? kpis.total_bookings ?? 0) - (f.cancellations ?? 0), 0);
   const contactToVisitRate = kpis.total_volume ? (visits / kpis.total_volume) * 100 : kpis.conversion_rate;
-  set('fc-kpi-volume',     IMSERV.fmt.num(kpis.total_volume));
-  set('fc-kpi-bookings',   IMSERV.fmt.num(visits));
-  set('fc-kpi-conversion', IMSERV.fmt.pct(contactToVisitRate));
-  set('fc-kpi-abandon',    IMSERV.fmt.pct(kpis.abandon_rate));
+  _forecastPlanningRates = {
+    contactToVisitRate: Number(contactToVisitRate) || 0,
+    abandonRate: Number(kpis.abandon_rate) || 0,
+  };
+}
+
+function renderForecastKPIs(data, forecastValues) {
+  const values = forecastValues || [];
+  const forecastContacts = Math.round(values.reduce((sum, value) => sum + (Number(value) || 0), 0));
+  const visitRate = _forecastPlanningRates.contactToVisitRate;
+  const projectedVisits = Math.round(forecastContacts * visitRate / 100);
+
+  setForecastKPI('fc-kpi-volume', IMSERV.fmt.num(forecastContacts));
+  setForecastKPI('fc-kpi-bookings', IMSERV.fmt.num(projectedVisits));
+  setForecastKPI('fc-kpi-conversion', IMSERV.fmt.pct(visitRate));
+  setForecastKPI('fc-kpi-abandon', IMSERV.fmt.pct(_forecastPlanningRates.abandonRate));
 }
 
 function renderChannelBreakdown(kpis) {
@@ -120,6 +137,13 @@ async function loadForecast() {
   }
 }
 
+function setForecastModel(model, el) {
+  _activeForecastModel = model || '';
+  document.querySelectorAll('#forecast-model-toggle button').forEach(btn => btn.classList.remove('active'));
+  if (el) el.classList.add('active');
+  onForecastModelChange();
+}
+
 function onForecastModelChange() {
   IMSERV.setLoading('forecast-chart', true);
   if (_lastForecastData) {
@@ -130,22 +154,40 @@ function onForecastModelChange() {
   }
 }
 
+function renderForecastModelToggle(modelForecasts) {
+  const toggle = document.getElementById('forecast-model-toggle');
+  if (!toggle) return;
+
+  if (_activeForecastModel && !modelForecasts[_activeForecastModel]) {
+    _activeForecastModel = '';
+  }
+
+  const models = [''].concat(Object.keys(modelForecasts || {}));
+  toggle.innerHTML = models.map(model => {
+    const label = model || 'Ensemble P50';
+    const active = model === _activeForecastModel ? ' active' : '';
+    return `<button type="button" class="${active}" data-model="${model}" onclick="setForecastModel('${model}', this)">${label}</button>`;
+  }).join('');
+}
+
+function updateForecastTitle(activeModel) {
+  const title = document.getElementById('forecast-chart-title');
+  if (!title) return;
+  const modelLabel = activeModel ? activeModel : 'Ensemble P50';
+  title.textContent = `52-Week Smart Meter Request Demand Forecast - 2026 ${modelLabel}`;
+  title.removeAttribute('data-icon-ready');
+  IMSERV.hydrateIcons?.(title.parentElement || title);
+}
+
 function renderForecastChart(data) {
   const ctx = document.getElementById('forecast-chart');
   if (!ctx) return;
 
-  const modelSelect = document.getElementById('forecast-model-filter');
   const modelForecasts = data.model_forecasts || {};
   const modelColors = { Prophet: '#0052CC', ARIMA: '#10B981', XGBoost: '#F59E0B', LightGBM: '#8B5CF6' };
-  const selectedModel = modelSelect?.value || '';
-  if (modelSelect) {
-    const current = modelSelect.value;
-    const options = ['<option value="">Ensemble P50</option>']
-      .concat(Object.keys(modelForecasts).map(m => `<option value="${m}">${m}</option>`));
-    modelSelect.innerHTML = options.join('');
-    modelSelect.value = modelForecasts[current] ? current : '';
-  }
-  const activeModel = modelSelect?.value || '';
+  renderForecastModelToggle(modelForecasts);
+  const activeModel = _activeForecastModel;
+  updateForecastTitle(activeModel);
   const centralForecast = activeModel && modelForecasts[activeModel]
     ? modelForecasts[activeModel].slice(0, data.labels.length)
     : data.p50;
@@ -156,6 +198,7 @@ function renderForecastChart(data) {
   const weekLabels = Array.from({ length: horizon }, (_, i) => `W${i + 1}`);
   const actual2025 = (data.history_values || []).slice(0, horizon);
   const forecast2026 = centralForecast.slice(0, horizon);
+  renderForecastKPIs(data, forecast2026);
   const p10Band = activeModel
     ? forecast2026.map(v => Math.round(v * 0.8))
     : (data.p10 || []).slice(0, horizon);
