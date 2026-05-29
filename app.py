@@ -455,16 +455,6 @@ def field_ops_engineer_performance():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/field-ops/understaffing-forecast")
-def field_ops_understaffing():
-    region = request.args.get("region", "NW")
-    weeks  = int(request.args.get("weeks", 8))
-    try:
-        _, _, _, _, predict, *_ = _get_field_ops_engine()
-        return jsonify(predict(region, weeks))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 
 @app.route("/api/field-ops/capacity-forecast")
 def field_ops_capacity_forecast():

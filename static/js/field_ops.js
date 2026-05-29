@@ -11,7 +11,7 @@ async function loadFieldOpsDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
-  IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body', 'understaff-chart'], true);
+  IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body'], true);
 
   try {
     const kpis = await IMSERV.apiFetch('/api/field-ops/kpis' + qs);
@@ -20,11 +20,10 @@ async function loadFieldOpsDashboard() {
     await Promise.all([
       loadCapacityForecast(),
       loadCapacityMatrix(),
-      loadUnderstaffing(),
     ]);
     if (_appliedOptimisation) renderOptimisationResult(_appliedOptimisation, true);
   } finally {
-    IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body', 'understaff-chart'], false);
+    IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body'], false);
   }
 }
 
@@ -77,7 +76,7 @@ async function loadCapacityForecast() {
   const region = IMSERV.getRegion();
   const target = Number(document.getElementById('opt-target')?.value || 72);
   const jobsPerFteDay = Number(document.getElementById('opt-jobs-per-fte')?.value || 2);
-  const absenceRate = Number(document.getElementById('opt-absence-rate')?.value || 15);
+  const absenceRate = Number(document.getElementById('opt-absence-rate')?.value || 4);
   const qs = new URLSearchParams({ target, jobs_per_fte_day: jobsPerFteDay, absence_rate: absenceRate });
   if (region) qs.set('region', region);
   IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart'], true);
@@ -364,60 +363,6 @@ async function loadEngineerPerformance() {
   `).join('');
 }
 
-async function loadUnderstaffing() {
-  const region = IMSERV.getRegion() || document.getElementById('understaff-region')?.value || 'NW';
-  const selector = document.getElementById('understaff-region');
-  if (selector && selector.value !== region) selector.value = region;
-  IMSERV.setLoading('understaff-chart', true);
-  const data   = await IMSERV.apiFetch(`/api/field-ops/understaffing-forecast?region=${region}&weeks=8`);
-  if (!data) {
-    IMSERV.setLoading('understaff-chart', false);
-    return;
-  }
-
-  // Chart
-  const ctx = document.getElementById('understaff-chart');
-  if (ctx) {
-    IMSERV.destroyChart('understaff');
-    IMSERV.registerChart('understaff', new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: data.map(d => 'W' + d.week_number),
-        datasets: [
-          { label: 'Utilisation %', data: data.map(d => d.utilisation_pct), borderColor: IMSERV.colors.accent, fill: false, tension: 0.4, pointRadius: 4 },
-          { label: 'Engineer Capacity', data: data.map(d => d.capacity_jobs),   borderColor: IMSERV.colors.ok,    yAxisID: 'y2', fill: false, tension: 0.3, pointRadius: 0, borderDash: [4,3] },
-          { label: 'Meter Job Demand',  data: data.map(d => d.demand_forecast), borderColor: IMSERV.colors.crit,  yAxisID: 'y2', fill: false, tension: 0.3, pointRadius: 0 },
-        ],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: IMSERV.chartDefaults.plugins,
-        scales: {
-          ...IMSERV.chartDefaults.scales,
-          y:  { ...IMSERV.chartDefaults.scales.y, max: 120, ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => v + '%' } },
-          y2: { ...IMSERV.chartDefaults.scales.y, position: 'right', display: false },
-        },
-      },
-    }));
-  }
-  IMSERV.setLoading('understaff-chart', false);
-
-  // Table
-  const tbody = document.getElementById('understaff-table-body');
-  if (tbody) {
-    tbody.innerHTML = data.map(d => `
-      <tr>
-        <td>W${d.week_number}</td>
-        <td>${IMSERV.fmt.num(d.capacity_jobs)}</td>
-        <td>${IMSERV.fmt.num(d.demand_forecast)}</td>
-        <td><span class="${d.gap >= 0 ? 'text-ok' : 'text-crit'}">${d.gap >= 0 ? '+' : ''}${IMSERV.fmt.num(d.gap)}</span></td>
-        <td><strong class="${d.utilisation_pct > 90 ? 'text-crit' : (d.utilisation_pct > 75 ? 'text-warn' : 'text-ok')}">${IMSERV.fmt.pct(d.utilisation_pct)}</strong></td>
-        <td><span class="priority ${d.risk_level}">${d.risk_level}</span></td>
-        <td class="text-muted fs-11">${d.recommendation || '—'}</td>
-      </tr>
-    `).join('');
-  }
-}
 
 function updateOptimiseRange(rangeId, valId, suffix) {
   const range = document.getElementById(rangeId);
@@ -436,7 +381,7 @@ function getOptimiseParams() {
   return {
     target:          val('opt-target', 72),
     jobs_per_fte_day: val('opt-jobs-per-fte', 2),
-    absence_rate:    val('opt-absence-rate', 15),
+    absence_rate:    val('opt-absence-rate', 4),
     // Fixed internal defaults — not exposed to user
     tolerance:  3,
     max_move:   25,
@@ -749,7 +694,6 @@ function loadActiveOpsTabData() {
     return Promise.all([
       loadCapacityForecast(),
       loadCapacityMatrix(),
-      loadUnderstaffing(),
     ]);
   }
   if (_activeOpsTab === 'capacity') {
@@ -758,8 +702,6 @@ function loadActiveOpsTabData() {
     return loadPatchPlan();
   } else if (_activeOpsTab === 'engineers') {
     return loadEngineerPerformance();
-  } else if (_activeOpsTab === 'forecast') {
-    return loadUnderstaffing();
   } else if (_activeOpsTab === 'optimise') {
     if (_appliedOptimisation) {
       renderOptimisationResult(_appliedOptimisation, true);

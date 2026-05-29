@@ -111,6 +111,15 @@ function renderForecastProfit(data) {
   const ctx = document.getElementById('forecast-profit-chart');
   if (!ctx || !data.monthly_forecast?.length) return;
   const mf = data.monthly_forecast;
+
+  // Dynamic y1 range — tight padding around actual margin values so fluctuations are visible
+  const margins = mf.map(m => m.margin_pct).filter(v => v != null);
+  const marginMin = Math.min(...margins);
+  const marginMax = Math.max(...margins);
+  const pad = Math.max((marginMax - marginMin) * 0.5, 1.0);  // at least ±1% padding
+  const y1Min = Math.floor((marginMin - pad) * 10) / 10;
+  const y1Max = Math.ceil((marginMax  + pad) * 10) / 10;
+
   IMSERV.destroyChart('forecast-profit');
   IMSERV.registerChart('forecast-profit', new Chart(ctx, {
     type: 'line',
@@ -129,7 +138,8 @@ function renderForecastProfit(data) {
         ...IMSERV.chartDefaults.scales,
         y:  { ...IMSERV.chartDefaults.scales.y, ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => '£' + (v/1000).toFixed(0) + 'k' } },
         y1: { ...IMSERV.chartDefaults.scales.y, position: 'right', grid: { display: false },
-               ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => v + '%' } },
+              min: y1Min, max: y1Max,
+              ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => v.toFixed(1) + '%' } },
       },
     },
   }));
@@ -192,6 +202,9 @@ function renderScenarioResults(data) {
   set('sc-res-cpp',        IMSERV.fmt.gbp(data.cost_per_completion));
   set('sc-res-capacity',   data.capacity_rag);
 
+  // Pricing & Cost Assumptions
+  renderScenarioAssumptions(data);
+
   // Waterfall chart
   const ctx = document.getElementById('waterfall-chart');
   if (ctx && data.waterfall) {
@@ -216,6 +229,87 @@ function renderScenarioResults(data) {
   }
 }
 
+function renderScenarioAssumptions(data) {
+  const panel = document.getElementById('sc-assumptions');
+  if (!panel || !data.job_type_contributions) return;
+  panel.style.display = 'block';
+
+  const fmt   = IMSERV.fmt;
+  const contribs = data.job_type_contributions;
+  const assumptions = data.assumptions || {};
+
+  // ── Revenue breakdown table ─────────────────────────────────────────────────
+  const revTbody = document.querySelector('#sc-revenue-breakdown tbody');
+  const revTfoot = document.querySelector('#sc-revenue-breakdown tfoot');
+  if (revTbody) {
+    revTbody.innerHTML = contribs.map(c => `
+      <tr>
+        <td><span class="job-type-badge">${c.job_type.replace('_',' ')}</span></td>
+        <td>${c.weight_pct}%</td>
+        <td>${c.jobs.toLocaleString()}</td>
+        <td>${fmt.gbp(c.revenue_per_job)}</td>
+        <td class="text-right text-ok"><strong>${fmt.gbpM(c.revenue)}</strong></td>
+      </tr>`).join('');
+  }
+  if (revTfoot) {
+    const uplift = assumptions.revenue_uplift_pct !== 0
+      ? ` <span class="uplift-badge">+${assumptions.revenue_uplift_pct}% uplift applied</span>` : '';
+    revTfoot.innerHTML = `<tr class="assumptions-total-row">
+      <td colspan="4"><strong>Total Revenue</strong>${uplift}</td>
+      <td class="text-right"><strong>${fmt.gbpM(data.revenue_gbp)}</strong></td>
+    </tr>`;
+  }
+
+  // ── Cost breakdown table ────────────────────────────────────────────────────
+  const costTbody = document.querySelector('#sc-cost-breakdown tbody');
+  const costTfoot = document.querySelector('#sc-cost-breakdown tfoot');
+  if (costTbody) {
+    const rows = contribs.map(c => `
+      <tr>
+        <td><span class="job-type-badge">${c.job_type.replace('_',' ')}</span></td>
+        <td>${c.jobs.toLocaleString()}</td>
+        <td>${fmt.gbp(c.cost_per_job)}</td>
+        <td class="text-right"><strong>${fmt.gbpM(c.direct_cost)}</strong></td>
+      </tr>`);
+    rows.push(`
+      <tr class="assumptions-abort-row">
+        <td><span class="job-type-badge abort">ABORTS</span></td>
+        <td>${(data.aborts || 0).toLocaleString()}</td>
+        <td>${fmt.gbp(assumptions.abort_cost_per_job || 38)}</td>
+        <td class="text-right"><strong>${fmt.gbpM(data.abort_cost_total)}</strong></td>
+      </tr>`);
+    costTbody.innerHTML = rows.join('');
+  }
+  if (costTfoot) {
+    const uplift = assumptions.cost_uplift_pct !== 0
+      ? ` <span class="uplift-badge">+${assumptions.cost_uplift_pct}% uplift applied</span>` : '';
+    costTfoot.innerHTML = `
+      <tr class="assumptions-subtotal-row">
+        <td colspan="3">Direct Cost subtotal${uplift}</td>
+        <td class="text-right">${fmt.gbpM(data.direct_cost_gbp)}</td>
+      </tr>
+      <tr class="assumptions-subtotal-row">
+        <td colspan="3">Overhead (${assumptions.overhead_pct || 22}% on direct cost)</td>
+        <td class="text-right">${fmt.gbpM(data.overhead_gbp)}</td>
+      </tr>
+      <tr class="assumptions-total-row">
+        <td colspan="3"><strong>Total Cost</strong></td>
+        <td class="text-right"><strong>${fmt.gbpM(data.total_cost_gbp)}</strong></td>
+      </tr>`;
+  }
+
+  // ── Formula note ────────────────────────────────────────────────────────────
+  const note = document.getElementById('sc-formula-note');
+  if (note) {
+    note.innerHTML =
+      `<strong>Formula:</strong> &nbsp;
+       Revenue = completions × rate/job &nbsp;·&nbsp;
+       Total Cost = (direct cost + abort cost) × 1.${assumptions.overhead_pct || 22} overhead &nbsp;·&nbsp;
+       Margin = Revenue − Total Cost &nbsp;·&nbsp;
+       Cost/Completion = Total Cost ÷ ${(data.completions || 0).toLocaleString()} completions`;
+  }
+}
+
 function resetScenario() {
   const defaults = { 'sc-completion': 68, 'sc-cancel': 15, 'sc-abort': 8, 'sc-revenue-uplift': 0, 'sc-cost-uplift': 0 };
   Object.entries(defaults).forEach(([id, val]) => {
@@ -230,4 +324,6 @@ function resetScenario() {
 
   const panel = document.getElementById('scenario-results');
   if (panel) panel.style.display = 'none';
+  const assumptions = document.getElementById('sc-assumptions');
+  if (assumptions) assumptions.style.display = 'none';
 }

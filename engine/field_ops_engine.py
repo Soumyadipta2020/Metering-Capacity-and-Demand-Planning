@@ -19,6 +19,28 @@ from engine.ingestion import (
 
 UTILISATION_THRESHOLDS = {"Green": 75, "Amber": 90}  # % — above 90 = Red
 
+# Seasonal absence shape factors by ISO week (Mon–Fri basis, UK field ops pattern).
+# Normalised so August peak = 1.0; slider value (absence_rate_pct) sets the peak rate.
+# e.g. at 4% peak: Aug absent = base_fte * 0.04 * 1.00, Mar/Oct = base_fte * 0.04 * 0.48.
+_SEASONAL_ABSENCE_FACTORS = {
+    **{w: 0.82 for w in range(1,  5)},   # Jan  – post-Christmas / New Year
+    **{w: 0.64 for w in range(5,  9)},   # Feb  – steady
+    **{w: 0.48 for w in range(9, 14)},   # Mar  – low, pre-Easter
+    **{w: 0.73 for w in range(14, 18)},  # Apr  – Easter / bank holidays
+    **{w: 0.55 for w in range(18, 22)},  # May  – moderate
+    **{w: 0.67 for w in range(22, 27)},  # Jun  – early summer leave
+    **{w: 0.94 for w in range(27, 31)},  # Jul  – peak school summer holidays
+    **{w: 1.00 for w in range(31, 36)},  # Aug  – peak summer (= defined max)
+    **{w: 0.52 for w in range(36, 40)},  # Sep  – post-summer return
+    **{w: 0.48 for w in range(40, 44)},  # Oct  – low season
+    **{w: 0.55 for w in range(44, 48)},  # Nov  – steady
+    **{w: 0.88 for w in range(48, 54)},  # Dec  – Christmas / year-end
+}
+
+
+def _seasonal_absence_factor(week: int) -> float:
+    return _SEASONAL_ABSENCE_FACTORS.get(week, 1.0)
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 def get_field_ops_kpis(region_code: str = None, year: int = 2025) -> dict:
@@ -316,13 +338,17 @@ def get_capacity_forecast_2026(
     jobs_per_day = _clamp_number(jobs_per_fte_day, 2, 0.5, 8, float)
     absence_override = None
     if absence_rate_pct is not None:
-        absence_override = _clamp_number(absence_rate_pct, 15, 0, 60, float) / 100.0
+        absence_override = _clamp_number(absence_rate_pct, 4, 0, 10, float) / 100.0
     capacity_2025 = _aggregate_capacity(2025, region_code, ("region_code", "week_number"))
     capacity_2026 = _aggregate_capacity(2026, region_code, ("region_code", "week_number"))
 
     available_days = defaultdict(set)
     absent_by_day = defaultdict(float)
+    base_fte_by_region = defaultdict(set)
+    _WEEKENDS = {"Saturday", "Sunday"}
     for row in iter_engineer_availability():
+        if row.get("day_of_week") in _WEEKENDS:
+            continue
         row_region = row.get("region_code")
         if region_code and row_region != region_code:
             continue
@@ -334,6 +360,9 @@ def get_capacity_forecast_2026(
         available_days[(year, week, row_region)].add(row.get("avail_date"))
         if row.get("status") != "Available":
             absent_by_day[day_key] += 1
+        if year == 2025:
+            base_fte_by_region[row_region].add(row.get("engineer_id"))
+    base_fte_by_region = {r: len(engs) for r, engs in base_fte_by_region.items()}
 
     absence_pattern = defaultdict(list)
     for (year, week, region), days in available_days.items():
@@ -381,11 +410,15 @@ def get_capacity_forecast_2026(
         required_fte_days = 0.0
         net_fte_days = 0.0
         absent_fte_days = 0.0
+        base_fte = base_fte_by_region.get(region, 0)
+        seasonal_factor = _seasonal_absence_factor(week)
         for absent in (historical_absences or [0.0] * working_day_count):
             required_fte = daily_demand / jobs_per_day
             if absence_override is not None:
-                absent = required_fte * absence_override
-            net_fte = max(required_fte - absent, 0)
+                absent = base_fte * absence_override * seasonal_factor
+            else:
+                absent = absent * seasonal_factor
+            net_fte = max(base_fte - absent, 0)
             required_fte_days += required_fte
             net_fte_days += net_fte
             absent_fte_days += absent
@@ -420,7 +453,7 @@ def get_capacity_forecast_2026(
             "week_number": week,
             "demand_jobs": int(round(demand)),
             "capacity_2025_jobs": int(round(capacity_2025_jobs)),
-            "capacity_2025_fte": round(capacity_2025_jobs / max(jobs_per_day * working_days, 1), 1),
+            "capacity_2025_fte": round(capacity_2025_jobs / max(jobs_per_day * 7, 1), 1),
             "current_capacity_jobs": int(round(current_capacity)),
             "current_capacity_fte": round(current_capacity / max(jobs_per_day * working_days, 1), 1),
             "forecast_capacity_jobs": int(round(forecast_capacity)),

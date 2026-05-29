@@ -43,13 +43,26 @@ def _calculate_financials(
 
     revenue    = 0.0
     direct_cost = 0.0
+    job_type_contributions = []
 
     for jtype, weight in job_mix.items():
-        vol = int(completions * weight)
-        revenue     += vol * REVENUE_MAP.get(jtype, 150.0) * revenue_uplift
-        direct_cost += vol * COST_MAP.get(jtype, 80.0)    * cost_uplift
+        vol     = int(completions * weight)
+        rev     = vol * REVENUE_MAP.get(jtype, 150.0) * revenue_uplift
+        cost    = vol * COST_MAP.get(jtype, 80.0)    * cost_uplift
+        revenue     += rev
+        direct_cost += cost
+        job_type_contributions.append({
+            "job_type":       jtype,
+            "weight_pct":     int(round(weight * 100)),
+            "jobs":           vol,
+            "revenue_per_job": round(REVENUE_MAP.get(jtype, 150.0) * revenue_uplift, 2),
+            "cost_per_job":    round(COST_MAP.get(jtype, 80.0) * cost_uplift, 2),
+            "revenue":         round(rev, 2),
+            "direct_cost":     round(cost, 2),
+        })
 
-    direct_cost += aborts * ABORT_COST * cost_uplift
+    abort_cost_total = aborts * ABORT_COST * cost_uplift
+    direct_cost += abort_cost_total
     overhead    = direct_cost * OVERHEAD_PCT
     total_cost  = direct_cost + overhead
     margin      = revenue - total_cost
@@ -68,6 +81,9 @@ def _calculate_financials(
         "margin_gbp":       round(margin, 2),
         "margin_pct":       margin_pct,
         "cost_per_completion": cpp,
+        "job_type_contributions": job_type_contributions,
+        "abort_cost_total":       round(abort_cost_total, 2),
+        "overhead_pct":           int(round(OVERHEAD_PCT * 100)),
     }
 
 
@@ -281,6 +297,12 @@ def run_scenario(
     result["scenario_name"] = scenario_name
     result["engineer_count"] = engineer_count
     result["productivity"]   = productivity_jobs_per_day
+    result["assumptions"] = {
+        "abort_cost_per_job": ABORT_COST,
+        "overhead_pct":       int(round(OVERHEAD_PCT * 100)),
+        "revenue_uplift_pct": revenue_uplift_pct,
+        "cost_uplift_pct":    cost_uplift_pct,
+    }
 
     # Capacity check
     working_days  = 230  # approximate annual

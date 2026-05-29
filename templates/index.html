@@ -468,33 +468,6 @@
           </div>
         </div>
 
-        <!-- Understaffing Forecast -->
-        <div class="ops-tab-panel" id="opstab-forecast">
-          <div class="card mb-16">
-            <div class="card-header">
-              <div><div class="card-title">Near-Term Engineer Capacity Gap Forecast</div></div>
-              <div class="card-actions">
-                <select class="filter-select" id="understaff-region" onchange="loadUnderstaffing()">
-                  <option value="NW">North West</option><option value="NE">North East</option>
-                  <option value="MID">Midlands</option><option value="SE">South East</option>
-                  <option value="SW">South West</option><option value="WAL">Wales</option>
-                  <option value="SCO">Scotland</option><option value="YRK">Yorkshire</option>
-                </select>
-              </div>
-            </div>
-            <div class="card-body">
-              <div class="chart-wrap chart-h-300 mb-16">
-                <canvas id="understaff-chart"></canvas>
-              </div>
-              <table class="data-table">
-                <thead><tr><th>Week</th><th>Engineer Capacity</th><th>Meter Demand</th><th>Gap</th><th>Utilisation</th><th>Risk</th><th>Recommendation</th></tr></thead>
-                <tbody id="understaff-table-body">
-                  <tr><td colspan="7"><div class="loading"><span class="spinner"></span></div></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
 
         <!-- Optimisation -->
         <div class="ops-tab-panel" id="opstab-optimise">
@@ -528,8 +501,8 @@
                   <div class="form-group">
                     <label class="form-label">Absence Rate %</label>
                     <div class="range-wrap">
-                      <input class="form-range" type="range" id="opt-absence-rate" min="0" max="40" step="1" value="15" oninput="updateOptimiseRange('opt-absence-rate','opt-absence-rate-val','%')" onchange="loadCapacityForecast()" />
-                      <span class="range-val" id="opt-absence-rate-val">15%</span>
+                      <input class="form-range" type="range" id="opt-absence-rate" min="0" max="10" step="0.5" value="4" oninput="updateOptimiseRange('opt-absence-rate','opt-absence-rate-val','%')" onchange="loadCapacityForecast()" />
+                      <span class="range-val" id="opt-absence-rate-val">4%</span>
                     </div>
                   </div>
                 </div>
@@ -667,6 +640,33 @@
               <div class="chart-wrap chart-h-260">
                 <canvas id="waterfall-chart"></canvas>
               </div>
+            </div>
+
+            <!-- Pricing & Cost Assumptions -->
+            <div class="sc-assumptions" id="sc-assumptions">
+              <div class="sc-assumptions-header">
+                <span class="sc-assumptions-title">Pricing &amp; Cost Assumptions</span>
+                <span class="sc-assumptions-note">Rate card applied to derive revenue, cost and margin above</span>
+              </div>
+              <div class="sc-assumptions-grid">
+                <div>
+                  <div class="sc-table-label">Revenue by Job Type</div>
+                  <table class="data-table" id="sc-revenue-breakdown">
+                    <thead><tr><th>Job Type</th><th>Mix</th><th>Jobs</th><th>Rate/Job</th><th>Total Revenue</th></tr></thead>
+                    <tbody></tbody>
+                    <tfoot></tfoot>
+                  </table>
+                </div>
+                <div>
+                  <div class="sc-table-label">Cost by Job Type</div>
+                  <table class="data-table" id="sc-cost-breakdown">
+                    <thead><tr><th>Category</th><th>Jobs</th><th>Rate/Job</th><th>Total Cost</th></tr></thead>
+                    <tbody></tbody>
+                    <tfoot></tfoot>
+                  </table>
+                </div>
+              </div>
+              <div class="sc-formula-note" id="sc-formula-note"></div>
             </div>
           </div>
         </div>
