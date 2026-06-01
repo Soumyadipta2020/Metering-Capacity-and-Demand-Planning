@@ -7,41 +7,113 @@ const IMSERV = {
 
   // Brand colours — mirror CSS variables for Chart.js
   colors: {
-    primary:   '#0052CC',
-    accent:    '#00B8D9',
-    orange:    '#FF8B00',
-    ok:        '#10B981',
-    warn:      '#F59E0B',
-    crit:      '#EF4444',
-    info:      '#3B82F6',
-    muted:     '#4A5568',
-    text:      '#E8F0FE',
+    primary:   '#028178',
+    accent:    '#02C2B7',
+    bright:    '#03F4E8',
+    orange:    '#F4D25A',
+    ok:        '#028178',
+    warn:      '#F4D25A',
+    crit:      '#FB8281',
+    info:      '#02C2B7',
+    muted:     '#737373',
+    text:      '#00020B',
   },
 
   chartDefaults: {
-    color: '#E8F0FE',
+    color: '#00020B',
     font: { family: 'Inter, sans-serif', size: 11 },
     plugins: {
-      legend: { labels: { color: '#8B9DC3', font: { size: 11 } } },
+      legend: { labels: { color: '#4A6B7C', font: { size: 11 } } },
       tooltip: {
-        backgroundColor: '#0E1829',
-        borderColor: 'rgba(0,184,217,0.3)',
+        backgroundColor: '#00020B',
+        borderColor: 'rgba(2,194,183,0.45)',
         borderWidth: 1,
-        titleColor: '#E8F0FE',
-        bodyColor: '#8B9DC3',
+        titleColor: '#FFFFFF',
+        bodyColor: '#E6E6E6',
         padding: 10,
       },
     },
     scales: {
       x: {
-        grid:  { color: 'rgba(255,255,255,0.05)' },
-        ticks: { color: '#4A5568', font: { size: 10 } },
+        grid:  { color: 'rgba(132,136,136,0.22)' },
+        ticks: { color: '#737373', font: { size: 10 } },
       },
       y: {
-        grid:  { color: 'rgba(255,255,255,0.05)' },
-        ticks: { color: '#4A5568', font: { size: 10 } },
+        grid:  { color: 'rgba(132,136,136,0.22)' },
+        ticks: { color: '#737373', font: { size: 10 } },
       },
     },
+  },
+
+  themeChartPalettes: {
+    light: {
+      text: '#00020B',
+      muted: '#737373',
+      secondary: '#4A6B7C',
+      grid: 'rgba(132,136,136,0.22)',
+      tooltipBg: '#00020B',
+      tooltipText: '#FFFFFF',
+      tooltipBody: '#E6E6E6',
+    },
+    dark: {
+      text: '#F7F9F9',
+      muted: '#B0B3B6',
+      secondary: '#B0B3B6',
+      grid: 'rgba(176,179,182,0.14)',
+      tooltipBg: '#071713',
+      tooltipText: '#FFFFFF',
+      tooltipBody: '#B0B3B6',
+    },
+  },
+
+  getTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  },
+
+  applyChartTheme(theme = this.getTheme()) {
+    const palette = this.themeChartPalettes[theme] || this.themeChartPalettes.light;
+    this.colors.text = palette.text;
+    this.colors.muted = palette.muted;
+
+    this.chartDefaults.color = palette.text;
+    this.chartDefaults.plugins.legend.labels.color = palette.secondary;
+    this.chartDefaults.plugins.tooltip.backgroundColor = palette.tooltipBg;
+    this.chartDefaults.plugins.tooltip.titleColor = palette.tooltipText;
+    this.chartDefaults.plugins.tooltip.bodyColor = palette.tooltipBody;
+    this.chartDefaults.scales.x.grid.color = palette.grid;
+    this.chartDefaults.scales.x.ticks.color = palette.muted;
+    this.chartDefaults.scales.y.grid.color = palette.grid;
+    this.chartDefaults.scales.y.ticks.color = palette.muted;
+
+    if (window.Chart) {
+      Chart.defaults.color = palette.text;
+      Chart.defaults.plugins.legend.labels.color = palette.secondary;
+    }
+
+    Object.values(this.charts).forEach(chart => this.rethemeChart(chart, palette));
+  },
+
+  rethemeChart(chart, palette) {
+    if (!chart?.options) return;
+    const options = chart.options;
+    options.color = palette.text;
+
+    if (options.plugins?.legend?.labels) {
+      options.plugins.legend.labels.color = palette.secondary;
+    }
+    if (options.plugins?.tooltip) {
+      options.plugins.tooltip.backgroundColor = palette.tooltipBg;
+      options.plugins.tooltip.titleColor = palette.tooltipText;
+      options.plugins.tooltip.bodyColor = palette.tooltipBody;
+    }
+
+    Object.values(options.scales || {}).forEach(scale => {
+      if (scale.grid) scale.grid.color = palette.grid;
+      if (scale.ticks) scale.ticks.color = palette.muted;
+      if (scale.title?.display) scale.title.color = palette.muted;
+    });
+
+    chart.update('none');
   },
 
   // Format helpers
@@ -62,6 +134,7 @@ const IMSERV = {
   registerChart(key, instance) {
     if (this.charts[key]) { this.charts[key].destroy(); }
     this.charts[key] = instance;
+    this.rethemeChart(instance, this.themeChartPalettes[this.getTheme()]);
   },
 
   destroyChart(key) {
@@ -125,9 +198,12 @@ const IMSERV = {
   priorityIcon: () => '',
 };
 
+window.IMSERV = IMSERV;
+IMSERV.applyChartTheme();
+
 // Apply initial theme icon
 (function () {
-  const t = localStorage.getItem('imserv-theme') || 'dark';
+  const t = localStorage.getItem('imserv-theme') || 'light';
   const icon = document.getElementById('theme-icon');
   if (icon) icon.textContent = t === 'dark' ? 'Dark' : 'Light';
 })();
@@ -215,7 +291,7 @@ Object.assign(IMSERV, {
     root.querySelectorAll('.nav-icon:not([data-icon-ready])').forEach(el => {
       const view = el.closest('.nav-item')?.dataset.view;
       const icon = el.id === 'theme-icon'
-        ? ((document.documentElement.dataset.theme || 'dark') === 'dark' ? 'moon' : 'sun')
+        ? ((document.documentElement.dataset.theme || 'light') === 'dark' ? 'moon' : 'sun')
         : ({ journey: 'barChart', forecasting: 'trendingUp', cancellations: 'xCircle', 'field-ops': 'wrench', financial: 'wallet' }[view] || 'settings');
       this.setElementIcon(el, icon);
     });

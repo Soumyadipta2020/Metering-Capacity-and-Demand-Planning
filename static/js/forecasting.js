@@ -84,7 +84,7 @@ function renderChannelBreakdown(kpis) {
   // Doughnut chart
   const ctx = document.getElementById('channel-breakdown-chart');
   if (ctx && channels.length) {
-    const colours = ['#0052CC','#00B8D9','#10B981','#F59E0B','#EF4444','#8B5CF6'];
+    const colours = ['#028178','#02C2B7','#03F4E8','#7FFFD4','#737373','#4A6B7C'];
     IMSERV.destroyChart('channel-breakdown');
     IMSERV.registerChart('channel-breakdown', new Chart(ctx, {
       type: 'doughnut',
@@ -93,7 +93,7 @@ function renderChannelBreakdown(kpis) {
         datasets: [{
           data: channels.map(c => c.volume),
           backgroundColor: colours.slice(0, channels.length),
-          borderColor: '#0E1829',
+          borderColor: '#FFFFFF',
           borderWidth: 2,
         }],
       },
@@ -102,7 +102,7 @@ function renderChannelBreakdown(kpis) {
         maintainAspectRatio: false,
         plugins: {
           ...IMSERV.chartDefaults.plugins,
-          legend: { position: 'right', labels: { color: '#8B9DC3', font: { size: 11 }, padding: 10 } },
+          legend: { position: 'right', labels: { color: '#4A6B7C', font: { size: 11 }, padding: 10 } },
         },
       },
     }));
@@ -199,7 +199,7 @@ function renderForecastChart(data) {
   if (!ctx) return;
 
   const modelForecasts = data.model_forecasts || {};
-  const modelColors = { Prophet: '#0052CC', ARIMA: '#10B981', XGBoost: '#F59E0B', LightGBM: '#8B5CF6' };
+  const modelColors = { Prophet: '#028178', ARIMA: '#02C2B7', XGBoost: '#F4D25A', LightGBM: '#4A6B7C' };
   renderForecastModelToggle(modelForecasts);
   const activeModel = _activeForecastModel;
   updateForecastTitle(activeModel);
@@ -230,8 +230,8 @@ function renderForecastChart(data) {
         {
           label: '2025 Actual Request Contacts',
           data: actual2025,
-          borderColor: '#14B8A6',
-          backgroundColor: 'rgba(20,184,166,0.08)',
+          borderColor: '#02C2B7',
+          backgroundColor: 'rgba(74,197,187,0.08)',
           fill: false,
           tension: 0.4,
           pointRadius: 0,
@@ -241,7 +241,7 @@ function renderForecastChart(data) {
           label: activeModel ? `2026 ${activeModel} Forecast` : '2026 Ensemble Forecast (P50)',
           data: forecast2026,
           borderColor: centralColor,
-          backgroundColor: 'rgba(0,184,217,0.10)',
+          backgroundColor: 'rgba(2,194,183,0.10)',
           fill: false,
           tension: 0.4,
           pointRadius: 0,
@@ -251,15 +251,15 @@ function renderForecastChart(data) {
         {
           label: 'P90 Optimistic',
           data: p90Band,
-          borderColor: 'rgba(245,158,11,0.5)',
-          backgroundColor: 'rgba(245,158,11,0.06)',
+          borderColor: 'rgba(244,210,90,0.5)',
+          backgroundColor: 'rgba(244,210,90,0.06)',
           fill: '+1', tension: 0.4, pointRadius: 0, borderWidth: 1, borderDash: [3,3],
         },
         {
           label: 'P10 Conservative',
           data: p10Band,
-          borderColor: 'rgba(245,158,11,0.5)',
-          backgroundColor: 'rgba(245,158,11,0.06)',
+          borderColor: 'rgba(244,210,90,0.5)',
+          backgroundColor: 'rgba(244,210,90,0.06)',
           fill: false, tension: 0.4, pointRadius: 0, borderWidth: 1, borderDash: [3,3],
         },
       ],
@@ -314,7 +314,7 @@ function renderModelAccuracyVisual(accuracy) {
   container.innerHTML = rows.map((d, idx) => {
     const accuracyPct = Math.max(0, 100 - (d.mape || 0));
     const tone = d.mape < 6 ? 'strong' : (d.mape < 10 ? 'steady' : 'risk');
-    const barColor = tone === 'strong' ? '#10B981' : tone === 'steady' ? '#F59E0B' : '#EF4444';
+    const barColor = tone === 'strong' ? '#028178' : tone === 'steady' ? '#F4D25A' : '#FB8281';
     const maePct = Math.max(4, (d.mae || 0) / maxMae * 100);
     const rmsePct = Math.max(4, (d.rmse || 0) / maxRmse * 100);
     const label = tone === 'strong' ? 'Best fit' : tone === 'steady' ? 'Planning fit' : 'Watch variance';
@@ -348,7 +348,7 @@ renderModelAccuracy = function renderModelAccuracy(accuracy) {
 function renderModelComparison(data) {
   const ctx = document.getElementById('model-comparison-chart');
   if (!ctx || !data.model_forecasts) return;
-  const modelColors = { Prophet: '#0052CC', ARIMA: '#10B981', XGBoost: '#F59E0B', LightGBM: '#8B5CF6' };
+  const modelColors = { Prophet: '#028178', ARIMA: '#02C2B7', XGBoost: '#F4D25A', LightGBM: '#4A6B7C' };
   const datasets = Object.entries(data.model_forecasts).map(([m, vals]) => ({
     label: m,
     data: vals.slice(0, 26),
@@ -397,8 +397,8 @@ async function loadConversionTrend() {
     data: {
       labels,
       datasets: [
-        { label: 'Visits',                 data: visits, backgroundColor: 'rgba(0,82,204,0.5)',  yAxisID: 'y' },
-        { label: 'Successful Completions', data: cp,     backgroundColor: 'rgba(16,185,129,0.5)',yAxisID: 'y' },
+        { label: 'Visits',                 data: visits, backgroundColor: 'rgba(2,129,120,0.5)',  yAxisID: 'y' },
+        { label: 'Successful Completions', data: cp,     backgroundColor: 'rgba(2,129,120,0.5)',yAxisID: 'y' },
         { label: 'Completion Rate %',      data: cr,     borderColor: IMSERV.colors.accent, type: 'line', fill: false, tension: 0.4, pointRadius: 0, yAxisID: 'y1' },
       ],
     },

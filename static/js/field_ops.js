@@ -138,16 +138,16 @@ function renderCapacityForecast(data) {
   const forecastCtx = document.getElementById('capacity-forecast-chart');
   if (forecastCtx && weekly.length) {
     const datasets = [
-      { label: 'Demand 2026', data: weekly.map(w => w.required_fte), borderColor: IMSERV.colors.crit, backgroundColor: 'rgba(239,68,68,0.10)', fill: true, tension: 0.32, pointRadius: 0 },
-      { label: '2025 Capacity FTE', data: weekly.map(w => w.capacity_2025_fte), borderColor: IMSERV.colors.muted, backgroundColor: 'rgba(74,85,104,0.08)', borderDash: [3, 3], fill: false, tension: 0.25, pointRadius: 0 },
-      { label: 'Capacity 2026', data: weekly.map(w => w.net_forecast_fte), borderColor: IMSERV.colors.ok, backgroundColor: 'rgba(16,185,129,0.08)', borderDash: [6, 4], fill: false, tension: 0.28, pointRadius: 0 },
+      { label: 'Demand 2026', data: weekly.map(w => w.required_fte), borderColor: IMSERV.colors.crit, backgroundColor: 'rgba(251,130,129,0.10)', fill: true, tension: 0.32, pointRadius: 0 },
+      { label: '2025 Capacity FTE', data: weekly.map(w => w.capacity_2025_fte), borderColor: IMSERV.colors.muted, backgroundColor: 'rgba(74,107,124,0.08)', borderDash: [3, 3], fill: false, tension: 0.25, pointRadius: 0 },
+      { label: 'Capacity 2026', data: weekly.map(w => w.net_forecast_fte), borderColor: IMSERV.colors.ok, backgroundColor: 'rgba(2,129,120,0.08)', borderDash: [6, 4], fill: false, tension: 0.28, pointRadius: 0 },
     ];
     if (scale) {
       datasets.push({
         label: 'Implemented Optimised FTE',
         data: weekly.map(w => Number((w.current_capacity_fte * scale).toFixed(1))),
         borderColor: IMSERV.colors.orange,
-        backgroundColor: 'rgba(255,139,0,0.08)',
+        backgroundColor: 'rgba(244,210,90,0.08)',
         fill: false,
         tension: 0.28,
         pointRadius: 0,
@@ -164,7 +164,7 @@ function renderCapacityForecast(data) {
         plugins: IMSERV.chartDefaults.plugins,
         scales: {
           ...IMSERV.chartDefaults.scales,
-          y: { ...IMSERV.chartDefaults.scales.y, title: { display: true, text: 'FTE / day', color: '#4A5568' } },
+          y: { ...IMSERV.chartDefaults.scales.y, title: { display: true, text: 'FTE / day', color: '#737373' } },
         },
       },
     }));
@@ -185,7 +185,7 @@ function renderCapacityForecast(data) {
         datasets: [{
           label: 'Net FTE - Required FTE',
           data: gaps,
-          backgroundColor: gaps.map(g => g < 0 ? 'rgba(239,68,68,0.68)' : 'rgba(16,185,129,0.62)'),
+          backgroundColor: gaps.map(g => g < 0 ? 'rgba(251,130,129,0.68)' : 'rgba(2,129,120,0.62)'),
           borderColor: gaps.map(g => g < 0 ? IMSERV.colors.crit : IMSERV.colors.ok),
           borderWidth: 1,
         }],
@@ -288,8 +288,8 @@ async function loadCapacityMatrix() {
     data: {
       labels: regions,
       datasets: [
-        { label: 'Avg Weekly Engineer Capacity', data: capVals, backgroundColor: 'rgba(0,82,204,0.55)',   yAxisID: 'y'  },
-        { label: 'Avg Weekly Meter Job Demand',  data: demVals, backgroundColor: 'rgba(0,184,217,0.55)',  yAxisID: 'y'  },
+        { label: 'Avg Weekly Engineer Capacity', data: capVals, backgroundColor: 'rgba(2,129,120,0.55)',   yAxisID: 'y'  },
+        { label: 'Avg Weekly Meter Job Demand',  data: demVals, backgroundColor: 'rgba(2,194,183,0.55)',  yAxisID: 'y'  },
         { label: 'Utilisation %',       data: utilVals,borderColor: IMSERV.colors.warn, type: 'line', fill: false, tension: 0.3, pointRadius: 4, yAxisID: 'y1' },
       ],
     },
@@ -299,7 +299,7 @@ async function loadCapacityMatrix() {
       plugins: IMSERV.chartDefaults.plugins,
       scales: {
         ...IMSERV.chartDefaults.scales,
-        y:  { ...IMSERV.chartDefaults.scales.y, position: 'left',  title: { display: true, text: 'Smart meter jobs / week', color: '#4A5568' } },
+        y:  { ...IMSERV.chartDefaults.scales.y, position: 'left',  title: { display: true, text: 'Smart meter jobs / week', color: '#737373' } },
         y1: { ...IMSERV.chartDefaults.scales.y, position: 'right', grid: { display: false },
                ticks: { ...IMSERV.chartDefaults.scales.y.ticks, callback: v => v + '%' },
                min: 0, max: 120 },

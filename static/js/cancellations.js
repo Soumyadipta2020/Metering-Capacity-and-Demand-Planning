@@ -223,13 +223,13 @@ async function loadCancellationRisk(showLoading = true) {
   }
 
   let gaugeColor = 'var(--ok)';
-  let shadowColor = 'rgba(16, 185, 129, 0.2)';
+  let shadowColor = 'rgba(2, 129, 120, 0.2)';
   if (data.risk_level === 'Critical') {
     gaugeColor = 'var(--crit)';
-    shadowColor = 'rgba(239, 68, 68, 0.2)';
+    shadowColor = 'rgba(251, 130, 129, 0.2)';
   } else if (data.risk_level === 'High') {
     gaugeColor = 'var(--warn)';
-    shadowColor = 'rgba(245, 158, 11, 0.2)';
+    shadowColor = 'rgba(244, 210, 90, 0.2)';
   }
 
   const trendColor = data.trend_direction === 'Rising' ? 'var(--crit)' : 'var(--ok)';
@@ -298,7 +298,7 @@ function getRcTooltip() {
 function showRcTooltip(node, svgEl, evt) {
   const tip = getRcTooltip();
   const sc  = node.score;
-  const scColor = sc >= 70 ? '#10B981' : sc >= 50 ? '#F59E0B' : '#EF4444';
+  const scColor = sc >= 70 ? '#028178' : sc >= 50 ? '#F4D25A' : '#FB8281';
   const notRebooked = node.not_rebooked ?? (node.total_cancellations - node.rebooked_count);
   const failedRebooks = node.failed_rebooks ?? (node.rebooked_count - node.completed_rebooks);
 
@@ -401,7 +401,7 @@ function renderRebooking(data) {
   const boardScore = Math.round(scored.reduce((s, r) => s + r.score, 0) / boardCount);
   const boardRebook = data.overall_rebook_rate || 0;
   const boardLag = data.avg_rebook_lag_days || 0;
-  const boardScoreColor = boardScore >= 70 ? '#10B981' : boardScore >= 50 ? '#F59E0B' : '#EF4444';
+  const boardScoreColor = boardScore >= 70 ? '#028178' : boardScore >= 50 ? '#F4D25A' : '#FB8281';
   const rankedBoard = [...scored].sort((a, b) => b.score - a.score);
   const insightFor = r => {
     if (r.score >= 70) return `Strong recovery pipeline. ${cancelEscape(r.region_code)} converts cancellations efficiently - ${r.completed_rebooks ?? '-'} rebooks completed.`;
@@ -411,7 +411,7 @@ function renderRebooking(data) {
 
   const regionTiles = rankedBoard.map((r, i) => {
     const tone = r.score >= 70 ? 'strong' : r.score >= 50 ? 'steady' : 'risk';
-    const regionScoreColor = r.score >= 70 ? '#10B981' : r.score >= 50 ? '#F59E0B' : '#EF4444';
+    const regionScoreColor = r.score >= 70 ? '#028178' : r.score >= 50 ? '#F4D25A' : '#FB8281';
     const lagPct = Math.max(6, Math.min(100, r.avg_rebook_lag_days / boardMaxLag * 100));
     return `
       <button type="button" class="rc-region-card ${tone}" data-idx="${i}"
@@ -455,7 +455,7 @@ function renderRebooking(data) {
             <div>
               <span>#${i + 1}</span>
               <strong>${cancelEscape(r.region_code)}</strong>
-              <em style="color:${r.score>=70?'#10B981':r.score>=50?'#F59E0B':'#EF4444'}">${r.score}</em>
+              <em style="color:${r.score>=70?'#028178':r.score>=50?'#F4D25A':'#FB8281'}">${r.score}</em>
             </div>
           `).join('')}
         </div>
@@ -476,7 +476,7 @@ function renderRebooking(data) {
     el.addEventListener('click', () => {
       const r = rankedBoard[+el.dataset.idx];
       if (!r) return;
-      const scColor = r.score >= 70 ? '#10B981' : r.score >= 50 ? '#F59E0B' : '#EF4444';
+      const scColor = r.score >= 70 ? '#028178' : r.score >= 50 ? '#F4D25A' : '#FB8281';
       const set = (id, v) => { const item = document.getElementById(id); if (item) item.textContent = v; };
       set('rd-region', r.region_code);
       set('rd-rebook', `${r.rebooked_count ?? '-'} / ${r.total_cancellations ?? '-'} (${r.rebook_rate_pct}%)`);
@@ -520,7 +520,7 @@ function renderRebooking(data) {
   const overallScore  = Math.round(scored.reduce((s, r) => s + r.score, 0) / n);
   const overallRebook = data.overall_rebook_rate || 0;
   const overallLag    = data.avg_rebook_lag_days || 0;
-  const scoreColor    = overallScore >= 70 ? '#10B981' : overallScore >= 50 ? '#F59E0B' : '#EF4444';
+  const scoreColor    = overallScore >= 70 ? '#028178' : overallScore >= 50 ? '#F4D25A' : '#FB8281';
   const arcStart      = -Math.PI / 2;
 
   const nodesSvg = nodes.map((nd, i) => {
@@ -528,7 +528,7 @@ function renderRebooking(data) {
     const rebookFrac  = nd.rebook_rate_pct / 100;
     const successFrac = nd.rebook_success_pct / 100;
     const lagFrac     = 1 - (nd.avg_rebook_lag_days / maxLag);
-    const nColor      = nd.score >= 70 ? '#10B981' : nd.score >= 50 ? '#F59E0B' : '#EF4444';
+    const nColor      = nd.score >= 70 ? '#028178' : nd.score >= 50 ? '#F4D25A' : '#FB8281';
     const glowId      = `glow-${i}`;
     const r1 = 5.0, r2 = 4.0, r3 = 3.0;
 
@@ -606,7 +606,7 @@ function renderRebooking(data) {
           <div class="rc-rank-row">
             <span class="rc-rank-badge">#${i + 1}</span>
             <span class="rc-rank-region">${cancelEscape(r.region_code)}</span>
-            <span class="rc-rank-score" style="color:${r.score>=70?'#10B981':r.score>=50?'#F59E0B':'#EF4444'}">${r.score}</span>
+            <span class="rc-rank-score" style="color:${r.score>=70?'#028178':r.score>=50?'#F4D25A':'#FB8281'}">${r.score}</span>
           </div>
         `).join('')}
       </div>
@@ -634,7 +634,7 @@ function renderRebooking(data) {
       const r   = nodes[idx];
       if (!r) return;
       const sc      = r.score;
-      const scColor = sc >= 70 ? '#10B981' : sc >= 50 ? '#F59E0B' : '#EF4444';
+      const scColor = sc >= 70 ? '#028178' : sc >= 50 ? '#F4D25A' : '#FB8281';
       const insight = sc >= 70
         ? `Strong recovery pipeline. ${cancelEscape(r.region_code)} converts cancellations efficiently — ${r.completed_rebooks ?? '—'} rebooks completed.`
         : sc >= 50
