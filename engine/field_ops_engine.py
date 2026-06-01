@@ -41,6 +41,78 @@ _SEASONAL_ABSENCE_FACTORS = {
 def _seasonal_absence_factor(week: int) -> float:
     return _SEASONAL_ABSENCE_FACTORS.get(week, 1.0)
 
+
+_WEEKDAY_NAMES = {
+    "Monday": 0,
+    "Tuesday": 1,
+    "Wednesday": 2,
+    "Thursday": 3,
+    "Friday": 4,
+    "Saturday": 5,
+    "Sunday": 6,
+}
+
+# 2026 dates from gov.uk bank-holidays.json. Scotland has a different summer
+# holiday, St Andrew's Day, and the 2026 World Cup bank holiday.
+_BANK_HOLIDAYS_2026 = {
+    "england-and-wales": {
+        date(2026, 1, 1),
+        date(2026, 4, 3),
+        date(2026, 4, 6),
+        date(2026, 5, 4),
+        date(2026, 5, 25),
+        date(2026, 8, 31),
+        date(2026, 12, 25),
+        date(2026, 12, 28),
+    },
+    "scotland": {
+        date(2026, 1, 1),
+        date(2026, 1, 2),
+        date(2026, 4, 3),
+        date(2026, 5, 4),
+        date(2026, 5, 25),
+        date(2026, 6, 15),
+        date(2026, 8, 3),
+        date(2026, 11, 30),
+        date(2026, 12, 25),
+        date(2026, 12, 28),
+    },
+}
+
+
+def _bank_holiday_division(region_code: str) -> str:
+    return "scotland" if region_code == "SCO" else "england-and-wales"
+
+
+def _bank_holidays_for_region(region_code: str, year: int = 2026) -> set:
+    if year != 2026:
+        return set()
+    return _BANK_HOLIDAYS_2026[_bank_holiday_division(region_code)]
+
+
+def _parse_iso_date(value: str):
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _weekday_index(row: dict) -> int:
+    parsed = _parse_iso_date(row.get("avail_date"))
+    if parsed:
+        return parsed.weekday()
+    return _WEEKDAY_NAMES.get(row.get("day_of_week"), -1)
+
+
+def _weekdays_from_week_start(week_start: str, year: int, week: int) -> list:
+    start = _parse_iso_date(week_start)
+    if start is None:
+        try:
+            start = date.fromisocalendar(year, week, 1)
+        except ValueError:
+            start = date(year, 12, 29)
+    return [start + timedelta(days=offset) for offset in range(5)]
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 def get_field_ops_kpis(region_code: str = None, year: int = 2025) -> dict:
@@ -314,6 +386,8 @@ def _aggregate_capacity(year: int, region_code: str = None, key_fields: tuple = 
         grouped[key]["capacity_jobs"] += to_float(row.get("capacity_jobs"))
         grouped[key]["demand_jobs"] += to_float(row.get("demand_jobs"))
         grouped[key]["available_engineers"] += to_float(row.get("available_engineers"))
+        if row.get("week_start") and not grouped[key].get("week_start"):
+            grouped[key]["week_start"] = row.get("week_start")
 
     result = []
     for key, values in grouped.items():
@@ -342,8 +416,9 @@ def get_capacity_forecast_2026(
     capacity_2025 = _aggregate_capacity(2025, region_code, ("region_code", "week_number"))
     capacity_2026 = _aggregate_capacity(2026, region_code, ("region_code", "week_number"))
 
-    available_days = defaultdict(set)
     absent_by_day = defaultdict(float)
+    absent_by_weekday = defaultdict(float)
+    fallback_absence_by_weekday = defaultdict(list)
     base_fte_by_region = defaultdict(set)
     _WEEKENDS = {"Saturday", "Sunday"}
     for row in iter_engineer_availability():
@@ -356,18 +431,26 @@ def get_capacity_forecast_2026(
         if year not in (2025, 2026):
             continue
         week = to_int(row.get("week"))
+        weekday = _weekday_index(row)
+        if weekday < 0 or weekday >= 5:
+            continue
         day_key = (year, week, row_region, row.get("avail_date"))
-        available_days[(year, week, row_region)].add(row.get("avail_date"))
         if row.get("status") != "Available":
             absent_by_day[day_key] += 1
+            absent_by_weekday[(year, week, row_region, weekday)] += 1
         if year == 2025:
             base_fte_by_region[row_region].add(row.get("engineer_id"))
     base_fte_by_region = {r: len(engs) for r, engs in base_fte_by_region.items()}
 
-    absence_pattern = defaultdict(list)
-    for (year, week, region), days in available_days.items():
-        for day in sorted(days):
-            absence_pattern[(year, week, region)].append(absent_by_day.get((year, week, region, day), 0.0))
+    for (year, week, region, weekday), absent in absent_by_weekday.items():
+        if year == 2025:
+            fallback_absence_by_weekday[(region, weekday)].append(absent)
+
+    avg_absence_by_weekday = {
+        key: statistics.mean(values)
+        for key, values in fallback_absence_by_weekday.items()
+        if values
+    }
 
     weekly_2025 = defaultdict(float)
     for point in capacity_2025:
@@ -380,6 +463,8 @@ def get_capacity_forecast_2026(
         "required_fte_days": 0.0,
         "net_forecast_fte_days": 0.0,
         "absent_fte_days": 0.0,
+        "bank_holiday_days": 0,
+        "bank_holiday_fte_days": 0.0,
         "working_days": 0,
     })
     regional_map = defaultdict(lambda: {
@@ -389,6 +474,8 @@ def get_capacity_forecast_2026(
         "required_fte_days": 0.0,
         "net_forecast_fte_days": 0.0,
         "absent_fte_days": 0.0,
+        "bank_holiday_days": 0,
+        "bank_holiday_fte_days": 0.0,
         "working_days": 0,
     })
 
@@ -397,27 +484,37 @@ def get_capacity_forecast_2026(
         week = to_int(point.get("week_number"))
         demand = point["demand_jobs"]
         current_capacity = point["capacity_jobs"]
-        days = sorted(available_days.get((2026, week, region)) or [])
-        historical_absences = (
-            [absent_by_day.get((2026, week, region, day), 0.0) for day in days]
-            if days else
-            absence_pattern.get((2025, week, region), [])
-        )
-        working_day_count = len(historical_absences) or 5
-        daily_demand = demand / max(working_day_count, 1)
+        week_dates = _weekdays_from_week_start(point.get("week_start"), 2026, week)
+        bank_holidays = _bank_holidays_for_region(region, 2026)
+        operational_day_count = sum(1 for day in week_dates if day not in bank_holidays) or len(week_dates)
+        working_day_count = len(week_dates) or 5
+        daily_demand = demand / max(operational_day_count, 1)
 
         forecast_capacity = 0.0
         required_fte_days = 0.0
         net_fte_days = 0.0
         absent_fte_days = 0.0
+        bank_holiday_days = 0
+        bank_holiday_fte_days = 0.0
         base_fte = base_fte_by_region.get(region, 0)
         seasonal_factor = _seasonal_absence_factor(week)
-        for absent in (historical_absences or [0.0] * working_day_count):
+        for day in week_dates:
             required_fte = daily_demand / jobs_per_day
-            if absence_override is not None:
-                absent = base_fte * absence_override * seasonal_factor
+            if day in bank_holidays:
+                absent = base_fte
+                bank_holiday_days += 1
+                bank_holiday_fte_days += base_fte
+                required_fte = 0.0
             else:
-                absent = absent * seasonal_factor
+                exact_absent = absent_by_day.get((2026, week, region, str(day)))
+                if exact_absent is None:
+                    exact_absent = absent_by_weekday.get((2025, week, region, day.weekday()))
+                if exact_absent is None:
+                    exact_absent = avg_absence_by_weekday.get((region, day.weekday()), 0.0)
+                scenario_absent = 0.0
+                if absence_override is not None:
+                    scenario_absent = base_fte * absence_override * seasonal_factor
+                absent = max(exact_absent, scenario_absent)
             net_fte = max(base_fte - absent, 0)
             required_fte_days += required_fte
             net_fte_days += net_fte
@@ -431,6 +528,8 @@ def get_capacity_forecast_2026(
         week_bucket["required_fte_days"] += required_fte_days
         week_bucket["net_forecast_fte_days"] += net_fte_days
         week_bucket["absent_fte_days"] += absent_fte_days
+        week_bucket["bank_holiday_days"] += bank_holiday_days
+        week_bucket["bank_holiday_fte_days"] += bank_holiday_fte_days
         week_bucket["working_days"] = max(week_bucket["working_days"], working_day_count)
 
         region_bucket = regional_map[region]
@@ -440,6 +539,8 @@ def get_capacity_forecast_2026(
         region_bucket["required_fte_days"] += required_fte_days
         region_bucket["net_forecast_fte_days"] += net_fte_days
         region_bucket["absent_fte_days"] += absent_fte_days
+        region_bucket["bank_holiday_days"] += bank_holiday_days
+        region_bucket["bank_holiday_fte_days"] += bank_holiday_fte_days
         region_bucket["working_days"] += working_day_count
 
     weekly = []
@@ -462,6 +563,8 @@ def get_capacity_forecast_2026(
             "required_fte": round(values["required_fte_days"] / working_days, 1),
             "net_forecast_fte": round(values["net_forecast_fte_days"] / working_days, 1),
             "absent_fte": round(values["absent_fte_days"] / working_days, 1),
+            "bank_holiday_days": values["bank_holiday_days"],
+            "bank_holiday_fte": round(values["bank_holiday_fte_days"] / working_days, 1),
             "fte_gap": round((values["net_forecast_fte_days"] - values["required_fte_days"]) / working_days, 1),
             "utilisation_pct": safe_pct(demand, forecast_capacity),
             "planned_utilisation_pct": safe_pct(demand, current_capacity),
@@ -491,6 +594,8 @@ def get_capacity_forecast_2026(
             "required_fte": round(required_fte, 1),
             "net_forecast_fte": round(net_fte, 1),
             "absent_fte": round(absent_fte, 1),
+            "bank_holiday_days": values["bank_holiday_days"],
+            "bank_holiday_fte": round(values["bank_holiday_fte_days"] / working_days, 1),
             "fte_gap": round(net_fte - required_fte, 1),
             "risk": "Red" if gap < 0 else ("Amber" if util > 85 else "Green"),
         })
@@ -505,7 +610,7 @@ def get_capacity_forecast_2026(
         "method": {
             "name": "Demand-led FTE forecast",
             "jobs_per_fte_day": jobs_per_day,
-            "formula": "daily required FTE = daily demand / jobs per FTE per day; forecast FTE = required FTE - absent FTE",
+            "formula": "daily capacity FTE = roster FTE - real leave/absence - UK bank holidays; weekly demand is converted using jobs per FTE per working day",
         },
         "kpis": {
             "total_demand_jobs": total_demand,
@@ -519,6 +624,7 @@ def get_capacity_forecast_2026(
             "avg_required_fte": round(sum(item["required_fte"] for item in weekly) / max(len(weekly), 1), 1),
             "avg_net_forecast_fte": round(sum(item["net_forecast_fte"] for item in weekly) / max(len(weekly), 1), 1),
             "avg_absent_fte": round(sum(item["absent_fte"] for item in weekly) / max(len(weekly), 1), 1),
+            "avg_bank_holiday_fte": round(sum(item["bank_holiday_fte"] for item in weekly) / max(len(weekly), 1), 1),
             "avg_2025_capacity_fte": round(sum(item["capacity_2025_fte"] for item in weekly) / max(len(weekly), 1), 1),
             "avg_current_capacity_fte": round(sum(item["current_capacity_fte"] for item in weekly) / max(len(weekly), 1), 1),
             "avg_fte_gap": round(sum(item["fte_gap"] for item in weekly) / max(len(weekly), 1), 1),

@@ -116,7 +116,7 @@ function renderCapacityForecast(data) {
   if (summary) {
     summary.innerHTML = `
       <strong>${method.name || 'Demand-led FTE forecast'}: ${method.jobs_per_fte_day || 2} jobs/FTE/day</strong>
-      <span>Avg required FTE/day ${IMSERV.fmt.num(data.kpis?.avg_required_fte)}, avg absent FTE/day ${IMSERV.fmt.num(data.kpis?.avg_absent_fte)}, net forecast FTE/day ${IMSERV.fmt.num(data.kpis?.avg_net_forecast_fte)}.</span>
+      <span>Avg required FTE/day ${IMSERV.fmt.num(data.kpis?.avg_required_fte)}, avg absent FTE/day ${IMSERV.fmt.num(data.kpis?.avg_absent_fte)}, avg bank-holiday FTE/day ${IMSERV.fmt.num(data.kpis?.avg_bank_holiday_fte)}, net forecast FTE/day ${IMSERV.fmt.num(data.kpis?.avg_net_forecast_fte)}.</span>
     `;
   }
 
