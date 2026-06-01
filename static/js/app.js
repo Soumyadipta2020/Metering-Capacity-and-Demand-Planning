@@ -221,7 +221,138 @@ document.getElementById('ai-modal')?.addEventListener('click', function (e) {
   if (e.target === this) closeAiPanel();
 });
 
+let _chatbotHistory = [];
+let _chatbotBusy = false;
+
+function escapeChatHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char]));
+}
+
+function toggleChatbot(forceOpen) {
+  const widget = document.getElementById('chatbot-widget');
+  const launcher = document.getElementById('chatbot-launcher');
+  const input = document.getElementById('chatbot-input');
+  if (!widget) return;
+
+  const open = forceOpen == null ? !widget.classList.contains('open') : Boolean(forceOpen);
+  widget.classList.toggle('open', open);
+  launcher?.setAttribute('aria-expanded', String(open));
+  if (open) window.setTimeout(() => input?.focus(), 120);
+}
+
+function setChatbotStatus(label, busy = false) {
+  const status = document.getElementById('chatbot-status');
+  const send = document.getElementById('chatbot-send');
+  const input = document.getElementById('chatbot-input');
+  if (status) status.textContent = label;
+  if (send) send.disabled = busy;
+  if (input) input.disabled = busy;
+  _chatbotBusy = busy;
+}
+
+function appendChatMessage(role, content, options = {}) {
+  const messages = document.getElementById('chatbot-messages');
+  if (!messages) return null;
+  const item = document.createElement('div');
+  item.className = `chatbot-message ${role}${options.pending ? ' pending' : ''}`;
+  item.innerHTML = `<div class="chatbot-bubble">${escapeChatHtml(content).replace(/\n/g, '<br>')}</div>`;
+  messages.appendChild(item);
+  messages.scrollTop = messages.scrollHeight;
+  return item;
+}
+
+function activeViewName() {
+  return (document.querySelector('.view.active')?.id || 'view-journey').replace(/^view-/, '');
+}
+
+async function sendChatbotMessage(event) {
+  event?.preventDefault();
+  if (_chatbotBusy) return;
+
+  const input = document.getElementById('chatbot-input');
+  const text = event?.question || input?.value.trim();
+  if (!text) return;
+
+  if (input) {
+    input.value = '';
+    input.style.height = '';
+  }
+  appendChatMessage('user', text);
+  _chatbotHistory.push({ role: 'user', content: text });
+
+  const pending = appendChatMessage('assistant', 'Thinking...', { pending: true });
+  setChatbotStatus('Contacting Hugging Face', true);
+
+  try {
+    const resp = await fetch('/api/chatbot/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: _chatbotHistory.slice(-10),
+        region: IMSERV.getRegion(),
+        year: IMSERV.getYear(),
+        view: activeViewName(),
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+
+    const reply = data.reply || 'I could not find a response from the model.';
+    pending?.remove();
+    appendChatMessage('assistant', reply);
+    _chatbotHistory.push({ role: 'assistant', content: reply });
+    _chatbotHistory = _chatbotHistory.slice(-12);
+    setChatbotStatus('Hugging Face LLM', false);
+  } catch (err) {
+    pending?.remove();
+    appendChatMessage('assistant', `Chatbot is not ready: ${err.message}`);
+    setChatbotStatus('Configuration needed', false);
+  }
+}
+
+function initChatbotWidget() {
+  const iconTargets = [
+    ['chatbot-launcher-icon', 'bot'],
+    ['chatbot-title-icon', 'bot'],
+    ['chatbot-close-icon', 'xCircle'],
+    ['chatbot-send-icon', 'send'],
+  ];
+  iconTargets.forEach(([id, icon]) => {
+    const el = document.getElementById(id);
+    if (el && window.IMSERV?.iconSvg) {
+      el.innerHTML = IMSERV.iconSvg(icon);
+      el.dataset.iconReady = 'true';
+    }
+  });
+
+  const input = document.getElementById('chatbot-input');
+  input?.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendChatbotMessage(event);
+    }
+  });
+  input?.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 92)}px`;
+  });
+
+  document.querySelectorAll('.chatbot-suggestion').forEach(button => {
+    button.addEventListener('click', () => {
+      const question = button.dataset.question || button.textContent;
+      sendChatbotMessage({ preventDefault() {}, question });
+    });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   initFluidSidebar();
+  initChatbotWidget();
   loadViewData('journey');
 });

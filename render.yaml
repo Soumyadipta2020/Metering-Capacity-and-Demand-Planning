@@ -13,6 +13,20 @@ services:
         value: "false"
       - key: ENABLE_DATABASE
         value: "false"
+      - key: HF_TOKEN
+        sync: false
+      - key: HF_CHAT_PROVIDER
+        value: novita
+      - key: HF_CHAT_MODEL
+        value: google/gemma-4-31B-it
+      - key: HF_CHAT_BASE_URL
+        value: https://router.huggingface.co/v1
+      - key: HF_CHAT_TIMEOUT_SECONDS
+        value: "45"
+      - key: HF_CHAT_MAX_TOKENS
+        value: "450"
+      - key: HF_CHAT_TEMPERATURE
+        value: "0.35"
       - key: IMSERV_CACHE_LARGE_DATASETS
         value: "false"
       - key: IMSERV_AUTO_GENERATE_DATA

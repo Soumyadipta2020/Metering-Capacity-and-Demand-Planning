@@ -49,6 +49,21 @@ python app.py
 
 ---
 
+### Hugging Face Chatbot
+
+The floating app assistant uses a Flask proxy so the Hugging Face token stays server-side. Set these variables in `.env`:
+
+```bash
+HF_TOKEN=hf_or_provider_key
+HF_CHAT_PROVIDER=novita
+HF_CHAT_MODEL=google/gemma-4-31B-it
+HF_CHAT_BASE_URL=https://router.huggingface.co/v1
+# or point directly at a dedicated endpoint:
+# HF_CHAT_ENDPOINT=https://your-endpoint.endpoints.huggingface.cloud/v1/chat/completions
+```
+
+---
+
 ## Docker
 
 ```bash
@@ -66,10 +81,14 @@ docker-compose up --build
 3. Build command: `pip install -r requirements.txt`
 4. Start command: `gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 app:app`
 5. Environment variable: `SECRET_KEY` (auto-generated)
+6. Add `HF_TOKEN` in Render as a secret environment variable. The blueprint includes the non-secret chatbot defaults:
+   - `HF_CHAT_PROVIDER=novita`
+   - `HF_CHAT_MODEL=google/gemma-4-31B-it`
+   - `HF_CHAT_BASE_URL=https://router.huggingface.co/v1`
 
 The Render config is tuned for 512MB instances: data loads lazily, large CSVs are not cached by default, and dataset generation is disabled at runtime unless explicitly enabled.
 
-The `render.yaml` file handles all configuration automatically.
+The `render.yaml` file handles all non-secret configuration automatically. Keep `HF_TOKEN` only in Render's environment settings.
 
 ---
 

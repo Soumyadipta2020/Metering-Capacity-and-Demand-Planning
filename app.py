@@ -11,6 +11,8 @@ Modules:
 """
 import os
 import json
+import urllib.error
+import urllib.request
 from collections import Counter
 from pathlib import Path
 from datetime import date, datetime
@@ -99,6 +101,183 @@ def _disabled_ai_payload(max_results: int = 20) -> dict:
         "disabled": True,
         "message": "AI recommendations are disabled on this deployment.",
     }
+
+def _compact_chat_messages(messages: list[dict], limit: int = 10) -> list[dict]:
+    """Keep a small, safe conversation window for the LLM request."""
+    compact = []
+    for msg in (messages or [])[-limit:]:
+        role = msg.get("role") if isinstance(msg, dict) else ""
+        content = msg.get("content") if isinstance(msg, dict) else ""
+        if role not in {"user", "assistant"} or not isinstance(content, str):
+            continue
+        content = content.strip()
+        if content:
+            compact.append({"role": role, "content": content[:1800]})
+    return compact
+
+def _chatbot_context(region: str | None, year: int, view: str | None) -> str:
+    """Build a compact app snapshot so the chatbot can answer app-specific questions."""
+    lines = [
+        "IMSERV Smart Meter Field Planning & Utility Operations Platform.",
+        "Modules: Request Demand, Demand Forecast, Risk & Recovery, Resource Planning, Scenario Impact.",
+        f"Current view: {view or 'unknown'}. Region filter: {region or 'All Regions'}. Year: {year}.",
+    ]
+
+    try:
+        get_journey, _, to_int_fn, _, safe_pct_fn, _ = _get_ingestion()
+        rows = [
+            r for r in get_journey()
+            if (not region or r.get("region_code") == region)
+            and to_int_fn(r.get("year")) == year
+            and r.get("is_forecast", "0") == "0"
+        ]
+        requests_total = sum(to_int_fn(r.get("total_requests")) for r in rows)
+        bookings_total = sum(to_int_fn(r.get("total_bookings")) for r in rows)
+        cancellations_total = sum(to_int_fn(r.get("total_cancellations")) for r in rows)
+        aborts_total = sum(to_int_fn(r.get("total_aborts")) for r in rows)
+        completions_total = sum(to_int_fn(r.get("total_completions")) for r in rows)
+        visits_total = max(bookings_total - cancellations_total, 0)
+        lines.append(
+            "Demand snapshot: "
+            f"{requests_total:,} requests, {visits_total:,} visits, "
+            f"{cancellations_total:,} cancellations, {aborts_total:,} aborts, "
+            f"{completions_total:,} completions, "
+            f"{safe_pct_fn(completions_total, requests_total):.1f}% completion rate."
+        )
+    except Exception as exc:
+        lines.append(f"Demand snapshot unavailable: {exc}")
+
+    try:
+        get_kpis, _, _, get_forecast = _get_financial_engine()
+        financial = get_kpis(region, 2026)
+        forecast = get_forecast(region)
+        margin = financial.get("gross_margin_pct")
+        revenue = financial.get("total_revenue")
+        cost = financial.get("total_cost")
+        if revenue is not None and cost is not None:
+            lines.append(
+                "Financial snapshot: "
+                f"GBP {float(revenue):,.0f} revenue, GBP {float(cost):,.0f} cost"
+                + (f", {float(margin):.1f}% gross margin." if margin is not None else ".")
+            )
+        if forecast and isinstance(forecast, dict):
+            lines.append("Scenario planning uses demand volume, completion rate, cancellation rate, abort rate, revenue uplift, cost change, and engineer count.")
+    except Exception as exc:
+        lines.append(f"Financial snapshot unavailable: {exc}")
+
+    try:
+        get_kpis, _, _, _, _, _, _ = _get_field_ops_engine()
+        ops = get_kpis(region, 2026)
+        if ops:
+            engineers = ops.get("total_engineers") or ops.get("engineers")
+            utilisation = ops.get("avg_utilisation") or ops.get("avg_utilisation_pct")
+            completed = ops.get("jobs_completed") or ops.get("total_jobs_completed")
+            lines.append(
+                "Resource snapshot: "
+                f"{engineers if engineers is not None else 'unknown'} engineers, "
+                f"{completed if completed is not None else 'unknown'} jobs completed, "
+                f"{utilisation if utilisation is not None else 'unknown'} average utilisation."
+            )
+    except Exception as exc:
+        lines.append(f"Resource snapshot unavailable: {exc}")
+
+    try:
+        if _ai_enabled():
+            get_recs, get_summary = _get_ai_engine()
+            recs = get_recs(year, 5)
+            summary = get_summary(year, recs)
+            lines.append(f"Operational AI summary: {summary}")
+    except Exception:
+        pass
+
+    return "\n".join(lines)[:5000]
+
+def _huggingface_chat(messages: list[dict]) -> str:
+    token = (
+        os.getenv("HF_TOKEN")
+        or os.getenv("HF_API_KEY")
+        or os.getenv("HUGGINGFACE_API_TOKEN")
+        or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+    )
+    if not token:
+        raise RuntimeError("Missing HF_TOKEN, HF_API_KEY, or HUGGINGFACE_API_TOKEN on the Flask server.")
+
+    base_url = os.getenv("HF_CHAT_BASE_URL") or os.getenv("HUGGINGFACE_CHAT_BASE_URL") or "https://router.huggingface.co/v1"
+    endpoint = os.getenv("HF_CHAT_ENDPOINT") or os.getenv("HUGGINGFACE_CHAT_ENDPOINT") or f"{base_url.rstrip('/')}/chat/completions"
+    provider = os.getenv("HF_CHAT_PROVIDER") or os.getenv("HUGGINGFACE_CHAT_PROVIDER")
+    model = os.getenv("HF_CHAT_MODEL") or os.getenv("HUGGINGFACE_CHAT_MODEL") or "google/gemma-4-31B-it"
+    timeout = float(os.getenv("HF_CHAT_TIMEOUT_SECONDS", "45"))
+    max_tokens = int(os.getenv("HF_CHAT_MAX_TOKENS", "450"))
+    temperature = float(os.getenv("HF_CHAT_TEMPERATURE", "0.35"))
+
+    if provider:
+        try:
+            from huggingface_hub import InferenceClient
+        except ImportError as exc:
+            raise RuntimeError("Install huggingface_hub from requirements.txt to use HF_CHAT_PROVIDER.") from exc
+
+        client = InferenceClient(
+            provider=provider,
+            api_key=token,
+            timeout=timeout,
+        )
+        try:
+            completion = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        except Exception as exc:
+            detail = str(exc)
+            if "401" in detail or "Unauthorized" in detail:
+                raise RuntimeError(
+                    "Hugging Face/Novita rejected the API key. Check that HF_TOKEN contains the full active key, "
+                    "that HF_CHAT_PROVIDER matches the key provider, and restart Flask after editing .env."
+                ) from exc
+            raise RuntimeError(f"Hugging Face provider request failed: {exc}") from exc
+        content = completion.choices[0].message.content if completion.choices else None
+        if content:
+            return str(content).strip()
+        raise RuntimeError("Hugging Face provider response did not include assistant content.")
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": False,
+    }
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"Hugging Face endpoint returned HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Could not reach Hugging Face endpoint: {exc.reason}") from exc
+
+    data = json.loads(raw)
+    choices = data.get("choices") or []
+    if choices:
+        message = choices[0].get("message") or {}
+        content = message.get("content") or choices[0].get("text")
+        if content:
+            return content.strip()
+    if data.get("generated_text"):
+        return str(data["generated_text"]).strip()
+    raise RuntimeError("Hugging Face response did not include assistant content.")
 
 def _get_ingestion():
     from engine.ingestion import get_booking_journey, data_health, to_int, to_float, safe_pct, iter_jobs
@@ -603,6 +782,44 @@ def ai_dashboard():
 # ─────────────────────────────────────────────────────────────────────────────
 # SYSTEM / UTILITY
 # ─────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/chatbot/message", methods=["POST"])
+def chatbot_message():
+    """Proxy chatbot conversations to a Hugging Face OpenAI-compatible LLM endpoint."""
+    try:
+        payload = request.get_json(force=True) or {}
+        user_messages = _compact_chat_messages(payload.get("messages", []))
+        if not user_messages or user_messages[-1]["role"] != "user":
+            return jsonify({"error": "Send at least one user message."}), 400
+
+        region = payload.get("region") or request.args.get("region") or None
+        view = payload.get("view") or request.args.get("view") or None
+        try:
+            year = int(payload.get("year") or request.args.get("year") or 2025)
+        except (TypeError, ValueError):
+            year = 2025
+        if year not in SUPPORTED_YEARS:
+            year = 2025
+
+        context = _chatbot_context(region, year, view)
+        system_prompt = (
+            "You are the IMSERV app assistant. Help users understand and use this smart meter "
+            "operations dashboard. Be concise, practical, and app-specific. Use the provided "
+            "snapshot for numbers. If a user asks for a metric not in the snapshot, say where "
+            "in the app they can inspect it instead of inventing values.\n\n"
+            f"App snapshot:\n{context}"
+        )
+        messages = [{"role": "system", "content": system_prompt}] + user_messages
+        answer = _huggingface_chat(messages)
+        return jsonify({"reply": answer})
+    except RuntimeError as exc:
+        return jsonify({
+            "error": str(exc),
+            "config_required": "Set HF_TOKEN or HF_API_KEY, plus HF_CHAT_MODEL. Set HF_CHAT_PROVIDER=novita for provider-based Hugging Face examples.",
+        }), 502
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
 
 @app.route("/api/health")
 def health():

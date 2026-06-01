@@ -691,6 +691,45 @@
   </main>
 </div><!-- /app-shell -->
 
+<div class="chatbot-widget" id="chatbot-widget">
+  <section class="chatbot-window" id="chatbot-window" aria-label="IMSERV chatbot">
+    <div class="chatbot-header">
+      <div class="chatbot-title-wrap">
+        <span class="chatbot-title-icon" id="chatbot-title-icon" aria-hidden="true"></span>
+        <div>
+          <div class="chatbot-title">IMSERV Assistant</div>
+          <div class="chatbot-status" id="chatbot-status">Hugging Face LLM</div>
+        </div>
+      </div>
+      <button type="button" class="chatbot-close" onclick="toggleChatbot(false)" title="Close chatbot" aria-label="Close chatbot">
+        <span id="chatbot-close-icon" aria-hidden="true"></span>
+      </button>
+    </div>
+    <div class="chatbot-messages" id="chatbot-messages">
+      <div class="chatbot-message assistant">
+        <div class="chatbot-bubble">Hi, I can help explain the IMSERV dashboards, KPIs, forecasts, risk signals, resource plans and scenario outputs.</div>
+      </div>
+    </div>
+    <div class="chatbot-suggestions" aria-label="Suggested chatbot questions">
+      <button type="button" class="chatbot-suggestion" data-question="What does completion rate mean?">Completion rate</button>
+      <button type="button" class="chatbot-suggestion" data-question="Which KPI needs attention on this page?">KPI attention</button>
+      <button type="button" class="chatbot-suggestion" data-question="Explain cancellations and aborts in simple terms.">Cancellations vs aborts</button>
+      <button type="button" class="chatbot-suggestion" data-question="How should I use the demand forecast?">Demand forecast</button>
+      <button type="button" class="chatbot-suggestion" data-question="What does resource planning show?">Resource planning</button>
+      <button type="button" class="chatbot-suggestion" data-question="How do scenario impacts affect margin?">Scenario impact</button>
+    </div>
+    <form class="chatbot-input-row" id="chatbot-form" onsubmit="sendChatbotMessage(event)">
+      <textarea id="chatbot-input" rows="1" placeholder="Ask about this app..." aria-label="Message"></textarea>
+      <button type="submit" class="chatbot-send" id="chatbot-send" title="Send message" aria-label="Send message">
+        <span id="chatbot-send-icon" aria-hidden="true"></span>
+      </button>
+    </form>
+  </section>
+  <button type="button" class="chatbot-launcher" id="chatbot-launcher" onclick="toggleChatbot()" aria-expanded="false" aria-controls="chatbot-window" title="Open chatbot">
+    <span id="chatbot-launcher-icon" aria-hidden="true"></span>
+  </button>
+</div>
+
 <!-- ──────────────────────────────────────────────────────────
      AI PANEL MODAL
 ────────────────────────────────────────────────────────────── -->
