@@ -205,6 +205,8 @@ def _huggingface_chat(messages: list[dict]) -> str:
     base_url = os.getenv("HF_CHAT_BASE_URL") or os.getenv("HUGGINGFACE_CHAT_BASE_URL") or "https://router.huggingface.co/v1"
     endpoint = os.getenv("HF_CHAT_ENDPOINT") or os.getenv("HUGGINGFACE_CHAT_ENDPOINT") or f"{base_url.rstrip('/')}/chat/completions"
     provider = os.getenv("HF_CHAT_PROVIDER") or os.getenv("HUGGINGFACE_CHAT_PROVIDER")
+    if not provider and token.startswith("sk_"):
+        provider = "novita"
     model = os.getenv("HF_CHAT_MODEL") or os.getenv("HUGGINGFACE_CHAT_MODEL") or "google/gemma-4-31B-it"
     timeout = float(os.getenv("HF_CHAT_TIMEOUT_SECONDS", "45"))
     max_tokens = int(os.getenv("HF_CHAT_MAX_TOKENS", "450"))
@@ -819,6 +821,30 @@ def chatbot_message():
         }), 502
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/chatbot/config")
+def chatbot_config():
+    """Return non-secret chatbot configuration for deployment diagnostics."""
+    token = (
+        os.getenv("HF_TOKEN")
+        or os.getenv("HF_API_KEY")
+        or os.getenv("HUGGINGFACE_API_TOKEN")
+        or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+        or ""
+    )
+    provider = os.getenv("HF_CHAT_PROVIDER") or os.getenv("HUGGINGFACE_CHAT_PROVIDER")
+    inferred_provider = provider or ("novita" if token.startswith("sk_") else "")
+    return jsonify({
+        "has_token": bool(token),
+        "token_prefix": token[:3] if token else "",
+        "token_length": len(token),
+        "provider": provider or "",
+        "effective_provider": inferred_provider,
+        "model": os.getenv("HF_CHAT_MODEL") or os.getenv("HUGGINGFACE_CHAT_MODEL") or "google/gemma-4-31B-it",
+        "base_url": os.getenv("HF_CHAT_BASE_URL") or os.getenv("HUGGINGFACE_CHAT_BASE_URL") or "https://router.huggingface.co/v1",
+        "endpoint_set": bool(os.getenv("HF_CHAT_ENDPOINT") or os.getenv("HUGGINGFACE_CHAT_ENDPOINT")),
+    })
 
 
 @app.route("/api/health")
