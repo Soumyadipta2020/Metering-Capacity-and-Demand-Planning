@@ -18,7 +18,7 @@
   ────────────────────────────────────────────────────────────── -->
   <aside class="sidebar" id="sidebar">
 
-    <div class="sidebar-brand" onclick="toggleSidebar()">
+    <div class="sidebar-brand">
       <img class="brand-logo-image" src="/static/img/IMSERV_logo.png" alt="IMSERV" />
     </div>
 
@@ -63,6 +63,10 @@
     </nav>
 
     <div class="sidebar-footer">
+      <div class="nav-item sidebar-toggle-item" id="sidebar-toggle" onclick="toggleSidebar()" role="button" aria-controls="sidebar" aria-expanded="true" title="Collapse sidebar">
+        <span class="nav-icon sidebar-toggle-icon" data-icon-ready="true" aria-hidden="true"></span>
+        <span class="nav-label sidebar-toggle-label">Collapse Sidebar</span>
+      </div>
       <div class="nav-item" onclick="toggleTheme()">
         <span class="nav-icon" id="theme-icon">🌙</span>
         <span class="nav-label">Toggle Theme</span>
@@ -78,6 +82,9 @@
 
     <!-- Top Header -->
     <header class="top-header">
+      <button type="button" class="btn-icon sidebar-header-toggle" id="sidebar-header-toggle" onclick="toggleSidebar()" aria-controls="sidebar" aria-expanded="true" title="Collapse sidebar">
+        <span class="sidebar-toggle-icon" data-icon-ready="true" aria-hidden="true"></span>
+      </button>
       <div class="header-title">
         <h1 id="page-title">Smart Meter Request Demand Overview</h1>
         <div class="breadcrumb" id="page-breadcrumb">IMSERV / Demand / Request to Completion</div>

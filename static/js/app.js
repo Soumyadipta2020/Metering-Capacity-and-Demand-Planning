@@ -53,6 +53,7 @@ function syncSidebarWidth() {
 function initFluidSidebar() {
   const sidebar = document.getElementById('sidebar');
   if (!sidebar) return;
+  updateSidebarControls();
   syncSidebarWidth();
   if ('ResizeObserver' in window) {
     _sidebarResizeObserver?.disconnect();
@@ -61,6 +62,30 @@ function initFluidSidebar() {
   }
   window.addEventListener('resize', syncSidebarWidth);
   document.fonts?.ready?.then(syncSidebarWidth);
+}
+
+function updateSidebarControls() {
+  const sidebar = document.getElementById('sidebar');
+  const collapsed = sidebar?.classList.contains('collapsed') || false;
+  const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  const icon = collapsed ? 'panelLeftOpen' : 'panelLeftClose';
+
+  document.querySelectorAll('#sidebar-toggle, #sidebar-header-toggle').forEach(control => {
+    control.setAttribute('aria-expanded', String(!collapsed));
+    control.setAttribute('title', label);
+  });
+
+  document.querySelectorAll('.sidebar-toggle-label').forEach(el => {
+    el.textContent = collapsed ? 'Expand Sidebar' : 'Collapse Sidebar';
+  });
+
+  document.querySelectorAll('.sidebar-toggle-icon').forEach(el => {
+    if (window.IMSERV?.iconSvg) {
+      el.innerHTML = IMSERV.iconSvg(icon);
+      el.classList.add('modern-icon');
+      el.dataset.iconReady = 'true';
+    }
+  });
 }
 
 function activateSidebarSubnav(viewName, tabName) {
@@ -125,6 +150,7 @@ function exportCurrentView() {
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
   if (sidebar) sidebar.classList.toggle('collapsed');
+  updateSidebarControls();
   requestAnimationFrame(syncSidebarWidth);
   window.setTimeout(syncSidebarWidth, 280);
 }

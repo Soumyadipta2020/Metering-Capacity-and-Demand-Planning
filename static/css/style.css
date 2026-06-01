@@ -163,13 +163,19 @@ body {
   max-width: var(--nav-collapsed);
 }
 
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-section-label {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .sidebar-brand {
   padding: 12px 16px;
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--border);
   min-height: var(--header-height);
-  cursor: pointer;
 }
 
 .brand-logo-image {
@@ -328,6 +334,16 @@ body {
   border-top: 1px solid var(--border);
 }
 
+.sidebar-toggle-item {
+  color: var(--brand-accent);
+}
+
+.sidebar-toggle-icon .icon-svg,
+.sidebar-header-toggle .icon-svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* ─── Main Content Area ─────────────────────────────────────── */
 .main-content {
   flex: 1;
@@ -388,6 +404,10 @@ body {
 }
 
 .btn-icon:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+
+.sidebar-header-toggle {
+  flex-shrink: 0;
+}
 
 .btn-icon.ai-trigger {
   position: relative;
