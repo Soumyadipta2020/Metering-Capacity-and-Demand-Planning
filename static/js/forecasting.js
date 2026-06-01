@@ -5,8 +5,22 @@ let _activeForecastTab = 'forecast';
 let _lastForecastData = null;
 let _activeForecastModel = '';
 let _forecastPlanningRates = { contactToVisitRate: 0, abandonRate: 0 };
+const _forecastTabLoadKeys = new Map();
 
-async function loadForecastingDashboard() {
+function getForecastTabLoadKey(tabName = _activeForecastTab) {
+  const region = IMSERV.getRegion();
+  const year = IMSERV.getYear();
+  const channel = tabName === 'forecast'
+    ? (document.getElementById('forecast-channel-filter')?.value || '')
+    : '';
+  return `${tabName}|${region}|${year}|${channel}`;
+}
+
+function invalidateForecastLoadState() {
+  _forecastTabLoadKeys.clear();
+}
+
+async function loadForecastingDashboard(force = false) {
   const region = IMSERV.getRegion();
   const planningQs = `?region=${region}&year=2025`;
   IMSERV.setLoading([
@@ -25,7 +39,7 @@ async function loadForecastingDashboard() {
 
     if (kpis) storeForecastPlanningRates(kpis, funnel);
 
-    await loadActiveForecastTabData(false);
+    await loadActiveForecastTabData(false, force);
   } finally {
     IMSERV.setLoading([
       'forecast-chart',
@@ -119,6 +133,7 @@ async function loadForecast() {
     const data = await IMSERV.apiFetch('/api/forecasting/forecast' + qs);
     if (!data) return;
     _lastForecastData = data;
+    _forecastTabLoadKeys.set('forecast', getForecastTabLoadKey('forecast'));
 
     renderForecastChart(data);
     renderModelAccuracy(data.model_accuracy || {});
@@ -411,7 +426,7 @@ function switchForecastTab(name, el) {
   if (panel) panel.classList.add('active');
   if (el) el.classList.add('active');
   if (typeof activateSidebarSubnav === 'function') activateSidebarSubnav('forecasting', name);
-  requestAnimationFrame(loadActiveForecastTabData);
+  requestAnimationFrame(() => loadActiveForecastTabData());
 }
 
 function switchForecastSidebarTab(name, el) {
@@ -421,7 +436,13 @@ function switchForecastSidebarTab(name, el) {
   switchForecastTab(name, el);
 }
 
-function loadActiveForecastTabData(showLoading = true) {
+function loadActiveForecastTabData(showLoading = true, force = false) {
+  const key = getForecastTabLoadKey(_activeForecastTab);
+  if (!force && _forecastTabLoadKeys.get(_activeForecastTab) === key) {
+    return Promise.resolve();
+  }
+  _forecastTabLoadKeys.set(_activeForecastTab, key);
+
   if (_activeForecastTab === 'overview') {
     return loadForecastingOverview(showLoading);
   }
@@ -438,6 +459,7 @@ async function loadForecastingOverview(showLoading = true) {
   try {
     const kpis = await IMSERV.apiFetch(`/api/forecasting/channel-kpis?region=${region}&year=${year}`);
     if (kpis) renderChannelBreakdown(kpis);
+    if (kpis) _forecastTabLoadKeys.set('overview', getForecastTabLoadKey('overview'));
   } finally {
     if (showLoading) IMSERV.setLoading('channel-breakdown-chart', false);
   }

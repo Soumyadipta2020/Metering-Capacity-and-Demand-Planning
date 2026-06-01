@@ -4,8 +4,22 @@ let _activeOpsTab = 'capacity';
 const RESOURCE_OPT_STORAGE_KEY = 'imserv-resource-optimisation';
 let _lastOptimisationResult = null;
 let _appliedOptimisation = null;
+const _opsTabLoadKeys = new Map();
 
-async function loadFieldOpsDashboard() {
+function getOpsLoadKey(tabName = _activeOpsTab) {
+  const region = IMSERV.getRegion();
+  const year = IMSERV.getYear();
+  const target = document.getElementById('opt-target')?.value || 72;
+  const jobsPerFteDay = document.getElementById('opt-jobs-per-fte')?.value || 2;
+  const absenceRate = document.getElementById('opt-absence-rate')?.value || 4;
+  return `${tabName}|${region}|${year}|${target}|${jobsPerFteDay}|${absenceRate}`;
+}
+
+function invalidateOpsLoadState() {
+  _opsTabLoadKeys.clear();
+}
+
+async function loadFieldOpsDashboard(force = false) {
   restoreAppliedOptimisation();
   updateOptimisationButtons();
   const region = IMSERV.getRegion();
@@ -21,6 +35,7 @@ async function loadFieldOpsDashboard() {
       loadCapacityForecast(),
       loadCapacityMatrix(),
     ]);
+    _opsTabLoadKeys.set('capacity', getOpsLoadKey('capacity'));
     if (_appliedOptimisation) renderOptimisationResult(_appliedOptimisation, true);
   } finally {
     IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body'], false);
@@ -374,6 +389,7 @@ function updateOptimiseRange(rangeId, valId, suffix) {
   }
   const label = document.getElementById('optimise-state-label');
   if (label && !_appliedOptimisation) label.textContent = 'Parameters changed; run optimisation to refresh the plan';
+  invalidateOpsLoadState();
 }
 
 function getOptimiseParams() {
@@ -643,6 +659,7 @@ async function loadOptimisation() {
 
 function implementOptimisation() {
   if (!_lastOptimisationResult || !(_lastOptimisationResult.recommendations || []).length) return;
+  invalidateOpsLoadState();
   persistAppliedOptimisation(_lastOptimisationResult);
   renderOptimisationResult(_lastOptimisationResult, true);
   applyOptimisationToKPIs();
@@ -652,6 +669,7 @@ function implementOptimisation() {
 }
 
 function revertOptimisation() {
+  invalidateOpsLoadState();
   clearAppliedOptimisation();
   _lastOptimisationResult = null;
   const body = document.getElementById('optimise-body');
@@ -679,7 +697,7 @@ function switchOpsTab(name, el) {
   if (el) el.classList.add('active');
   if (typeof activateSidebarSubnav === 'function') activateSidebarSubnav('field-ops', name);
 
-  requestAnimationFrame(loadActiveOpsTabData);
+  requestAnimationFrame(() => loadActiveOpsTabData());
 }
 
 function switchOpsSidebarTab(name, el) {
@@ -689,7 +707,13 @@ function switchOpsSidebarTab(name, el) {
   switchOpsTab(name, el);
 }
 
-function loadActiveOpsTabData() {
+function loadActiveOpsTabData(force = false) {
+  const key = getOpsLoadKey(_activeOpsTab);
+  if (!force && _opsTabLoadKeys.get(_activeOpsTab) === key) {
+    return Promise.resolve();
+  }
+  _opsTabLoadKeys.set(_activeOpsTab, key);
+
   if (document.getElementById('view-field-ops')?.classList.contains('resource-planning-page')) {
     return Promise.all([
       loadCapacityForecast(),

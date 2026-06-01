@@ -10,6 +10,38 @@ const VIEW_CONFIG = {
 
 let _currentView = 'journey';
 let _sidebarResizeObserver = null;
+const _viewLoadKeys = new Map();
+
+function getViewYear(viewName) {
+  return ['forecasting', 'field-ops', 'financial'].includes(viewName) ? 2026 : 2025;
+}
+
+function getViewLoadKey(viewName) {
+  return `${viewName}|${IMSERV.getRegion()}|${getViewYear(viewName)}`;
+}
+
+function invalidateLoadedViews() {
+  _viewLoadKeys.clear();
+  if (typeof invalidateForecastLoadState === 'function') invalidateForecastLoadState();
+  if (typeof invalidateOpsLoadState === 'function') invalidateOpsLoadState();
+}
+
+function loadViewData(viewName, force = false) {
+  const config = VIEW_CONFIG[viewName];
+  if (!config?.loader) return Promise.resolve();
+
+  const key = getViewLoadKey(viewName);
+  if (!force && _viewLoadKeys.get(viewName) === key) {
+    return Promise.resolve();
+  }
+
+  _viewLoadKeys.set(viewName, key);
+  const result = config.loader(force);
+  if (result?.catch) {
+    result.catch(() => _viewLoadKeys.delete(viewName));
+  }
+  return result;
+}
 
 function syncSidebarWidth() {
   const sidebar = document.getElementById('sidebar');
@@ -59,21 +91,23 @@ function switchView(viewName, navEl) {
   }
 
   _currentView = viewName;
-  if (config?.loader) config.loader();
+  loadViewData(viewName);
   if (viewName === 'field-ops') activateSidebarSubnav(viewName, typeof _activeOpsTab !== 'undefined' ? _activeOpsTab : 'capacity');
 }
 
 function onRegionChange() {
+  invalidateLoadedViews();
   refreshCurrentView();
 }
 
 function onYearChange() {
+  invalidateLoadedViews();
   refreshCurrentView();
 }
 
-function refreshCurrentView() {
-  const config = VIEW_CONFIG[_currentView];
-  if (config?.loader) config.loader();
+function refreshCurrentView(force = true) {
+  if (force) invalidateLoadedViews();
+  loadViewData(_currentView, force);
 }
 
 function exportCurrentView() {
@@ -163,5 +197,5 @@ document.getElementById('ai-modal')?.addEventListener('click', function (e) {
 
 document.addEventListener('DOMContentLoaded', function () {
   initFluidSidebar();
-  loadJourneyDashboard();
+  loadViewData('journey');
 });
