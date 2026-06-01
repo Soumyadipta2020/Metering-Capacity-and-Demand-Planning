@@ -27,8 +27,6 @@ async function loadForecastingDashboard(force = false) {
     'forecast-chart',
     'model-accuracy-body',
     'model-comparison-chart',
-    'cancel-trend-chart',
-    'cancel-risk-panel',
   ], true);
 
   try {
@@ -45,8 +43,6 @@ async function loadForecastingDashboard(force = false) {
       'forecast-chart',
       'model-accuracy-body',
       'model-comparison-chart',
-      'cancel-trend-chart',
-      'cancel-risk-panel',
     ], false);
   }
 }
@@ -127,7 +123,7 @@ async function loadForecast() {
   const region  = IMSERV.getRegion();
   const channel = document.getElementById('forecast-channel-filter')?.value || '';
   const qs = `?region=${region}&channel=${channel}&weeks=52`;
-  IMSERV.setLoading(['forecast-chart', 'model-accuracy-body', 'model-comparison-chart', 'cancel-trend-chart', 'cancel-risk-panel'], true);
+  IMSERV.setLoading(['forecast-chart', 'model-accuracy-body', 'model-comparison-chart'], true);
 
   try {
     const data = await IMSERV.apiFetch('/api/forecasting/forecast' + qs);
@@ -138,17 +134,8 @@ async function loadForecast() {
     renderForecastChart(data);
     renderModelAccuracy(data.model_accuracy || {});
     renderModelComparison(data);
-
-    // Load cancellation trend and risk prediction below the forecast model comparisons
-    const cancelTrends = await IMSERV.apiFetch('/api/cancellations/trends' + (region ? `?region=${region}` : ''));
-    if (cancelTrends && typeof renderCancelTrend === 'function') {
-      renderCancelTrend(cancelTrends);
-    }
-    if (typeof loadCancellationRisk === 'function') {
-      await loadCancellationRisk(false);
-    }
   } finally {
-    IMSERV.setLoading(['forecast-chart', 'model-accuracy-body', 'model-comparison-chart', 'cancel-trend-chart', 'cancel-risk-panel'], false);
+    IMSERV.setLoading(['forecast-chart', 'model-accuracy-body', 'model-comparison-chart'], false);
   }
 }
 

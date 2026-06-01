@@ -4,20 +4,24 @@ async function loadCancellationsDashboard() {
   const region = IMSERV.getRegion();
   const year = IMSERV.getYear();
   const qs = `?region=${region}&year=${year}`;
-  const loadingTargets = ['pareto-chart', 'category-chart', 'recovery-constellation-stage'];
+  const riskQs = region ? `?region=${region}` : '';
+  const loadingTargets = ['pareto-chart', 'category-chart', 'recovery-constellation-stage', 'cancel-trend-chart', 'cancel-risk-panel'];
   IMSERV.setLoading(loadingTargets, true);
 
   try {
-    const [kpis, rootCauses, rebook] = await Promise.all([
+    const [kpis, rootCauses, rebook, cancelTrends] = await Promise.all([
       IMSERV.apiFetch('/api/cancellations/kpis' + qs),
       IMSERV.apiFetch('/api/cancellations/root-causes' + qs),
       IMSERV.apiFetch('/api/cancellations/rebooking' + qs),
+      IMSERV.apiFetch('/api/cancellations/trends' + riskQs),
     ]);
 
     if (kpis) renderCancelKPIs(kpis);
     if (rootCauses) renderParetoChart(rootCauses);
     if (rootCauses) renderCategoryChart(rootCauses);
     if (rebook) renderRebooking(rebook);
+    if (cancelTrends) renderCancelTrend(cancelTrends);
+    await loadCancellationRisk(false);
   } finally {
     IMSERV.setLoading(loadingTargets, false);
   }

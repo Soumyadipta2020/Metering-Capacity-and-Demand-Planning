@@ -57,12 +57,12 @@ const IMSERV = {
     },
     dark: {
       text: '#F7F9F9',
-      muted: '#B0B3B6',
-      secondary: '#B0B3B6',
-      grid: 'rgba(176,179,182,0.14)',
-      tooltipBg: '#071713',
+      muted: '#8397A6',
+      secondary: '#B8C9D6',
+      grid: 'rgba(184,201,214,0.14)',
+      tooltipBg: '#071423',
       tooltipText: '#FFFFFF',
-      tooltipBody: '#B0B3B6',
+      tooltipBody: '#B8C9D6',
     },
   },
 

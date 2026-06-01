@@ -79,29 +79,30 @@
 }
 
 [data-theme="dark"] {
+  --brand-primary:   #028AB8;
   --bg:              #00020B;
-  --bg-surface:      #071713;
-  --bg-card:         #0B2420;
-  --bg-card-hover:   #123832;
+  --bg-surface:      #071423;
+  --bg-card:         #0A1A2A;
+  --bg-card-hover:   #102A40;
   --bg-nav:          #00020B;
-  --bg-modal:        #071713;
-  --border:          rgba(2, 194, 183, 0.22);
-  --border-accent:   rgba(3, 244, 232, 0.40);
+  --bg-modal:        #071423;
+  --border:          rgba(3, 244, 232, 0.20);
+  --border-accent:   rgba(3, 244, 232, 0.44);
   --text-primary:    #F7F9F9;
-  --text-secondary:  #B0B3B6;
-  --text-muted:      #848888;
+  --text-secondary:  #B8C9D6;
+  --text-muted:      #8397A6;
   --text-invert:     #00020B;
   --scene-panel-bg:
-    radial-gradient(circle at 20% 18%, rgba(2, 194, 183, 0.16), transparent 30%),
-    radial-gradient(circle at 82% 76%, rgba(244, 210, 90, 0.12), transparent 28%),
-    linear-gradient(135deg, rgba(0, 32, 28, 0.92), rgba(0, 2, 11, 0.98));
-  --scene-stage-bg:  rgba(0, 2, 11, 0.58);
-  --scene-surface:   rgba(0, 18, 16, 0.78);
-  --scene-surface-soft: rgba(0, 32, 28, 0.62);
+    radial-gradient(circle at 20% 18%, rgba(3, 244, 232, 0.14), transparent 30%),
+    radial-gradient(circle at 82% 76%, rgba(244, 210, 90, 0.09), transparent 28%),
+    linear-gradient(135deg, rgba(4, 22, 38, 0.96), rgba(0, 2, 11, 0.98));
+  --scene-stage-bg:  rgba(2, 12, 24, 0.72);
+  --scene-surface:   rgba(5, 22, 36, 0.84);
+  --scene-surface-soft: rgba(7, 28, 44, 0.68);
   --scene-core:      #00020B;
-  --scene-grid:      rgba(176, 179, 182, 0.08);
-  --scene-track:     rgba(176, 179, 182, 0.16);
-  --scene-border:    rgba(2, 194, 183, 0.24);
+  --scene-grid:      rgba(184, 201, 214, 0.08);
+  --scene-track:     rgba(184, 201, 214, 0.16);
+  --scene-border:    rgba(3, 244, 232, 0.22);
   --scene-shadow:    0 12px 28px rgba(0,0,0,0.30);
   --shadow-sm:       0 2px 8px rgba(0,0,0,0.30);
   --shadow-md:       0 4px 16px rgba(0,0,0,0.40);
@@ -500,6 +501,7 @@ body {
 #view-cancellations .kpi-grid { order: 1; }
 #view-cancellations .cancel-insight-grid { order: 2; }
 #view-cancellations .recovery-constellation-card { order: 3; }
+#view-cancellations .combined-risk-panel { order: 4; margin-top: 14px; }
 
 /* ─── KPI Cards ─────────────────────────────────────────────── */
 .kpi-grid {
