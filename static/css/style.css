@@ -657,6 +657,41 @@ body {
   transform: translateY(-1px) scale(1.04);
 }
 
+#journey-kpis {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+#journey-kpis .kpi-card {
+  min-height: 158px;
+  padding: 58px 14px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+#journey-kpis .kpi-label {
+  min-height: 48px;
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+#journey-kpis .kpi-value {
+  margin-top: auto;
+  margin-bottom: 0;
+  font-size: 25px;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+#journey-kpis .kpi-icon {
+  top: 16px;
+  left: 14px;
+}
+
 /* ─── Cards & Panels ────────────────────────────────────────── */
 .card {
   --card-accent: var(--brand-accent);
@@ -720,6 +755,15 @@ body {
 .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 .grid-7-5 { display: grid; grid-template-columns: 7fr 5fr; gap: 12px; margin-bottom: 12px; }
 .grid-5-7 { display: grid; grid-template-columns: 5fr 7fr; gap: 12px; margin-bottom: 12px; }
+
+.grid-5-7 > .card {
+  display: flex;
+  flex-direction: column;
+}
+
+.grid-5-7 > .card > .card-body {
+  flex: 1;
+}
 
 .cancel-comparison-row {
   align-items: start;
@@ -938,19 +982,24 @@ body {
 
 /* ─── Funnel Chart ──────────────────────────────────────────── */
 .funnel-container {
-  padding: 10px 0;
+  min-height: 100%;
+  padding: 12px 0 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 10px;
 }
 
 .funnel-step {
   display: flex;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   gap: 10px;
 }
 
 .funnel-bar-wrap {
   flex: 1;
-  height: 34px;
+  height: 38px;
   background: var(--bg-surface);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -982,12 +1031,14 @@ body {
 .funnel-bar.completions  { background: linear-gradient(90deg, #028178, #4AC5BB); }
 
 .funnel-label {
-  width: 140px;
-  font-size: 13px;
+  width: 258px;
+  font-size: 11px;
   color: #4A6B7C;
   font-weight: 800;
   text-align: right;
   flex-shrink: 0;
+  line-height: 1.22;
+  white-space: normal;
 }
 
 .funnel-value {
@@ -1526,11 +1577,17 @@ body {
 }
 
 .season-ring-value {
-  color: #f8fbff;
+  color: var(--text-primary);
   font-size: 11px;
   font-weight: 800;
   line-height: 1;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--pulse-color) 38%, var(--border));
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.10), transparent 58%),
+    var(--scene-surface);
+  box-shadow: 0 1px 8px rgba(2,6,23,0.12);
 }
 
 .season-copy {
@@ -1549,6 +1606,47 @@ body {
 .season-copy em {
   color: #8194bd;
   font-size: 12px;
+}
+
+.weekly-flow-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.weekly-flow-strip div {
+  min-height: 60px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--scene-border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), transparent 48%),
+    var(--scene-surface);
+  box-shadow: var(--scene-shadow);
+}
+
+.weekly-flow-strip span,
+.weekly-flow-strip strong {
+  display: block;
+}
+
+.weekly-flow-strip span {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.weekly-flow-strip strong {
+  margin-top: 6px;
+  color: var(--text-primary);
+  font-size: 20px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .regional-radar-grid {
@@ -1612,16 +1710,16 @@ body {
 .region-orbit-core span,
 .region-orbit-core em {
   color: #9fb1d8;
-  font-size: 11px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 800;
   text-transform: uppercase;
 }
 
 .region-orbit-core strong {
-  margin: 5px 0;
+  margin: 4px 0;
   color: var(--text-primary);
-  font-size: 34px;
+  font-size: 29px;
   line-height: 1;
 }
 
@@ -2035,18 +2133,39 @@ body {
 
 .optimise-parameter-panel {
   padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px;
+  gap: 16px;
+  align-items: center;
 }
 
 .optimise-input-grid {
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
-  margin-bottom: 10px;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  margin-bottom: 0;
 }
 
 .optimise-action-row {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
   gap: 8px;
-  flex-wrap: wrap;
+  min-width: 0;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.optimise-action-row .btn {
+  justify-content: center;
+  width: 100%;
+}
+
+#optimise-state-label {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+  align-self: start;
+  line-height: 1.35;
 }
 
 .optimise-result-grid {
@@ -2570,7 +2689,7 @@ body {
 }
 
 .booking-core-label {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -2578,14 +2697,14 @@ body {
 
 .booking-core-value {
   margin-top: 4px;
-  font-size: 28px;
+  font-size: 25px;
   font-weight: 900;
   line-height: 1;
 }
 
 .booking-core-sub {
-  margin-top: 7px;
-  font-size: 12px;
+  margin-top: 6px;
+  font-size: 11px;
   color: #028178;
   font-weight: 700;
 }
@@ -2683,27 +2802,34 @@ body {
 .channel-orb-metrics {
   position: absolute;
   left: 50%;
-  bottom: -66px;
+  top: calc(100% + 8px);
+  bottom: auto;
   transform: translateX(-50%);
-  width: 140px;
+  width: max-content;
+  min-width: 190px;
   display: grid;
   justify-items: center;
   gap: 2px;
   pointer-events: none;
+  text-align: center;
 }
 
 .channel-orb-metrics strong {
   font-size: 16px;
   color: #028178;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .channel-orb-metrics em,
 .channel-orb-metrics small {
   font-style: normal;
-  font-size: 10px;
+  font-size: 9px;
   color: var(--text-muted);
   font-weight: 700;
   text-transform: uppercase;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .channel-storyline {
@@ -5091,6 +5217,7 @@ body {
 /* ─── Responsive ────────────────────────────────────────────── */
 @media (max-width: 1200px) {
   .grid-2, .grid-7-5, .grid-5-7 { grid-template-columns: 1fr; }
+  #journey-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .optimise-input-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
   .scenario-result-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .channel-storyline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -5114,11 +5241,23 @@ body {
 @media (max-width: 960px) {
   .grid-3 { grid-template-columns: 1fr 1fr; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  #journey-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .forecast-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .optimise-parameter-panel { grid-template-columns: 1fr; }
+  #optimise-state-label {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .optimise-action-row {
+    grid-column: 1;
+    grid-row: auto;
+    width: min(180px, 100%);
+    justify-self: end;
+  }
   #cancel-risk-panel .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
   .journey-flow-stage,
   .rhythm-stage { height: 270px; }
-  .funnel-label { width: 128px; }
+  .funnel-label { width: 252px; }
   .funnel-value { width: 86px; }
   .journey-node {
     width: 104px;
@@ -5129,6 +5268,7 @@ body {
   .regional-constellation { grid-template-columns: 1fr; }
   .season-summary { min-height: 128px; }
   .season-pulse-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+  .weekly-flow-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .region-focus-panel { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .channel-lab-topline { flex-direction: column; }
   .channel-lab-legend { justify-content: flex-start; }
@@ -5139,7 +5279,10 @@ body {
     width: min(var(--size), 122px);
     height: min(var(--size), 122px);
   }
-  .channel-orb-metrics { bottom: -66px; }
+  .channel-orb-metrics {
+    top: calc(100% + 8px);
+    bottom: auto;
+  }
   .category-lens-stage { grid-template-columns: 1fr; }
   .regional-risk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -5151,6 +5294,7 @@ body {
     max-width: var(--nav-collapsed);
   }
   .main-content { margin-left: var(--nav-collapsed); }
+  #journey-kpis { grid-template-columns: 1fr; }
   .sidebar .nav-label, .sidebar .nav-section-label { display: none; }
   .sidebar .sidebar-brand {
     padding: 12px 8px;
@@ -5193,6 +5337,7 @@ body {
   .journey-node strong { font-size: 18px; }
   .journey-flow-readouts,
   .rhythm-readouts { grid-template-columns: 1fr; }
+  .weekly-flow-strip { grid-template-columns: 1fr; }
   .funnel-step {
     display: grid;
     grid-template-columns: 1fr 76px;
@@ -5202,6 +5347,7 @@ body {
     grid-column: 1 / -1;
     width: auto;
     text-align: left;
+    white-space: normal;
   }
   .funnel-bar-wrap { grid-column: 1; }
   .funnel-value {

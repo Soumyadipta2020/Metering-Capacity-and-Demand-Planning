@@ -32,6 +32,7 @@ async function loadFieldOpsDashboard(force = false) {
     if (kpis) renderFieldOpsKPIs(kpis);
 
     await Promise.all([
+      typeof loadForecastingDashboard === 'function' ? loadForecastingDashboard(force) : Promise.resolve(),
       loadCapacityForecast(),
       loadCapacityMatrix(),
     ]);
@@ -123,14 +124,14 @@ function renderCapacityForecast(data) {
     set('ops-kpi-absence', IMSERV.fmt.pct(absenceRate));
     
     const jobsLabel = document.querySelector('#ops-kpi-jobs')?.previousElementSibling;
-    if (jobsLabel) jobsLabel.textContent = 'Forecast Jobs Capacity';
+    if (jobsLabel) jobsLabel.textContent = 'Forecast Appointment Capacity';
   }
 
   const summary = document.getElementById('resource-model-summary');
   const method = data.method || {};
   if (summary) {
     summary.innerHTML = `
-      <strong>${method.name || 'Demand-led FTE forecast'}: ${method.jobs_per_fte_day || 2} jobs/FTE/day</strong>
+      <strong>${method.name || 'Appointment-led FTE forecast'}: ${method.jobs_per_fte_day || 2} appointments/FTE/day</strong>
       <span>Avg required FTE/day ${IMSERV.fmt.num(data.kpis?.avg_required_fte)}, avg absent FTE/day ${IMSERV.fmt.num(data.kpis?.avg_absent_fte)}, avg bank-holiday FTE/day ${IMSERV.fmt.num(data.kpis?.avg_bank_holiday_fte)}, net forecast FTE/day ${IMSERV.fmt.num(data.kpis?.avg_net_forecast_fte)}.</span>
     `;
   }
@@ -138,7 +139,7 @@ function renderCapacityForecast(data) {
   const forecastCtx = document.getElementById('capacity-forecast-chart');
   if (forecastCtx && weekly.length) {
     const datasets = [
-      { label: 'Demand 2026', data: weekly.map(w => w.required_fte), borderColor: IMSERV.colors.crit, backgroundColor: 'rgba(251,130,129,0.10)', fill: true, tension: 0.32, pointRadius: 0 },
+      { label: 'Appointments Booked 2026', type: 'bar', data: weekly.map(w => w.required_fte), borderColor: 'rgba(251,130,129,0.78)', backgroundColor: 'rgba(251,130,129,0.22)', borderWidth: 1, borderRadius: 3, barPercentage: 0.86, categoryPercentage: 0.82 },
       { label: '2025 Capacity FTE', data: weekly.map(w => w.capacity_2025_fte), borderColor: IMSERV.colors.muted, backgroundColor: 'rgba(74,107,124,0.08)', borderDash: [3, 3], fill: false, tension: 0.25, pointRadius: 0 },
       { label: 'Capacity 2026', data: weekly.map(w => w.net_forecast_fte), borderColor: IMSERV.colors.ok, backgroundColor: 'rgba(2,129,120,0.08)', borderDash: [6, 4], fill: false, tension: 0.28, pointRadius: 0 },
     ];
@@ -289,7 +290,7 @@ async function loadCapacityMatrix() {
       labels: regions,
       datasets: [
         { label: 'Avg Weekly Engineer Capacity', data: capVals, backgroundColor: 'rgba(2,129,120,0.55)',   yAxisID: 'y'  },
-        { label: 'Avg Weekly Meter Job Demand',  data: demVals, backgroundColor: 'rgba(2,194,183,0.55)',  yAxisID: 'y'  },
+        { label: 'Avg Weekly Appointments Booked', data: demVals, backgroundColor: 'rgba(2,194,183,0.55)', yAxisID: 'y' },
         { label: 'Utilisation %',       data: utilVals,borderColor: IMSERV.colors.warn, type: 'line', fill: false, tension: 0.3, pointRadius: 4, yAxisID: 'y1' },
       ],
     },
@@ -342,7 +343,7 @@ async function loadPatchPlan() {
         </div>
         <div class="utilisation-pct ${p.utilisation_pct > 90 ? 'text-crit' : (p.utilisation_pct > 75 ? 'text-warn' : 'text-ok')}">${p.utilisation_pct}%</div>
         <span class="rag ${p.rag}" style="flex-shrink:0">${p.rag}</span>
-        <div class="stat-chip" style="flex-shrink:0">Meter demand: ${IMSERV.fmt.num(p.demand_jobs)}</div>
+        <div class="stat-chip" style="flex-shrink:0">Appointments booked: ${IMSERV.fmt.num(p.demand_jobs)}</div>
         <div class="stat-chip" style="flex-shrink:0">Engineer capacity: ${IMSERV.fmt.num(p.capacity_jobs)}</div>
       </div>
     `;

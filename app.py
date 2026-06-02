@@ -1,11 +1,11 @@
 """
-IMSERV Smart Meter Field Planning & Utility Operations Platform
+IMSERV Smart Meter Appointment Planning & Utility Operations Platform
 Flask application — extends DAA-Project architecture patterns.
 
 Modules:
-  1. Bookings to Completions Journey  — executive funnel dashboard
+  1. Appointment Journey              — executive funnel dashboard
   2. Contact Centre Forecasting       — multi-model channel forecasting
-  3. Cancellations & Aborts          — root cause + AI prediction
+  3. Appointment Fallout             — root cause + AI prediction
   4. Field Operations & Engineer Planning — scheduling + optimisation
   5. Financial Scenario Planning      — cost/revenue simulation
 """
@@ -118,8 +118,8 @@ def _compact_chat_messages(messages: list[dict], limit: int = 10) -> list[dict]:
 def _chatbot_context(region: str | None, year: int, view: str | None) -> str:
     """Build a compact app snapshot so the chatbot can answer app-specific questions."""
     lines = [
-        "IMSERV Smart Meter Field Planning & Utility Operations Platform.",
-        "Modules: Request Demand, Demand Forecast, Risk & Recovery, Resource Planning, Scenario Impact.",
+        "IMSERV Smart Meter Appointment Planning & Utility Operations Platform.",
+        "Modules: Appointment Journey, Contact Attempt Forecast, Risk & Recovery, Resource Planning, Scenario Impact.",
         f"Current view: {view or 'unknown'}. Region filter: {region or 'All Regions'}. Year: {year}.",
     ]
 
@@ -138,14 +138,14 @@ def _chatbot_context(region: str | None, year: int, view: str | None) -> str:
         completions_total = sum(to_int_fn(r.get("total_completions")) for r in rows)
         visits_total = max(bookings_total - cancellations_total, 0)
         lines.append(
-            "Demand snapshot: "
-            f"{requests_total:,} requests, {visits_total:,} visits, "
-            f"{cancellations_total:,} cancellations, {aborts_total:,} aborts, "
-            f"{completions_total:,} completions, "
-            f"{safe_pct_fn(completions_total, requests_total):.1f}% completion rate."
+            "Appointment journey snapshot: "
+            f"{requests_total:,} appointments booked, {visits_total:,} total visits, "
+            f"{cancellations_total:,} D-1 cancellations, {aborts_total:,} same-day aborts, "
+            f"{completions_total:,} executed successfully, "
+            f"{safe_pct_fn(completions_total, requests_total):.1f}% success rate."
         )
     except Exception as exc:
-        lines.append(f"Demand snapshot unavailable: {exc}")
+        lines.append(f"Appointment journey snapshot unavailable: {exc}")
 
     try:
         get_kpis, _, _, get_forecast = _get_financial_engine()
@@ -161,7 +161,7 @@ def _chatbot_context(region: str | None, year: int, view: str | None) -> str:
                 + (f", {float(margin):.1f}% gross margin." if margin is not None else ".")
             )
         if forecast and isinstance(forecast, dict):
-            lines.append("Scenario planning uses demand volume, completion rate, cancellation rate, abort rate, revenue uplift, cost change, and engineer count.")
+            lines.append("Scenario planning uses appointments booked, success rate, D-1 cancellation rate, same-day abort rate, revenue uplift, cost change, and engineer count.")
     except Exception as exc:
         lines.append(f"Financial snapshot unavailable: {exc}")
 
@@ -175,7 +175,7 @@ def _chatbot_context(region: str | None, year: int, view: str | None) -> str:
             lines.append(
                 "Resource snapshot: "
                 f"{engineers if engineers is not None else 'unknown'} engineers, "
-                f"{completed if completed is not None else 'unknown'} jobs completed, "
+                f"{completed if completed is not None else 'unknown'} executed appointments, "
                 f"{utilisation if utilisation is not None else 'unknown'} average utilisation."
             )
     except Exception as exc:
@@ -354,6 +354,7 @@ def journey_kpis():
             })
 
         return jsonify({
+            "unique_customers":       total_requests,
             "total_requests":        total_requests,
             "total_contacts":        total_contacts,
             "avg_contacts_per_customer": avg_contacts,
@@ -519,7 +520,7 @@ def forecasting_funnel():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MODULE 3 — CANCELLATIONS & ABORTS
+# MODULE 3 — APPOINTMENT FALLOUT
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.route("/api/cancellations/kpis")

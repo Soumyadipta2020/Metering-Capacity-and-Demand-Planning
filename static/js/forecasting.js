@@ -176,7 +176,7 @@ function updateForecastTitle(activeModel) {
   const title = document.getElementById('forecast-chart-title');
   if (!title) return;
   const modelLabel = activeModel ? activeModel : 'Ensemble P50';
-  title.textContent = `52-Week Smart Meter Request Demand Forecast - 2026 ${modelLabel}`;
+  title.textContent = `52-Week Smart Meter Contact Attempt Forecast - 2026 ${modelLabel}`;
   title.removeAttribute('data-icon-ready');
   IMSERV.hydrateIcons?.(title.parentElement || title);
 }
@@ -193,7 +193,7 @@ function renderForecastChart(data) {
   const centralForecast = activeModel && modelForecasts[activeModel]
     ? modelForecasts[activeModel].slice(0, data.labels.length)
     : data.p50;
-  const centralLabel = activeModel ? `${activeModel} Demand Forecast` : 'P50 Demand Forecast';
+  const centralLabel = activeModel ? `${activeModel} Contact Attempt Forecast` : 'P50 Contact Attempt Forecast';
   const centralColor = activeModel ? (modelColors[activeModel] || IMSERV.colors.accent) : IMSERV.colors.accent;
 
   const horizon = Math.min(52, data.labels?.length || centralForecast.length || 0);
@@ -215,7 +215,7 @@ function renderForecastChart(data) {
       labels: weekLabels,
       datasets: [
         {
-          label: '2025 Actual Request Contacts',
+          label: '2025 Actual Contact Attempts',
           data: actual2025,
           borderColor: '#02C2B7',
           backgroundColor: 'rgba(74,197,187,0.08)',
@@ -225,7 +225,7 @@ function renderForecastChart(data) {
           borderWidth: 2.5,
         },
         {
-          label: activeModel ? `2026 ${activeModel} Forecast` : '2026 Ensemble Forecast (P50)',
+          label: activeModel ? `2026 ${activeModel} Contact Attempt Forecast` : '2026 Ensemble Contact Attempt Forecast (P50)',
           data: forecast2026,
           borderColor: centralColor,
           backgroundColor: 'rgba(2,194,183,0.10)',
@@ -384,9 +384,9 @@ async function loadConversionTrend() {
     data: {
       labels,
       datasets: [
-        { label: 'Visits',                 data: visits, backgroundColor: 'rgba(2,129,120,0.5)',  yAxisID: 'y' },
-        { label: 'Successful Completions', data: cp,     backgroundColor: 'rgba(2,129,120,0.5)',yAxisID: 'y' },
-        { label: 'Completion Rate %',      data: cr,     borderColor: IMSERV.colors.accent, type: 'line', fill: false, tension: 0.4, pointRadius: 0, yAxisID: 'y1' },
+        { label: 'Total Visits',           data: visits, backgroundColor: 'rgba(2,129,120,0.5)',  yAxisID: 'y' },
+        { label: 'Executed Successfully',  data: cp,     backgroundColor: 'rgba(2,129,120,0.5)',yAxisID: 'y' },
+        { label: 'Success Rate %',         data: cr,     borderColor: IMSERV.colors.accent, type: 'line', fill: false, tension: 0.4, pointRadius: 0, yAxisID: 'y1' },
       ],
     },
     options: {

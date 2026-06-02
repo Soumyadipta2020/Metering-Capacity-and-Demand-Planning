@@ -192,7 +192,7 @@ function renderScenarioResults(data) {
   const title = document.getElementById('sc-result-title');
   if (title) {
     title.removeAttribute('data-icon-ready');
-    title.textContent = `Demand Scenario: ${data.scenario_name}`;
+    title.textContent = `Appointment Scenario: ${data.scenario_name}`;
     IMSERV.hydrateIcons(title.parentElement || document);
   }
   set('sc-res-revenue',    IMSERV.fmt.gbpM(data.revenue_gbp));
@@ -273,7 +273,7 @@ function renderScenarioAssumptions(data) {
       </tr>`);
     rows.push(`
       <tr class="assumptions-abort-row">
-        <td><span class="job-type-badge abort">ABORTS</span></td>
+        <td><span class="job-type-badge abort">Same-Day Appointment Aborts</span></td>
         <td>${(data.aborts || 0).toLocaleString()}</td>
         <td>${fmt.gbp(assumptions.abort_cost_per_job || 38)}</td>
         <td class="text-right"><strong>${fmt.gbpM(data.abort_cost_total)}</strong></td>
@@ -303,10 +303,10 @@ function renderScenarioAssumptions(data) {
   if (note) {
     note.innerHTML =
       `<strong>Formula:</strong> &nbsp;
-       Revenue = completions × rate/job &nbsp;·&nbsp;
-       Total Cost = (direct cost + abort cost) × 1.${assumptions.overhead_pct || 22} overhead &nbsp;·&nbsp;
+       Revenue = executed appointments × rate/executed appointment &nbsp;·&nbsp;
+       Total Cost = (direct cost + same-day abort cost) × 1.${assumptions.overhead_pct || 22} overhead &nbsp;·&nbsp;
        Margin = Revenue − Total Cost &nbsp;·&nbsp;
-       Cost/Completion = Total Cost ÷ ${(data.completions || 0).toLocaleString()} completions`;
+       Cost/Executed Appointment = Total Cost ÷ ${(data.completions || 0).toLocaleString()} executed appointments`;
   }
 }
 

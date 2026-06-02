@@ -1,4 +1,4 @@
-/* IMSERV - Module 3: Cancellations & Aborts */
+/* IMSERV - Module 3: Appointment Fallout */
 
 async function loadCancellationsDashboard() {
   const region = IMSERV.getRegion();
@@ -51,8 +51,8 @@ function renderParetoChart(data) {
   const container = document.getElementById('pareto-chart');
   if (!container) return;
   renderReasonBreakdown(container, data.cancellation_reasons || [], data.total_cancellations || 0, {
-    empty: 'No cancellation reasons available',
-    totalLabel: 'Total cancellations',
+    empty: 'No D-1 appointment cancellation reasons available',
+    totalLabel: 'Appointments cancelled (D-1)',
     tone: 'cancel',
   });
 }
@@ -61,8 +61,8 @@ function renderCategoryChart(data) {
   const container = document.getElementById('category-chart');
   if (!container) return;
   renderReasonBreakdown(container, data.abort_reasons || [], data.total_aborts || 0, {
-    empty: 'No abort reasons available',
-    totalLabel: 'Total aborts',
+    empty: 'No same-day appointment abort reasons available',
+    totalLabel: 'Appointments aborted on the day of visit',
     tone: 'abort',
   });
 }
@@ -203,10 +203,10 @@ function renderCancelRegional(data) {
           <strong>${cancelEscape(r.region_code)}</strong>
         </div>
         <div class="region-risk-copy">
-          <span>Cancellation/abort pressure</span>
+          <span>Appointment fallout pressure</span>
           <strong>${IMSERV.fmt.pct(loss)}</strong>
-          <em><b>${IMSERV.fmt.pct(r.cancel_rate)}</b> cancel</em>
-          <em><b>${IMSERV.fmt.pct(r.abort_rate)}</b> abort</em>
+          <em><b>${IMSERV.fmt.pct(r.cancel_rate)}</b> D-1 cancelled</em>
+          <em><b>${IMSERV.fmt.pct(r.abort_rate)}</b> same-day aborted</em>
         </div>
         <small>#${idx + 1}</small>
       </div>
@@ -265,8 +265,8 @@ async function loadCancellationRisk(showLoading = true) {
 
       <div class="risk-prediction-detail">
         <div class="risk-metric-grid">
-          <div><span>Cancel Rate</span><strong>${IMSERV.fmt.pct(data.cancel_rate)}</strong></div>
-          <div><span>Abort Rate</span><strong>${IMSERV.fmt.pct(data.abort_rate)}</strong></div>
+          <div><span>D-1 Cancellation Rate</span><strong>${IMSERV.fmt.pct(data.cancel_rate)}</strong></div>
+          <div><span>Same-Day Abort Rate</span><strong>${IMSERV.fmt.pct(data.abort_rate)}</strong></div>
           <div><span>Trend</span><strong style="color:${trendColor};">${cancelEscape(data.trend_direction)} <small>${trendIcon}</small></strong></div>
         </div>
         <div class="risk-recommendation">
@@ -314,7 +314,7 @@ function showRcTooltip(node, svgEl, evt) {
     <div class="rct-divider"></div>
     <div class="rct-row">
       <span class="rct-dot cancel"></span>
-      <span class="rct-label">Total Cancellations</span>
+      <span class="rct-label">Appointments Cancelled (D-1)</span>
       <strong class="rct-val">${(node.total_cancellations || 0).toLocaleString()}</strong>
     </div>
     <div class="rct-row">
@@ -324,7 +324,7 @@ function showRcTooltip(node, svgEl, evt) {
     </div>
     <div class="rct-row">
       <span class="rct-dot success"></span>
-      <span class="rct-label">Completed Rebooks</span>
+      <span class="rct-label">Executed Successfully After Rebook</span>
       <strong class="rct-val">${(node.completed_rebooks || 0).toLocaleString()} <em>of ${(node.rebooked_count || 0).toLocaleString()}</em></strong>
     </div>
     <div class="rct-row">
@@ -408,9 +408,9 @@ function renderRebooking(data) {
   const boardScoreColor = boardScore >= 70 ? '#028178' : boardScore >= 50 ? '#F4D25A' : '#FB8281';
   const rankedBoard = [...scored].sort((a, b) => b.score - a.score);
   const insightFor = r => {
-    if (r.score >= 70) return `Strong recovery pipeline. ${cancelEscape(r.region_code)} converts cancellations efficiently - ${r.completed_rebooks ?? '-'} rebooks completed.`;
-    if (r.score >= 50) return `Moderate recovery. ${cancelEscape(r.region_code)} rebooked ${r.rebooked_count ?? '-'} of ${r.total_cancellations ?? '-'} cancellations but success rate needs improvement.`;
-    return `Recovery at risk. Only ${r.rebooked_count ?? '-'} of ${r.total_cancellations ?? '-'} cancellations were rebooked - targeted outreach recommended.`;
+    if (r.score >= 70) return `Strong recovery pipeline. ${cancelEscape(r.region_code)} converts D-1 cancelled appointments efficiently - ${r.completed_rebooks ?? '-'} rebooks executed successfully.`;
+    if (r.score >= 50) return `Moderate recovery. ${cancelEscape(r.region_code)} rebooked ${r.rebooked_count ?? '-'} of ${r.total_cancellations ?? '-'} D-1 cancelled appointments but success rate needs improvement.`;
+    return `Recovery at risk. Only ${r.rebooked_count ?? '-'} of ${r.total_cancellations ?? '-'} D-1 cancelled appointments were rebooked - targeted outreach recommended.`;
   };
 
   const regionTiles = rankedBoard.map((r, i) => {
@@ -428,7 +428,7 @@ function renderRebooking(data) {
         <span class="rc-card-lag">${r.avg_rebook_lag_days}d lag</span>
         <span class="rc-card-bar rebook"><i></i><em>Rebook ${r.rebook_rate_pct}%</em></span>
         <span class="rc-card-bar success"><i></i><em>Success ${r.rebook_success_pct}%</em></span>
-        <span class="rc-card-meta">${IMSERV.fmt.num(r.completed_rebooks)} completed</span>
+        <span class="rc-card-meta">${IMSERV.fmt.num(r.completed_rebooks)} executed successfully</span>
       </button>
     `;
   }).join('');
@@ -485,7 +485,7 @@ function renderRebooking(data) {
       set('rd-region', r.region_code);
       set('rd-rebook', `${r.rebooked_count ?? '-'} / ${r.total_cancellations ?? '-'} (${r.rebook_rate_pct}%)`);
       set('rd-lag', `${r.avg_rebook_lag_days} days`);
-      set('rd-success', `${r.completed_rebooks ?? '-'} completed (${r.rebook_success_pct}%)`);
+      set('rd-success', `${r.completed_rebooks ?? '-'} executed successfully (${r.rebook_success_pct}%)`);
       set('rd-score', r.score);
       const scoreEl = document.getElementById('rd-score');
       if (scoreEl) scoreEl.style.color = scColor;
@@ -640,16 +640,16 @@ function renderRebooking(data) {
       const sc      = r.score;
       const scColor = sc >= 70 ? '#028178' : sc >= 50 ? '#F4D25A' : '#FB8281';
       const insight = sc >= 70
-        ? `Strong recovery pipeline. ${cancelEscape(r.region_code)} converts cancellations efficiently — ${r.completed_rebooks ?? '—'} rebooks completed.`
+        ? `Strong recovery pipeline. ${cancelEscape(r.region_code)} converts D-1 cancelled appointments efficiently — ${r.completed_rebooks ?? '—'} rebooks executed successfully.`
         : sc >= 50
-        ? `Moderate recovery. ${cancelEscape(r.region_code)} rebooked ${r.rebooked_count ?? '—'} of ${r.total_cancellations ?? '—'} cancellations but success rate needs improvement.`
-        : `Recovery at risk. Only ${r.rebooked_count ?? '—'} of ${r.total_cancellations ?? '—'} cancellations were rebooked — targeted outreach recommended.`;
+        ? `Moderate recovery. ${cancelEscape(r.region_code)} rebooked ${r.rebooked_count ?? '—'} of ${r.total_cancellations ?? '—'} D-1 cancelled appointments but success rate needs improvement.`
+        : `Recovery at risk. Only ${r.rebooked_count ?? '—'} of ${r.total_cancellations ?? '—'} D-1 cancelled appointments were rebooked — targeted outreach recommended.`;
 
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
       set('rd-region',  r.region_code);
       set('rd-rebook',  `${r.rebooked_count ?? '—'} / ${r.total_cancellations ?? '—'} (${r.rebook_rate_pct}%)`);
       set('rd-lag',     `${r.avg_rebook_lag_days} days`);
-      set('rd-success', `${r.completed_rebooks ?? '—'} completed (${r.rebook_success_pct}%)`);
+      set('rd-success', `${r.completed_rebooks ?? '—'} executed successfully (${r.rebook_success_pct}%)`);
       set('rd-score',   sc);
       const scoreEl = document.getElementById('rd-score');
       if (scoreEl) scoreEl.style.color = scColor;

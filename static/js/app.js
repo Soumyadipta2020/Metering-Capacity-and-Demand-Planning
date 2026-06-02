@@ -1,11 +1,11 @@
 /* IMSERV - Main Application Controller */
 
 const VIEW_CONFIG = {
-  journey: { title: 'Smart Meter Request Demand Overview', breadcrumb: 'IMSERV / Demand / Request to Completion', loader: loadJourneyDashboard },
-  forecasting: { title: 'Smart Meter Demand Forecasting', breadcrumb: 'IMSERV / Forecasting / Request Demand', loader: loadForecastingDashboard },
-  cancellations: { title: 'Cancellation and Abort Risk Planning', breadcrumb: 'IMSERV / Demand / Risk and Recovery', loader: loadCancellationsDashboard },
-  'field-ops': { title: 'Engineer Resource Planning', breadcrumb: 'IMSERV / Operations / Demand vs Capacity', loader: loadFieldOpsDashboard },
-  financial: { title: 'Demand and Resource Financial Planning', breadcrumb: 'IMSERV / Finance / Scenario Impact', loader: loadFinancialDashboard },
+  journey: { title: 'Smart Meter Appointment Journey Overview', breadcrumb: 'IMSERV / Appointments / Appointment Journey', loader: loadJourneyDashboard },
+  forecasting: { title: 'Appointment and Resource Planning', breadcrumb: 'IMSERV / Planning / Contact Attempt Forecast and Capacity', loader: loadFieldOpsDashboard },
+  cancellations: { title: 'Appointment Fallout Risk and Recovery', breadcrumb: 'IMSERV / Appointments / Risk and Recovery', loader: loadCancellationsDashboard },
+  'field-ops': { title: 'Appointment and Resource Planning', breadcrumb: 'IMSERV / Planning / Contact Attempt Forecast and Capacity', loader: loadFieldOpsDashboard },
+  financial: { title: 'Appointment and Resource Financial Planning', breadcrumb: 'IMSERV / Finance / Scenario Impact', loader: loadFinancialDashboard },
 };
 
 let _currentView = 'journey';
@@ -96,6 +96,7 @@ function activateSidebarSubnav(viewName, tabName) {
 }
 
 function switchView(viewName, navEl) {
+  if (viewName === 'forecasting') viewName = 'field-ops';
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item[data-view]').forEach(n => n.classList.remove('active'));
   document.querySelectorAll('.nav-subitem').forEach(n => n.classList.remove('active'));

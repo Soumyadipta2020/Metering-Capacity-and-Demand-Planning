@@ -250,6 +250,11 @@ Object.assign(IMSERV, {
 
   iconForLabel(label = '') {
     const t = label.toLowerCase();
+    if (t.includes('dialler') || t.includes('customer data')) return 'user';
+    if (t.includes('executed successfully')) return 'check';
+    if (t.includes('appointment') && t.includes('cancel')) return 'alert';
+    if (t.includes('appointment') && t.includes('abort')) return 'xCircle';
+    if (t.includes('appointment')) return 'calendar';
     if (t.includes('request')) return 'clipboard';
     if (t.includes('contact') || t.includes('volume') || t.includes('phone')) return 'phone';
     if (t.includes('customer')) return 'user';

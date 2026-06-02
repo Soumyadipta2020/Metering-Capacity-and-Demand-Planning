@@ -1,4 +1,4 @@
-/* IMSERV — Module 1: Bookings to Completions Journey Dashboard */
+/* IMSERV — Module 1: Appointment Journey Dashboard */
 
 let _journeyTrendChart = null;
 
@@ -49,18 +49,18 @@ async function loadJourneyDashboard() {
 
 function refreshJourneyVisualLabels() {
   const updates = [
-    ['Smart Meter Request to Completion Funnel', 'Smart Meter Request to Completion Funnel', 'Shows how incoming requests progress through contacts, visits, cancellations, aborts and successful completions'],
-    ['Weekly Smart Meter Demand and Completion Trend', 'Weekly Smart Meter Demand and Completion Trend', 'Compares weekly visits, completed jobs, cancellations and aborts'],
-    ['Regional Demand and Completion Status', 'Regional Demand and Completion Status', 'Shows request volume, completion rate and regional RAG status'],
+    ['Smart Meter Appointment Journey Funnel', 'Shows customer data loaded into dialler, contact attempts, appointments booked, D-1 cancellations, total visits, same-day aborts and successful execution'],
+    ['Weekly Smart Meter Appointment and Success Trend', 'Compares total visits, executed-successfully outcomes, D-1 cancellations and same-day aborts'],
+    ['Regional Appointment and Success Status', 'Shows appointments booked, success rate and regional RAG status'],
   ];
 
   document.querySelectorAll('#view-journey .card-title').forEach(title => {
-    const match = updates.find(([oldTitle]) => title.textContent.includes(oldTitle));
+    const match = updates.find(([currentTitle]) => title.textContent.includes(currentTitle));
     if (!match) return;
-    title.textContent = match[1];
+    title.textContent = match[0];
     delete title.dataset.iconReady;
     const subtitle = title.closest('.card-header')?.querySelector('.card-subtitle');
-    if (subtitle) subtitle.textContent = match[2];
+    if (subtitle) subtitle.textContent = match[1];
   });
   IMSERV.hydrateIcons(document.getElementById('view-journey'));
 }
@@ -95,7 +95,7 @@ function renderCustomerInteractions(data) {
       <div class="interaction-stage">${r.journey_stage}</div>
       <div class="interaction-route-metrics">
         <div><span>Interactions</span><strong>${IMSERV.fmt.num(r.interactions)}</strong></div>
-        <div><span>Bookings</span><strong>${IMSERV.fmt.num(r.bookings)}</strong></div>
+        <div><span>Appointments Booked</span><strong>${IMSERV.fmt.num(r.bookings)}</strong></div>
         <div><span>Conversion</span><strong>${IMSERV.fmt.pct(r.conversion_pct)}</strong></div>
       </div>
     </div>
@@ -109,7 +109,7 @@ function renderCustomerInteractions(data) {
       </div>
       <div class="interaction-type-values">
         <strong>${IMSERV.fmt.num(t.interactions)}</strong>
-        <span>${IMSERV.fmt.num(t.bookings)} bookings</span>
+        <span>${IMSERV.fmt.num(t.bookings)} appointments booked</span>
       </div>
     </div>
   `).join('');
@@ -129,6 +129,9 @@ function renderJourneyKPIs(kpis) {
     const el = document.getElementById(id);
     if (el) el.textContent = val;
   };
+  const uniqueCustomers = kpis.unique_customers
+    ?? (kpis.avg_contacts_per_customer ? Math.round((kpis.total_contacts || 0) / kpis.avg_contacts_per_customer) : kpis.total_requests);
+  set('kpi-customers',        IMSERV.fmt.num(uniqueCustomers));
   set('kpi-requests',         IMSERV.fmt.num(kpis.total_requests));
   set('kpi-contacts',         IMSERV.fmt.num(kpis.total_contacts));
   set('kpi-avg-contacts',     kpis.avg_contacts_per_customer?.toFixed(2) || '—');
@@ -139,20 +142,24 @@ function renderJourneyKPIs(kpis) {
   set('kpi-completion-rate',  IMSERV.fmt.pct(kpis.completion_rate));
 
   // Colour the completion rate card
-  const crCard = document.querySelector('#view-journey .kpi-card.ok:last-child');
+  const crCard = document.getElementById('kpi-success-rate-card');
   if (crCard && kpis.completion_rate) {
     crCard.className = `kpi-card ${kpis.completion_rate >= 65 ? 'ok' : (kpis.completion_rate >= 55 ? 'warn' : 'crit')}`;
   }
 }
 
 function renderFunnel(kpis) {
+  const uniqueCustomers = kpis.unique_customers
+    ?? (kpis.avg_contacts_per_customer ? Math.round((kpis.total_contacts || 0) / kpis.avg_contacts_per_customer) : kpis.total_requests);
+  const visits = kpis.total_visits ?? Math.max((kpis.total_bookings || 0) - (kpis.total_cancellations || 0), 0);
   const steps = [
-    { label: 'Total Requests',    key: 'requests',      cls: 'requests',      val: kpis.total_requests },
-    { label: 'Customer Contacts', key: 'contacts',      cls: 'contacts',      val: kpis.total_contacts },
-    { label: 'Visits',            key: 'visits',        cls: 'visits',        val: kpis.total_visits ?? Math.max((kpis.total_bookings || 0) - (kpis.total_cancellations || 0), 0) },
-    { label: 'Cancellations',     key: 'cancellations', cls: 'cancellations', val: kpis.total_cancellations },
-    { label: 'Aborts',            key: 'aborts',        cls: 'aborts',        val: kpis.total_aborts },
-    { label: 'Completions',       key: 'completions',   cls: 'completions',   val: kpis.total_completions },
+    { label: 'Customer Data Loaded Into Dialler', key: 'customers',     cls: 'requests',      val: uniqueCustomers },
+    { label: 'Contact Attempts',                  key: 'contacts',      cls: 'contacts',      val: kpis.total_contacts },
+    { label: 'Appointments Booked',               key: 'appointments',  cls: 'requests',      val: kpis.total_requests },
+    { label: 'Appointments Cancelled (D-1)',      key: 'cancelled',     cls: 'cancellations', val: kpis.total_cancellations },
+    { label: 'Total Visits',                      key: 'visits',        cls: 'visits',        val: visits },
+    { label: 'Appointments Aborted On The Day Of Visit', key: 'aborted', cls: 'aborts',        val: kpis.total_aborts },
+    { label: 'Executed Successfully',             key: 'executed',      cls: 'completions',   val: kpis.total_completions },
   ];
 
   const maxVal = Math.max(...steps.map(s => s.val || 0));
@@ -172,18 +179,24 @@ function renderFunnel(kpis) {
         <div class="funnel-value">${IMSERV.fmt.num(s.val)}</div>
       </div>
     `;
-  }).join('');
+  }).join('') + `
+    <div class="d-flex gap-8 mt-12 flex-wrap justify-content-center">
+      <span class="stat-chip">Success Rate: <strong>${IMSERV.fmt.pct(kpis.completion_rate)}</strong></span>
+      <span class="stat-chip">Average Contacts Per Customer: <strong>${kpis.avg_contacts_per_customer?.toFixed(2) || '—'}</strong></span>
+    </div>
+  `;
 }
 
 function renderFunnelMetrics(funnel) {
   const body = document.getElementById('funnel-metrics-body');
   if (!body || !funnel) return;
   const f = funnel.funnel || {};
-  const requests = f.requests || 0;
+  const uniqueCustomers = f.unique_customers
+    ?? (f.avg_contacts_per_customer ? Math.round((f.contacts || 0) / f.avg_contacts_per_customer) : f.requests || 0);
+  const appointmentsBooked = f.requests || 0;
   const visits = f.visits ?? Math.max((f.bookings || 0) - (f.cancellations || 0), 0);
-  const successfulVisits = f.post_abort_visits ?? Math.max(visits - (f.aborts || 0), 0);
   const completions = f.completions || 0;
-  const notCompleted = f.not_completed_after_successful_visit ?? Math.max(successfulVisits - completions, 0);
+  const notCompleted = f.not_completed_after_successful_visit ?? Math.max((f.post_abort_visits ?? Math.max(visits - (f.aborts || 0), 0)) - completions, 0);
   const reasons = (funnel.not_completed_reasons || []).slice(0, 4);
   const reasonHtml = reasons.length ? reasons.map(r => `
     <div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center;">
@@ -193,71 +206,71 @@ function renderFunnelMetrics(funnel) {
         <div style="height:100%; width:${Math.max(4, Math.min(100, r.pct || 0))}%; background:rgba(2,194,183,0.75);"></div>
       </div>
     </div>
-  `).join('') : '<div style="font-size:11px; color:var(--text-muted);">No unresolved successful visits</div>';
+  `).join('') : '<div style="font-size:11px; color:var(--text-muted);">No unresolved executed appointments</div>';
 
   body.innerHTML = `
     <div style="display:flex; flex-direction:column; gap:14px; padding: 10px 0;">
       <!-- Main Funnel Path -->
-      <div style="display:grid; grid-template-columns:1fr .65fr 1fr 1fr 1.08fr; gap:4px; min-height:88px; position:relative;">
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:4px; min-height:88px; position:relative;">
         
-        <!-- Requests -->
+        <!-- Customer data loaded into dialler -->
         <div style="background: linear-gradient(135deg, rgba(2,194,183,0.05), rgba(2,194,183,0.15)); border: 1px solid rgba(2,194,183,0.2); border-radius: 8px 0 0 8px; display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Requests</div>
-          <div style="font-size:26px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(requests)}</div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Customer Data Loaded Into Dialler</div>
+          <div style="font-size:26px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(uniqueCustomers)}</div>
           <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,194,183,0.3); z-index:2;"></div>
         </div>
 
-        <!-- Contacts -->
+        <!-- Contact attempts -->
         <div style="background: linear-gradient(135deg, rgba(2,194,183,0.08), rgba(2,194,183,0.16)); border: 1px solid rgba(2,194,183,0.28); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Contacts</div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Contact Attempts</div>
           <div style="font-size:22px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(f.contacts)}</div>
           <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,194,183,0.4); z-index:2;"></div>
         </div>
 
-        <!-- Visits -->
+        <!-- Appointments booked -->
+        <div style="background: linear-gradient(135deg, rgba(2,194,183,0.06), rgba(2,194,183,0.14)); border: 1px solid rgba(2,194,183,0.24); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Appointments Booked</div>
+          <div style="font-size:26px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(appointmentsBooked)}</div>
+          <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,194,183,0.32); z-index:2;"></div>
+        </div>
+
+        <!-- Total visits -->
         <div style="background: linear-gradient(135deg, rgba(2,129,120,0.05), rgba(2,129,120,0.15)); border: 1px solid rgba(2,129,120,0.2); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Visits</div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Total Visits</div>
           <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(visits)}</div>
           <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,129,120,0.3); z-index:2;"></div>
         </div>
 
-        <!-- Successful Visits -->
-        <div style="background: linear-gradient(135deg, rgba(2,129,120,0.10), rgba(2,129,120,0.20)); border: 1px solid rgba(2,129,120,0.32); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Successful Visits</div>
-          <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(successfulVisits)}</div>
-          <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,129,120,0.4); z-index:2;"></div>
-        </div>
-
-        <!-- Completions -->
+        <!-- Executed successfully -->
         <div style="background: linear-gradient(135deg, rgba(2,129,120,0.15), rgba(2,129,120,0.25)); border: 1px solid rgba(2,129,120,0.4); border-radius: 0 8px 8px 0; display:flex; flex-direction:column; justify-content:center; align-items:center; box-shadow: inset 0 0 12px rgba(2,129,120,0.1); min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600;">Successful Completions</div>
+          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Executed Successfully</div>
           <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(completions)}</div>
         </div>
 
       </div>
 
       <!-- Falloff branches -->
-      <div style="display:grid; grid-template-columns:1fr .65fr 1fr 1fr 1.08fr; gap:12px; align-items:start;">
-        <div></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; align-items:start;">
+        <div></div><div></div>
         <div>
           <div style="height:18px; width:50%; border-right:2px dashed rgba(251,130,129,0.35); border-bottom:2px dashed rgba(251,130,129,0.35); border-bottom-right-radius:10px; margin-top:-8px;"></div>
           <div style="background: rgba(251, 130, 129, 0.05); border: 1px solid rgba(251, 130, 129, 0.15); border-left: 4px solid var(--crit); padding: 12px 14px; border-radius: 8px;">
-            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Cancellations</div>
+            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Appointments Cancelled (D-1)</div>
             <div style="font-size:20px; font-weight:800; color:var(--crit); margin-top:2px;">${IMSERV.fmt.num(f.cancellations)}</div>
           </div>
         </div>
         <div>
           <div style="height:18px; width:50%; border-right:2px dashed rgba(244,210,90,0.45); border-bottom:2px dashed rgba(244,210,90,0.45); border-bottom-right-radius:10px; margin-top:-8px;"></div>
           <div style="background: rgba(244, 210, 90, 0.05); border: 1px solid rgba(244, 210, 90, 0.15); border-left: 4px solid var(--warn); padding: 12px 14px; border-radius: 8px;">
-            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Aborts</div>
+            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Appointments Aborted On The Day Of Visit</div>
             <div style="font-size:20px; font-weight:800; color:var(--warn); margin-top:2px;">${IMSERV.fmt.num(f.aborts)}</div>
           </div>
         </div>
-        <div style="grid-column:4 / 6;">
+        <div style="grid-column:5;">
           <div style="height:18px; width:28%; border-right:2px dashed rgba(2,194,183,0.38); border-bottom:2px dashed rgba(2,194,183,0.38); border-bottom-right-radius:10px; margin-top:-8px;"></div>
           <div style="background: rgba(2, 194, 183, 0.05); border: 1px solid rgba(2, 194, 183, 0.15); border-left: 4px solid var(--info); padding: 12px 14px; border-radius: 8px;">
             <div style="display:flex; justify-content:space-between; gap:12px; align-items:baseline;">
-              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Not Completed</div>
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Not Executed After Visit</div>
               <div style="font-size:20px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(notCompleted)}</div>
             </div>
             <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin-top:10px;">
@@ -269,11 +282,11 @@ function renderFunnelMetrics(funnel) {
     </div>
 
     <div class="mt-8" style="border-top: 1px solid var(--border); padding-top: 16px; display:flex; gap: 16px; justify-content:center; flex-wrap:wrap;">
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: var(--bg-card); border:1px solid var(--border);">Visit Rate: <strong style="color:var(--text-primary); margin-left:4px;">${IMSERV.fmt.pct(funnel.visit_rate)}</strong></div>
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,129,120,0.05); border:1px solid rgba(2,129,120,0.1);">Completion Rate: <strong style="color:var(--ok); margin-left:4px;">${IMSERV.fmt.pct(funnel.completion_rate)}</strong></div>
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,129,120,0.05); border:1px solid rgba(2,129,120,0.1);">Visit Success: <strong style="color:var(--ok); margin-left:4px;">${IMSERV.fmt.pct(funnel.visit_success_rate)}</strong></div>
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,194,183,0.05); border:1px solid rgba(2,194,183,0.1);">Completion Gap: <strong style="color:var(--info); margin-left:4px;">${IMSERV.fmt.num(notCompleted)}</strong></div>
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: var(--bg-card); border:1px solid var(--border);">Avg Contacts: <strong style="color:var(--text-primary); margin-left:4px;">${funnel.avg_contacts_per_customer}</strong></div>
+      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: var(--bg-card); border:1px solid var(--border);">Total Visit Rate: <strong style="color:var(--text-primary); margin-left:4px;">${IMSERV.fmt.pct(funnel.visit_rate)}</strong></div>
+      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,129,120,0.05); border:1px solid rgba(2,129,120,0.1);">Success Rate: <strong style="color:var(--ok); margin-left:4px;">${IMSERV.fmt.pct(funnel.completion_rate)}</strong></div>
+      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,129,120,0.05); border:1px solid rgba(2,129,120,0.1);">Executed / Total Visits: <strong style="color:var(--ok); margin-left:4px;">${IMSERV.fmt.pct(funnel.visit_success_rate)}</strong></div>
+      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,194,183,0.05); border:1px solid rgba(2,194,183,0.1);">Execution Gap: <strong style="color:var(--info); margin-left:4px;">${IMSERV.fmt.num(notCompleted)}</strong></div>
+      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: var(--bg-card); border:1px solid var(--border);">Average Contacts Per Customer: <strong style="color:var(--text-primary); margin-left:4px;">${funnel.avg_contacts_per_customer}</strong></div>
     </div>
   `;
 }
@@ -299,8 +312,10 @@ function renderJourneyTrend(data) {
   const last = labels.length - 1;
   const recentCompletion = completions[last] || 0;
   const recentVisit = visits[last] || 0;
-  const recentLoss = (cancellations[last] || 0) + (aborts[last] || 0);
-  const bestIndex = completions.indexOf(Math.max(...completions, 1));
+  const recentCancelled = cancellations[last] || 0;
+  const recentAborted = aborts[last] || 0;
+  const recentLoss = recentCancelled + recentAborted;
+  const recentSuccessRate = recentVisit ? (recentCompletion / recentVisit) * 100 : 0;
   const periods = [
     { name: 'Q1', range: [0, 13] },
     { name: 'Q2', range: [13, 26] },
@@ -311,10 +326,12 @@ function renderJourneyTrend(data) {
     const slice = labels.slice(start, end);
     const c = completions.slice(start, end).reduce((a, b) => a + b, 0);
     const b = visits.slice(start, end).reduce((a, v) => a + v, 0);
-    const loss = cancellations.slice(start, end).reduce((a, v) => a + v, 0) + aborts.slice(start, end).reduce((a, v) => a + v, 0);
+    const cancelled = cancellations.slice(start, end).reduce((a, v) => a + v, 0);
+    const aborted = aborts.slice(start, end).reduce((a, v) => a + v, 0);
+    const loss = cancelled + aborted;
     const yieldPct = b ? (c / b) * 100 : 0;
     const lossPct = b ? (loss / b) * 100 : 0;
-    return { ...p, weeks: slice.length, completions: c, visits: b, losses: loss, yieldPct, lossPct };
+    return { ...p, weeks: slice.length, completions: c, visits: b, cancelled, aborted, losses: loss, yieldPct, lossPct };
   }).filter(p => p.weeks);
   const strongest = periods.reduce((best, p) => p.yieldPct > best.yieldPct ? p : best, periods[0]);
   const hottest = periods.reduce((best, p) => p.lossPct > best.lossPct ? p : best, periods[0]);
@@ -334,7 +351,7 @@ function renderJourneyTrend(data) {
         <div class="season-copy">
           <span>${p.weeks} weeks</span>
           <strong>${IMSERV.fmt.num(p.completions)}</strong>
-          <em>${IMSERV.fmt.num(p.losses)} losses</em>
+          <em>${IMSERV.fmt.num(p.cancelled)} cancelled, ${IMSERV.fmt.num(p.aborted)} aborted</em>
         </div>
       </div>
     `;
@@ -343,16 +360,22 @@ function renderJourneyTrend(data) {
   container.innerHTML = `
     <div class="season-stage">
       <div class="season-summary">
-        <span>Latest week</span>
+        <span>Latest executed successfully</span>
         <strong>${IMSERV.fmt.num(recentCompletion)}</strong>
-        <em>${IMSERV.fmt.num(recentVisit)} visits</em>
+        <em>${IMSERV.fmt.num(recentVisit)} total visits</em>
       </div>
       <div class="season-pulse-grid">${periodHtml}</div>
     </div>
     <div class="rhythm-readouts">
-      <div><span>Strongest quarter</span><strong>${strongest.name} at ${IMSERV.fmt.pct(strongest.yieldPct)}</strong></div>
-      <div><span>Highest loss quarter</span><strong>${hottest.name} at ${IMSERV.fmt.pct(hottest.lossPct)}</strong></div>
-      <div><span>Latest loss volume</span><strong>${IMSERV.fmt.num(recentLoss)}</strong></div>
+      <div><span>Best success rate quarter</span><strong>${strongest.name} at ${IMSERV.fmt.pct(strongest.yieldPct)}</strong></div>
+      <div><span>Highest appointment fallout quarter</span><strong>${hottest.name} at ${IMSERV.fmt.pct(hottest.lossPct)}</strong></div>
+      <div><span>Latest appointment fallout</span><strong>${IMSERV.fmt.num(recentLoss)}</strong></div>
+    </div>
+    <div class="weekly-flow-strip">
+      <div><span>Total visits</span><strong>${IMSERV.fmt.num(recentVisit)}</strong></div>
+      <div><span>Appointments Cancelled (D-1)</span><strong>${IMSERV.fmt.num(recentCancelled)}</strong></div>
+      <div><span>Appointments Aborted</span><strong>${IMSERV.fmt.num(recentAborted)}</strong></div>
+      <div><span>Success rate</span><strong>${IMSERV.fmt.pct(recentSuccessRate)}</strong></div>
     </div>
   `;
 }
@@ -382,9 +405,9 @@ function renderRegionalHeatmapLegacy(data) {
               <span class="rag ${r.rag}">${r.rag}</span>
             </div>
             <div class="regional-radar-metrics">
-              <span><b>${IMSERV.fmt.num(r.completions)}</b> completions</span>
-              <span><b>${IMSERV.fmt.num(r.requests)}</b> requests</span>
-              <span><b>${IMSERV.fmt.num(lossTotal)}</b> losses</span>
+              <span><b>${IMSERV.fmt.num(r.completions)}</b> executed successfully</span>
+              <span><b>${IMSERV.fmt.num(r.requests)}</b> appointments booked</span>
+              <span><b>${IMSERV.fmt.num(lossTotal)}</b> cancelled + aborted</span>
             </div>
           </div>
         </div>
@@ -412,7 +435,7 @@ function renderRegionalHeatmapLegacy(data) {
         
         <div style="display:flex; gap: 15px; align-items:center; margin-bottom: 20px; background: ${bgColor}; padding: 12px; border-radius: 8px;">
            <div style="flex:1;">
-              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:0.5px;">Completion Rate</div>
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:600; letter-spacing:0.5px;">Success Rate</div>
               <div style="font-size:28px; font-weight:800; color:var(--text-primary); line-height:1.2;">${IMSERV.fmt.pct(r.completion_rate)}</div>
               <div style="height:6px; background:rgba(255,255,255,0.1); border-radius:3px; margin-top:8px; overflow:hidden;">
                  <div style="height:100%; width:${r.completion_rate}%; background:${borderColor}; border-radius:3px;"></div>
@@ -422,19 +445,19 @@ function renderRegionalHeatmapLegacy(data) {
         
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
            <div style="background:var(--bg-surface); padding:10px; border-radius:6px; border: 1px solid var(--border);">
-              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Requests</div>
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Appointments Booked</div>
               <div style="font-size:15px; font-weight:700; color:var(--text-primary);">${IMSERV.fmt.num(r.requests)}</div>
            </div>
            <div style="background:var(--bg-surface); padding:10px; border-radius:6px; border: 1px solid var(--border);">
-              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Completions</div>
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Executed Successfully</div>
               <div style="font-size:15px; font-weight:700; color:var(--ok);">${IMSERV.fmt.num(r.completions)}</div>
            </div>
            <div style="background:var(--bg-surface); padding:10px; border-radius:6px; border: 1px solid var(--border);">
-              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Cancellations</div>
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Cancelled (D-1)</div>
               <div style="font-size:15px; font-weight:700; color:var(--crit);">${IMSERV.fmt.num(r.cancellations)}</div>
            </div>
            <div style="background:var(--bg-surface); padding:10px; border-radius:6px; border: 1px solid var(--border);">
-              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Aborts</div>
+              <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Aborted On Day</div>
               <div style="font-size:15px; font-weight:700; color:var(--warn);">${IMSERV.fmt.num(r.aborts)}</div>
            </div>
         </div>
@@ -471,7 +494,7 @@ function renderRegionalHeatmap(data) {
     const size = 42 + ((r.requests || 0) / maxRequests) * 26;
 
     return `
-      <button class="region-star ${tone}" style="--x:${x}%; --y:${y}%; --s:${size}px;" title="${r.region_name || r.region_code}: ${IMSERV.fmt.pct(r.completion_rate)} completion, ${IMSERV.fmt.num(lossTotal)} losses">
+      <button class="region-star ${tone}" style="--x:${x}%; --y:${y}%; --s:${size}px;" title="${r.region_name || r.region_code}: ${IMSERV.fmt.pct(r.completion_rate)} success rate, ${IMSERV.fmt.num(lossTotal)} cancelled + aborted">
         <strong>${r.region_code}</strong>
         <span>${IMSERV.fmt.pct(r.completion_rate)}</span>
       </button>
@@ -481,7 +504,7 @@ function renderRegionalHeatmap(data) {
   const focus = [
     { label: 'Strongest', region: strongest, metric: IMSERV.fmt.pct(strongest.completion_rate) },
     { label: 'Needs focus', region: watch, metric: IMSERV.fmt.pct(watch.completion_rate) },
-    { label: 'Highest demand', region: busiest, metric: IMSERV.fmt.num(busiest.requests) },
+    { label: 'Highest appointments booked', region: busiest, metric: IMSERV.fmt.num(busiest.requests) },
   ].map(item => `
     <div class="region-focus-item">
       <span>${item.label}</span>
@@ -498,7 +521,7 @@ function renderRegionalHeatmap(data) {
         <div class="region-orbit-core">
           <span>Network avg</span>
           <strong>${IMSERV.fmt.pct(averageCompletion)}</strong>
-          <em>${IMSERV.fmt.num(totalLosses)} losses</em>
+          <em>${IMSERV.fmt.num(totalLosses)} cancelled + aborted</em>
         </div>
         ${nodes}
       </div>
@@ -613,7 +636,7 @@ async function loadChannelComparison(showLoading = true) {
       <button
         class="channel-orb"
         style="--x:${pos.x}%; --y:${pos.y}%; --size:${size}px; --channel-color:${colour}; --conversion:${visitSuccess * 3.6}deg; --abandon:${Math.max(10, abandon * 3.6)}deg;"
-        title="${safeName}: ${IMSERV.fmt.num(c.volume)} customer touchpoints, ${IMSERV.fmt.num(c.bookings)} bookings, ${IMSERV.fmt.pct(visitSuccess)} to successful visits"
+        title="${safeName}: ${IMSERV.fmt.num(c.volume)} contact attempts, ${IMSERV.fmt.num(c.bookings)} appointments booked, ${IMSERV.fmt.pct(visitSuccess)} to total visits"
         aria-label="${safeName} channel signal"
       >
         <span class="channel-orb-ring"></span>
@@ -626,9 +649,9 @@ async function loadChannelComparison(showLoading = true) {
         <span class="channel-orb-marker" title="${IMSERV.fmt.pct(abandon)} abandoned"></span>
         <span class="channel-orb-metrics">
           <strong>${IMSERV.fmt.num(successfulVisits)}</strong>
-          <em>successful visits</em>
-          <small>${bookingShare.toFixed(1)}% of bookings</small>
-          <small>${share.toFixed(1)}% of touchpoints</small>
+          <em>total visits</em>
+          <small>${bookingShare.toFixed(1)}% of appointments booked</small>
+          <small>${share.toFixed(1)}% of contact attempts</small>
         </span>
       </button>
     `;
@@ -646,9 +669,9 @@ async function loadChannelComparison(showLoading = true) {
 
       <div class="booking-core">
         <div class="booking-core-ring"></div>
-        <div class="booking-core-label">Bookings Core</div>
+        <div class="booking-core-label">Appointments Booked Core</div>
         <div class="booking-core-value">${IMSERV.fmt.num(totalBookings)}</div>
-        <div class="booking-core-sub">${IMSERV.fmt.pct(blendedVisitSuccess)} to visits</div>
+        <div class="booking-core-sub">${IMSERV.fmt.pct(blendedVisitSuccess)} to total visits</div>
       </div>
 
       ${nodes}
@@ -658,12 +681,12 @@ async function loadChannelComparison(showLoading = true) {
       <div class="channel-story-pill dominant">
         <span>Dominant intake</span>
         <strong>${escapeHtml(insight.channel)}</strong>
-        <em>${IMSERV.fmt.num(insight.volume)} interactions</em>
+        <em>${IMSERV.fmt.num(insight.volume)} contact attempts</em>
       </div>
       <div class="channel-story-pill efficient">
         <span>Most efficient</span>
         <strong>${escapeHtml(bestConversion.channel)}</strong>
-        <em>${IMSERV.fmt.pct(visitSuccessFor(bestConversion))} to successful visits</em>
+        <em>${IMSERV.fmt.pct(visitSuccessFor(bestConversion))} to total visits</em>
       </div>
       <div class="channel-story-pill friction">
         <span>Highest friction</span>
