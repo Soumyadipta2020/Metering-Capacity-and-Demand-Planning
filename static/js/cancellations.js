@@ -19,7 +19,10 @@ async function loadCancellationsDashboard() {
     if (kpis) renderCancelKPIs(kpis);
     if (rootCauses) renderParetoChart(rootCauses);
     if (rootCauses) renderCategoryChart(rootCauses);
-    if (rebook) renderRebooking(rebook);
+    if (rebook) {
+      renderRebooking(rebook);
+      renderSupplierRebooking(rebook);
+    }
     if (cancelTrends) renderCancelTrend(cancelTrends);
     await loadCancellationRisk(false);
   } finally {
@@ -77,15 +80,33 @@ function renderReasonBreakdown(container, rows, total, config) {
 
   const maxCount = Math.max(...top.map(d => d.count), 1);
   const topShare = top[0]?.pct || 0;
+  const supplierColors = [
+    '#5B8DEF', '#02C2B7', '#F4D25A', '#FB8281', '#A374FF', 
+    '#FF9D4A', '#24D28A', '#E85B9E', '#7F8FA4', '#4A6B7C',
+    '#C4A1FF', '#FF6B6B', '#48DBFB', '#1DD1A1', '#FECA57'
+  ];
+  
   const rowsHtml = top.map((r, idx) => {
     const influence = Math.max(3, r.count / maxCount * 100);
+    
+    let segmentsHtml = '';
+    let combinedTooltip = '';
+    if (r.suppliers && r.suppliers.length > 0) {
+      combinedTooltip = r.suppliers.map(sup => `${cancelEscape(sup.name)}: ${IMSERV.fmt.num(sup.count)}`).join('&#10;');
+      segmentsHtml = r.suppliers.map((sup, sIdx) => {
+        const w = (sup.count / Math.max(r.count, 1)) * 100;
+        const bg = sup.name === 'Others' ? '#bdc3c7' : supplierColors[sIdx % supplierColors.length];
+        return `<span style="display: block; height: 100%; width: ${w}%; background: ${bg};"></span>`;
+      }).join('');
+    }
+
     return `
-      <div class="reason-breakdown-row ${idx === 0 ? 'primary' : ''}" style="--influence:${influence}%; --delay:${idx * 45}ms;">
+      <div class="reason-breakdown-row ${idx === 0 ? 'primary' : ''}" style="--influence:${influence}%; --delay:${idx * 45}ms;" title="${combinedTooltip}">
         <div class="cause-rank">${idx + 1}</div>
         <div class="reason-breakdown-main">
           <span>${cancelEscape(r.reason)}</span>
           <em>${cancelEscape(r.category)}</em>
-          <i><b></b></i>
+          <i><b style="display: flex; background: none;">${segmentsHtml}</b></i>
         </div>
         <div class="reason-breakdown-metric">
           <strong>${IMSERV.fmt.num(r.count)}</strong>
@@ -664,4 +685,48 @@ function renderRebooking(data) {
       stage.querySelectorAll(`[data-idx="${idx}"]`).forEach(d => d.classList.add('rc-node-active'));
     });
   });
+}
+
+function renderSupplierRebooking(data) {
+  const stage = document.getElementById('supplier-recovery-stage');
+  if (!stage) return;
+
+  const rows = data.supplier_rebook_data || [];
+  if (!rows.length) {
+    stage.innerHTML = '<div class="empty-state"><div class="empty-title">No supplier rebooking data available</div></div>';
+    return;
+  }
+
+  const cardsHtml = rows.map((r, i) => {
+    return `
+      <div class="rc-supplier-card">
+        <div class="rc-supplier-header">
+          <div class="rc-supplier-rank">#${i + 1}</div>
+          <div class="rc-supplier-name" title="${cancelEscape(r.supplier_name)}">${cancelEscape(r.supplier_name)}</div>
+          <div class="rc-supplier-volume">${IMSERV.fmt.num(r.rebooked_count)} / ${IMSERV.fmt.num(r.total_cancellations)}</div>
+        </div>
+        <div class="rc-supplier-main-metric">
+          <div class="rc-supplier-main-metric-label">
+            <span>Rebook Rate</span>
+            <span>${r.rebook_rate_pct}%</span>
+          </div>
+          <div class="rc-supplier-bar-bg">
+            <div class="rc-supplier-bar-fill" style="width: ${r.rebook_rate_pct}%;"></div>
+          </div>
+        </div>
+        <div class="rc-supplier-secondary-metrics">
+          <div class="rc-supplier-sec-metric">
+            <span>Success Rate</span>
+            <strong style="color: ${r.rebook_success_pct >= 70 ? '#028178' : r.rebook_success_pct >= 50 ? '#F4D25A' : '#FB8281'}">${r.rebook_success_pct}%</strong>
+          </div>
+          <div class="rc-supplier-sec-metric" style="text-align: right;">
+            <span>Avg Lag</span>
+            <strong style="color: ${r.avg_rebook_lag_days <= 10 ? '#028178' : r.avg_rebook_lag_days <= 15 ? '#F4D25A' : '#FB8281'}">${r.avg_rebook_lag_days}d</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  stage.innerHTML = cardsHtml;
 }

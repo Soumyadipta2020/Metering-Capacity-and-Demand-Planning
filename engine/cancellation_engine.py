@@ -82,6 +82,8 @@ def get_cancellation_root_causes(
     cancellation_counter: Counter = Counter()
     abort_counter: Counter = Counter()
     category_counter: Counter = Counter()
+    reason_supplier_cancellation: dict = defaultdict(Counter)
+    reason_supplier_abort: dict = defaultdict(Counter)
     year_str = str(year)
 
     for r in iter_jobs():
@@ -90,31 +92,45 @@ def get_cancellation_root_causes(
         if r.get("requested_date", "")[:4] != year_str or r.get("is_forecast", "0") != "0":
             continue
 
+        supplier = r.get("supplier_name", "Unknown").strip() or "Unknown"
+
         if r.get("status") == "Cancelled" and r.get("cancellation_reason"):
             reason = r["cancellation_reason"]
             reason_counter[reason] += 1
             cancellation_counter[reason] += 1
             category_counter[CANCEL_CATEGORIES.get(reason, "Other")] += 1
+            reason_supplier_cancellation[reason][supplier] += 1
         elif include_aborts and r.get("status") == "Aborted" and r.get("abort_reason"):
             reason = r["abort_reason"]
             reason_counter[reason] += 1
             abort_counter[reason] += 1
             category_counter[CANCEL_CATEGORIES.get(reason, "Other")] += 1
+            reason_supplier_abort[reason][supplier] += 1
 
     total_reasons = sum(reason_counter.values())
     total_cancellations = sum(cancellation_counter.values())
     total_aborts = sum(abort_counter.values())
 
-    def reason_rows(counter: Counter, total: int) -> list:
-        return [
-            {
+    def reason_rows(counter: Counter, supplier_dict: dict, total: int) -> list:
+        rows = []
+        for reason, count in sorted(counter.items(), key=lambda x: -x[1]):
+            supplier_counts = supplier_dict.get(reason, {})
+            sorted_suppliers = sorted(supplier_counts.items(), key=lambda x: -x[1])
+            top_15 = sorted_suppliers[:15]
+            others_count = sum(x[1] for x in sorted_suppliers[15:])
+            
+            suppliers_list = [{"name": name, "count": sc} for name, sc in top_15]
+            if others_count > 0:
+                suppliers_list.append({"name": "Others", "count": others_count})
+                
+            rows.append({
                 "reason": reason,
                 "category": CANCEL_CATEGORIES.get(reason, "Other"),
                 "count": count,
                 "pct": safe_pct(count, total),
-            }
-            for reason, count in sorted(counter.items(), key=lambda x: -x[1])
-        ]
+                "suppliers": suppliers_list,
+            })
+        return rows
 
     # Pareto: sorted by frequency
     reasons_sorted = sorted(reason_counter.items(), key=lambda x: -x[1])
@@ -145,8 +161,8 @@ def get_cancellation_root_causes(
         "total_events":   total_reasons,
         "total_cancellations": total_cancellations,
         "total_aborts":   total_aborts,
-        "cancellation_reasons": reason_rows(cancellation_counter, total_cancellations),
-        "abort_reasons":  reason_rows(abort_counter, total_aborts),
+        "cancellation_reasons": reason_rows(cancellation_counter, reason_supplier_cancellation, total_cancellations),
+        "abort_reasons":  reason_rows(abort_counter, reason_supplier_abort, total_aborts),
         "pareto":         pareto,
         "categories":     category_data,
         "top_reason":     pareto[0]["reason"] if pareto else None,
@@ -332,6 +348,7 @@ def get_rebooking_analytics(region_code: str = None, year: int = 2025) -> dict:
         dict with rebooking rates, lag distributions, and absolute counts
     """
     import random as rng
+    from collections import Counter
     rng.seed(42)
 
     base_cancellations = {
@@ -361,9 +378,50 @@ def get_rebooking_analytics(region_code: str = None, year: int = 2025) -> dict:
             "not_rebooked":        total_cancels - rebooked_count,
             "fast_rebook_pct":     fast_pct,
         })
+        
+    supplier_cancels = Counter()
+    for r in iter_jobs():
+        if r.get("status") == "Cancelled":
+            supplier_cancels[r.get("supplier_name", "Unknown").strip() or "Unknown"] += 1
+            
+    sorted_suppliers = sorted(supplier_cancels.items(), key=lambda x: -x[1])
+    top_15_suppliers = sorted_suppliers[:15]
+    others_count = sum(x[1] for x in sorted_suppliers[15:])
+    
+    supplier_list_processed = [{"name": name, "count": sc} for name, sc in top_15_suppliers]
+    if others_count > 0:
+        supplier_list_processed.append({"name": "Others", "count": others_count})
+        
+    supplier_rebook_data = []
+    for sup in supplier_list_processed:
+        name = sup["name"]
+        total_cancels = sup["count"]
+        # Use a stable random seed per supplier name
+        sup_rng = __import__('random').Random(hash(name))
+        
+        rebook_rate = round(sup_rng.uniform(0.20, 0.70), 3)
+        avg_lag_days = round(sup_rng.uniform(5, 25), 1)
+        success_pct = round(rebook_rate * sup_rng.uniform(0.60, 0.95) * 100, 1)
+        rebooked_count = round(total_cancels * rebook_rate)
+        completed_rebooks = round(rebooked_count * (success_pct / 100))
+        fast_pct = round(sup_rng.uniform(20, 60), 1)
+        
+        supplier_rebook_data.append({
+            "supplier_name": name,
+            "total_cancellations": total_cancels,
+            "rebook_rate_pct": round(rebook_rate * 100, 1),
+            "avg_rebook_lag_days": avg_lag_days,
+            "rebook_success_pct": success_pct,
+            "rebooked_count": rebooked_count,
+            "completed_rebooks": completed_rebooks,
+            "failed_rebooks": rebooked_count - completed_rebooks,
+            "not_rebooked": total_cancels - rebooked_count,
+            "fast_rebook_pct": fast_pct,
+        })
 
     return {
         "rebook_data":         data,
+        "supplier_rebook_data": supplier_rebook_data,
         "overall_rebook_rate": round(sum(d["rebook_rate_pct"] for d in data) / len(data), 1),
         "avg_rebook_lag_days": round(sum(d["avg_rebook_lag_days"] for d in data) / len(data), 1),
         "total_cancellations": sum(d["total_cancellations"] for d in data),
