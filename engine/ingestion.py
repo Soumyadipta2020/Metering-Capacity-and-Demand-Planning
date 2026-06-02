@@ -22,6 +22,7 @@ _CAPACITY_CACHE          = None
 
 DATASET_FILES = [
     "master_operations.csv",
+    "sellers.csv",
     "channel_volume.csv",
     "booking_journey.csv",
     "engineers.csv",

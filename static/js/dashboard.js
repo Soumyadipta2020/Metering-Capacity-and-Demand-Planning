@@ -132,7 +132,7 @@ function renderJourneyKPIs(kpis) {
   const uniqueCustomers = kpis.unique_customers
     ?? (kpis.avg_contacts_per_customer ? Math.round((kpis.total_contacts || 0) / kpis.avg_contacts_per_customer) : kpis.total_requests);
   set('kpi-customers',        IMSERV.fmt.num(uniqueCustomers));
-  set('kpi-requests',         IMSERV.fmt.num(kpis.total_requests));
+  set('kpi-appointments-booked', IMSERV.fmt.num(kpis.total_bookings));
   set('kpi-contacts',         IMSERV.fmt.num(kpis.total_contacts));
   set('kpi-avg-contacts',     kpis.avg_contacts_per_customer?.toFixed(2) || '—');
   set('kpi-bookings',         IMSERV.fmt.num(kpis.total_visits ?? Math.max((kpis.total_bookings || 0) - (kpis.total_cancellations || 0), 0)));
@@ -155,7 +155,7 @@ function renderFunnel(kpis) {
   const steps = [
     { label: 'Customer Data Loaded Into Dialler', key: 'customers',     cls: 'requests',      val: uniqueCustomers },
     { label: 'Contact Attempts',                  key: 'contacts',      cls: 'contacts',      val: kpis.total_contacts },
-    { label: 'Appointments Booked',               key: 'appointments',  cls: 'requests',      val: kpis.total_requests },
+    { label: 'Appointments Booked',               key: 'appointments',  cls: 'bookings',      val: kpis.total_bookings },
     { label: 'Appointments Cancelled (D-1)',      key: 'cancelled',     cls: 'cancellations', val: kpis.total_cancellations },
     { label: 'Total Visits',                      key: 'visits',        cls: 'visits',        val: visits },
     { label: 'Appointments Aborted On The Day Of Visit', key: 'aborted', cls: 'aborts',        val: kpis.total_aborts },
@@ -193,7 +193,7 @@ function renderFunnelMetrics(funnel) {
   const f = funnel.funnel || {};
   const uniqueCustomers = f.unique_customers
     ?? (f.avg_contacts_per_customer ? Math.round((f.contacts || 0) / f.avg_contacts_per_customer) : f.requests || 0);
-  const appointmentsBooked = f.requests || 0;
+  const appointmentsBooked = f.bookings || 0;
   const visits = f.visits ?? Math.max((f.bookings || 0) - (f.cancellations || 0), 0);
   const completions = f.completions || 0;
   const notCompleted = f.not_completed_after_successful_visit ?? Math.max((f.post_abort_visits ?? Math.max(visits - (f.aborts || 0), 0)) - completions, 0);

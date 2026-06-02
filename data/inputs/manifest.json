@@ -1,17 +1,19 @@
 {
-  "generated_at": "2026-05-28T09:54:42.834894Z",
+  "generated_at": "2026-06-02T11:41:15.206174Z",
   "source_of_truth": "master_operations.csv",
   "relationship_model": {
-    "master_operations.csv": "Job-level ledger keyed by job_ref with region, patch, channel, engineer, status, dates, revenue, and cost.",
+    "master_operations.csv": "Job-level ledger keyed by job_ref with seller, region, patch, channel, engineer, status, dates, revenue, and cost. Includes unbooked requests and unresolved booked appointments.",
     "channel_volume.csv": "Daily region/channel aggregation derived from master_operations.csv.",
     "booking_journey.csv": "Weekly funnel aggregation derived from master_operations.csv.",
     "financial_data.csv": "Monthly region/job-type P&L aggregation derived from master_operations.csv.",
     "capacity_demand.csv": "Weekly patch demand from master_operations.csv joined to engineer_availability.csv capacity.",
     "engineer_availability.csv": "Engineer-day table whose completed jobs are assigned from master_operations.csv.",
-    "engineers.csv": "Engineer dimension joined by engineer_id."
+    "engineers.csv": "Engineer dimension joined by engineer_id.",
+    "sellers.csv": "Seller dimension assigned to every request in master_operations.csv by seller_name."
   },
   "files": [
     "master_operations.csv",
+    "sellers.csv",
     "channel_volume.csv",
     "booking_journey.csv",
     "engineers.csv",

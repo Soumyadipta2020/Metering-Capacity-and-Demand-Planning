@@ -21,6 +21,7 @@ RANDOM_SEED = 42
 BASE_DIR = Path(__file__).resolve().parent.parent
 INPUTS_DIR = BASE_DIR / "data" / "inputs"
 INPUTS_DIR.mkdir(parents=True, exist_ok=True)
+SELLERS_FILE = INPUTS_DIR / "sellers.csv"
 
 REGIONS = {
     "NW": {"name": "North West", "base_jobs": 1890, "engineers": 38, "patches": 6},
@@ -68,6 +69,15 @@ REVENUE_MAP = {"NEW_INSTALL": 185.0, "EXCHANGE": 165.0, "REPAIR": 120.0, "REMOVA
 COST_MAP = {"NEW_INSTALL": 95.0, "EXCHANGE": 82.0, "REPAIR": 65.0, "REMOVAL": 48.0}
 ABORT_COST = 38.0
 OVERHEAD_PCT = 0.22
+
+
+def _load_sellers() -> list[str]:
+    if not SELLERS_FILE.exists():
+        return ["Unassigned Seller"]
+    with open(SELLERS_FILE, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        sellers = [r.get("seller_name", "").strip() for r in reader]
+    return [s for s in sellers if s] or ["Unassigned Seller"]
 
 
 def date_range(start: date, end: date):
@@ -193,7 +203,7 @@ def _choose_engineer(patch_engineers: list, availability: dict, d: date, assigne
     return available[0][1]["engineer_id"]
 
 
-def _generate_master_operations(engineers_by_patch: dict, availability: dict) -> tuple[list, dict]:
+def _generate_master_operations(engineers_by_patch: dict, availability: dict, sellers: list[str]) -> tuple[list, dict]:
     rows = []
     assigned_counts = defaultdict(int)
     job_counter = 1
@@ -222,8 +232,10 @@ def _generate_master_operations(engineers_by_patch: dict, availability: dict) ->
                         status = "Cancelled"
                     elif roll < 0.90:
                         status = "Aborted"
-                    else:
+                    elif roll < 0.94:
                         status = "Booked"
+                    else:
+                        status = "Unbooked"
 
                 patch_code = f"{region_code}-P{random.randint(1, rinfo['patches'])}"
                 engineer_id = ""
@@ -270,6 +282,7 @@ def _generate_master_operations(engineers_by_patch: dict, availability: dict) ->
 
                 rows.append({
                     "job_ref": f"IMSERV-{d.year}-{job_counter:07d}",
+                    "seller_name": sellers[(job_counter - 1) % len(sellers)],
                     "region_code": region_code,
                     "region_name": rinfo["name"],
                     "patch_code": patch_code,
@@ -447,7 +460,8 @@ def _derive_capacity_data(master_rows: list, availability_rows: list) -> list:
         d = date.fromisoformat(row["requested_date"])
         ws = _week_start(d)
         key = (d.year, ws, row["region_code"], row["patch_code"])
-        demand[key] += 1
+        if row.get("booked_date") or str(row.get("is_forecast", "0")) == "1":
+            demand[key] += 1
         meta[key] = (row["region_name"], row["is_forecast"])
 
     capacity = defaultdict(lambda: {"engineer_days": 0, "capacity_jobs": 0, "region_name": ""})
@@ -502,7 +516,8 @@ def generate_all():
 
     engineers, engineers_by_patch, _ = _build_engineers()
     availability_rows, availability_by_key = _build_availability(engineers)
-    master_rows, _ = _generate_master_operations(engineers_by_patch, availability_by_key)
+    sellers = _load_sellers()
+    master_rows, _ = _generate_master_operations(engineers_by_patch, availability_by_key, sellers)
 
     channel_volume = _derive_channel_volume(master_rows)
     booking_journey = _derive_booking_journey(master_rows)
@@ -510,6 +525,8 @@ def generate_all():
     capacity_demand = _derive_capacity_data(master_rows, availability_rows)
 
     write_csv("master_operations.csv", master_rows, list(master_rows[0].keys()))
+    if SELLERS_FILE.exists():
+        write_csv("sellers.csv", [{"seller_name": s} for s in sellers], ["seller_name"])
     write_csv("channel_volume.csv", channel_volume, list(channel_volume[0].keys()))
     write_csv("booking_journey.csv", booking_journey, list(booking_journey[0].keys()))
     write_csv("engineers.csv", engineers, list(engineers[0].keys()))
@@ -522,6 +539,7 @@ def generate_all():
         "source_of_truth": "master_operations.csv",
         "relationship_model": {
             "master_operations.csv": "Job-level ledger keyed by job_ref with region, patch, channel, engineer, status, dates, revenue, and cost.",
+            "sellers.csv": "Seller dimension assigned to every request in master_operations.csv by seller_name.",
             "channel_volume.csv": "Daily region/channel aggregation derived from master_operations.csv.",
             "booking_journey.csv": "Weekly funnel aggregation derived from master_operations.csv.",
             "financial_data.csv": "Monthly region/job-type P&L aggregation derived from master_operations.csv.",
@@ -531,6 +549,7 @@ def generate_all():
         },
         "files": [
             "master_operations.csv",
+            "sellers.csv",
             "channel_volume.csv",
             "booking_journey.csv",
             "engineers.csv",
