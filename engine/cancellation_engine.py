@@ -305,7 +305,11 @@ def predict_cancellation_risk(region_code: str, week_ahead: int = 4) -> dict:
 
     # Trend direction
     trend = trends["monthly_trend"]
-    if len(trend) >= 3:
+    if len(trend) >= 6:
+        recent_rates = [t["cancel_rate"] for t in trend[-6:]]
+        trend_c = (recent_rates[-1] - recent_rates[0]) / 6
+        trend_dir = "Rising" if trend_c > 0 else "Falling"
+    elif len(trend) >= 3:
         recent_rates = [t["cancel_rate"] for t in trend[-3:]]
         trend_dir = "Rising" if recent_rates[-1] > recent_rates[0] else "Falling"
     else:

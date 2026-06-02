@@ -22,6 +22,8 @@ UTILISATION_THRESHOLDS = {"Green": 75, "Amber": 90}  # % — above 90 = Red
 # Seasonal absence shape factors by ISO week (Mon–Fri basis, UK field ops pattern).
 # Normalised so August peak = 1.0; slider value (absence_rate_pct) sets the peak rate.
 # e.g. at 4% peak: Aug absent = base_fte * 0.04 * 1.00, Mar/Oct = base_fte * 0.04 * 0.48.
+PLANNING_BASE_FTE_2026 = 203
+
 _SEASONAL_ABSENCE_FACTORS = {
     **{w: 0.82 for w in range(1,  5)},   # Jan  – post-Christmas / New Year
     **{w: 0.64 for w in range(5,  9)},   # Feb  – steady
@@ -400,7 +402,7 @@ def _aggregate_capacity(year: int, region_code: str = None, key_fields: tuple = 
 def get_capacity_forecast_2026(
     region_code: str = None,
     target_utilisation_pct: float = 78,
-    jobs_per_fte_day: float = 2,
+    jobs_per_fte_day: float = 4,
     absence_rate_pct: float = None,
 ) -> dict:
     """
@@ -409,7 +411,7 @@ def get_capacity_forecast_2026(
     Net forecast FTE = required FTE - absent FTE, then converted back to
     forecast job capacity for the weekly planning graph.
     """
-    jobs_per_day = _clamp_number(jobs_per_fte_day, 2, 0.5, 8, float)
+    jobs_per_day = _clamp_number(jobs_per_fte_day, 4, 0.5, 8, float)
     absence_override = None
     if absence_rate_pct is not None:
         absence_override = _clamp_number(absence_rate_pct, 4, 0, 10, float) / 100.0
@@ -458,10 +460,17 @@ def get_capacity_forecast_2026(
     for region in regions_with_2026 | regions_with_2025:
         source_year = 2026 if region in regions_with_2026 else 2025
         base_fte_by_region[region] = len(base_fte_by_year_region[(source_year, region)])
+    total_base_fte = sum(base_fte_by_region.values()) or 1
+    planning_scale = PLANNING_BASE_FTE_2026 / total_base_fte
+    planning_base_fte_by_region = {
+        region: base_fte * planning_scale
+        for region, base_fte in base_fte_by_region.items()
+    }
 
     for (year, week, region, weekday), absent in absent_by_weekday.items():
         if year == 2025:
-            fallback_absence_by_weekday[(region, weekday)].append(absent)
+            scale = planning_base_fte_by_region.get(region, 0) / max(base_fte_by_region.get(region, 0), 1)
+            fallback_absence_by_weekday[(region, weekday)].append(absent * scale)
 
     avg_absence_by_weekday = {
         key: statistics.mean(values)
@@ -513,11 +522,12 @@ def get_capacity_forecast_2026(
         absent_fte_days = 0.0
         bank_holiday_days = 0
         bank_holiday_fte_days = 0.0
-        region_base_fte = base_fte_by_region.get(region, 0)
+        region_base_fte = planning_base_fte_by_region.get(region, 0)
+        region_scale = region_base_fte / max(base_fte_by_region.get(region, 0), 1)
         seasonal_factor = _seasonal_absence_factor(week)
         for day in week_dates:
             day_key = (2026, week, region, str(day))
-            base_fte = fte_by_day.get(day_key, region_base_fte)
+            base_fte = region_base_fte
             required_fte = daily_demand / jobs_per_day
             if day in bank_holidays:
                 absent = base_fte
@@ -526,9 +536,11 @@ def get_capacity_forecast_2026(
                 required_fte = 0.0
             else:
                 if day_key in availability_day_keys:
-                    exact_absent = absent_by_day.get(day_key, 0.0)
+                    exact_absent = absent_by_day.get(day_key, 0.0) * region_scale
                 else:
                     exact_absent = absent_by_weekday.get((2025, week, region, day.weekday()))
+                    if exact_absent is not None:
+                        exact_absent *= region_scale
                 if exact_absent is None:
                     exact_absent = avg_absence_by_weekday.get((region, day.weekday()), 0.0)
                 scenario_absent = 0.0
@@ -630,7 +642,8 @@ def get_capacity_forecast_2026(
         "method": {
             "name": "Demand-led FTE forecast",
             "jobs_per_fte_day": jobs_per_day,
-            "formula": "daily capacity FTE = roster FTE - real leave/absence - UK bank holidays; weekly demand is converted using jobs per FTE per working day",
+            "planning_base_fte": PLANNING_BASE_FTE_2026,
+            "formula": "daily capacity FTE = 203 planning roster FTE - real leave/absence - UK bank holidays; weekly demand is converted using jobs per FTE per working day",
         },
         "kpis": {
             "total_demand_jobs": total_demand,
@@ -648,6 +661,7 @@ def get_capacity_forecast_2026(
             "avg_2025_capacity_fte": round(sum(item["capacity_2025_fte"] for item in weekly) / max(len(weekly), 1), 1),
             "avg_current_capacity_fte": round(sum(item["current_capacity_fte"] for item in weekly) / max(len(weekly), 1), 1),
             "avg_fte_gap": round(sum(item["fte_gap"] for item in weekly) / max(len(weekly), 1), 1),
+            "planning_base_fte": PLANNING_BASE_FTE_2026,
             "red_regions": sum(1 for region in regions if region["risk"] == "Red"),
         },
         "weekly": weekly,
@@ -666,7 +680,7 @@ def _clamp_number(value, default, min_value, max_value, cast=float):
 def optimise_workforce_allocation(
     year: int = 2026,
     target_utilisation_pct: float = 72,
-    jobs_per_fte_day: float = 2,
+    jobs_per_fte_day: float = 4,
     absence_rate_pct: float = 15,
     **kwargs,  # Accept legacy params silently
 ) -> dict:
@@ -676,7 +690,7 @@ def optimise_workforce_allocation(
     Required FTE = demand_jobs / (jobs_per_fte_day * 5 * 52)
     """
     target_util = _clamp_number(target_utilisation_pct, 72, 10, 200, float) / 100.0
-    jobs_day    = _clamp_number(jobs_per_fte_day, 2, 0.5, 8, float)
+    jobs_day    = _clamp_number(jobs_per_fte_day, 4, 0.5, 8, float)
     absence     = _clamp_number(absence_rate_pct, 15, 0, 60, float) / 100.0
 
     # ── Pull demand-forecast data ─────────────────────────────────────────────

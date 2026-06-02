@@ -666,6 +666,17 @@ def forecasting_funnel():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+@app.route("/api/forecasting/planning-target-kpis")
+def forecasting_planning_target_kpis():
+    region = request.args.get("region")
+    year = _request_year()
+    try:
+        from engine.forecasting_engine import get_planning_target_kpis
+        return jsonify(get_planning_target_kpis(region, year))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # MODULE 3 — APPOINTMENT FALLOUT
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -792,7 +803,7 @@ def field_ops_capacity_forecast():
         return jsonify(forecast(
             region_code=region,
             target_utilisation_pct=request.args.get("target", 78),
-            jobs_per_fte_day=request.args.get("jobs_per_fte_day", 2),
+            jobs_per_fte_day=request.args.get("jobs_per_fte_day", 4),
             absence_rate_pct=request.args.get("absence_rate"),
         ))
     except Exception as e:
@@ -807,7 +818,7 @@ def field_ops_optimise():
         return jsonify(optimise(
             year=year,
             target_utilisation_pct=request.args.get("target", 72),
-            jobs_per_fte_day=request.args.get("jobs_per_fte_day", 2),
+            jobs_per_fte_day=request.args.get("jobs_per_fte_day", 4),
             absence_rate_pct=request.args.get("absence_rate", 15),
         ))
     except Exception as e:
@@ -1012,7 +1023,9 @@ def health():
 def data_reload():
     """Clear in-memory data caches so the next request reloads only what it needs."""
     from engine.ingestion import clear_data_caches
+    from engine.forecasting_engine import clear_forecast_cache
     health_info = clear_data_caches()
+    clear_forecast_cache()
     return jsonify({"status": "ok", "message": "Data caches cleared", "data_health": health_info})
 
 
@@ -1027,8 +1040,10 @@ def data_generate():
             }), 403
         from engine.data_generator import generate_all
         from engine.ingestion import clear_data_caches
+        from engine.forecasting_engine import clear_forecast_cache
         generate_all()
         health_info = clear_data_caches()
+        clear_forecast_cache()
         return jsonify({"status": "ok", "message": "Datasets regenerated successfully", "data_health": health_info})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -19,6 +19,7 @@ _ENGINEERS_CACHE         = None
 _AVAILABILITY_CACHE      = None
 _FINANCIAL_CACHE         = None
 _CAPACITY_CACHE          = None
+_FORECAST_BASELINE_CACHE = None
 
 DATASET_FILES = [
     "master_operations.csv",
@@ -29,6 +30,7 @@ DATASET_FILES = [
     "engineer_availability.csv",
     "financial_data.csv",
     "capacity_demand.csv",
+    "forecast_baseline_2025.csv",
 ]
 _DATA_HEALTH_CACHE = {}
 
@@ -164,6 +166,13 @@ def get_capacity_demand(force_reload: bool = False) -> list:
     return _CAPACITY_CACHE
 
 
+def get_forecast_baseline_2025(force_reload: bool = False) -> list:
+    global _FORECAST_BASELINE_CACHE
+    if _FORECAST_BASELINE_CACHE is None or force_reload:
+        _FORECAST_BASELINE_CACHE = _load_csv("forecast_baseline_2025.csv")
+    return _FORECAST_BASELINE_CACHE
+
+
 def preload_all_data(force_reload: bool = False) -> dict:
     """Warm CSV caches. Large datasets are counted, not cached, by default."""
     large_counts = {}
@@ -185,6 +194,7 @@ def preload_all_data(force_reload: bool = False) -> dict:
         "engineers.csv": len(get_engineers(force_reload)),
         "financial_data.csv": len(get_financial_data(force_reload)),
         "capacity_demand.csv": len(get_capacity_demand(force_reload)),
+        "forecast_baseline_2025.csv": len(get_forecast_baseline_2025(force_reload)),
     }
 
 
@@ -192,6 +202,7 @@ def clear_data_caches() -> dict:
     """Drop in-memory CSV caches so constrained instances can reclaim RAM."""
     global _JOBS_CACHE, _CHANNEL_CACHE, _JOURNEY_CACHE, _ENGINEERS_CACHE
     global _AVAILABILITY_CACHE, _FINANCIAL_CACHE, _CAPACITY_CACHE
+    global _FORECAST_BASELINE_CACHE
 
     _JOBS_CACHE = None
     _CHANNEL_CACHE = None
@@ -200,6 +211,7 @@ def clear_data_caches() -> dict:
     _AVAILABILITY_CACHE = None
     _FINANCIAL_CACHE = None
     _CAPACITY_CACHE = None
+    _FORECAST_BASELINE_CACHE = None
     return data_health()
 
 

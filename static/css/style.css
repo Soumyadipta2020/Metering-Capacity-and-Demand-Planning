@@ -2756,7 +2756,7 @@ body {
 }
 
 .forecast-kpi-grid .kpi-card {
-  min-height: 94px;
+  min-height: 108px;
   padding: 42px 10px 10px;
 }
 
@@ -2766,7 +2766,13 @@ body {
 }
 
 .forecast-kpi-grid .kpi-value {
-  font-size: 21px;
+  font-size: 20px;
+}
+
+.forecast-kpi-grid .kpi-delta {
+  min-height: 14px;
+  font-size: 10px;
+  line-height: 1.25;
 }
 
 .forecast-model-toggle-card {

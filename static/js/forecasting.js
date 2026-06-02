@@ -23,6 +23,7 @@ function invalidateForecastLoadState() {
 async function loadForecastingDashboard(force = false) {
   const region = IMSERV.getRegion();
   const planningQs = `?region=${region}&year=2025`;
+  configureForecastPlanningCards();
   IMSERV.setLoading([
     'forecast-chart',
     'model-accuracy-body',
@@ -30,11 +31,13 @@ async function loadForecastingDashboard(force = false) {
   ], true);
 
   try {
-    const [kpis, funnel] = await Promise.all([
+    const [planningKpis, kpis, funnel] = await Promise.all([
+      IMSERV.apiFetch('/api/forecasting/planning-target-kpis' + planningQs),
       IMSERV.apiFetch('/api/forecasting/channel-kpis' + planningQs),
       IMSERV.apiFetch('/api/forecasting/funnel' + planningQs),
     ]);
 
+    if (planningKpis) renderForecastPlanningKPIs(planningKpis);
     if (kpis) storeForecastPlanningRates(kpis, funnel);
 
     await loadActiveForecastTabData(false, force);
@@ -50,6 +53,84 @@ async function loadForecastingDashboard(force = false) {
 function setForecastKPI(id, val) {
   const el = document.getElementById(id);
   if (el) el.textContent = val;
+}
+
+function configureForecastPlanningCards() {
+  const cards = [
+    { oldId: 'fc-kpi-volume', tone: 'info', label: '2025 Accuracy', valueId: 'fc-kpi-accuracy', deltaId: 'fc-kpi-accuracy-delta' },
+    { oldId: 'fc-kpi-bookings', tone: 'ok', label: '2025 Total Visits vs Target', valueId: 'fc-kpi-visits', deltaId: 'fc-kpi-visits-delta' },
+    { oldId: 'fc-kpi-conversion', tone: 'ok', label: '2025 Success Rate vs Target', valueId: 'fc-kpi-success', deltaId: 'fc-kpi-success-delta' },
+    { oldId: 'fc-kpi-abandon', tone: 'warn', label: '2025 Fallout Rate vs Target', valueId: 'fc-kpi-fallout', deltaId: 'fc-kpi-fallout-delta' },
+  ];
+
+  cards.forEach(spec => {
+    if (document.getElementById(spec.valueId)) return;
+    const currentValue = document.getElementById(spec.oldId);
+    const card = currentValue?.closest('.kpi-card');
+    if (!card) return;
+    card.className = `kpi-card ${spec.tone}`;
+    card.innerHTML = `
+      <div class="kpi-label">${spec.label}</div>
+      <div class="kpi-value" id="${spec.valueId}">--</div>
+      <div class="kpi-delta neu" id="${spec.deltaId}">Target --</div>
+      <div class="kpi-icon"></div>
+    `;
+  });
+
+  IMSERV.hydrateIcons?.(document.getElementById('forecast-kpis') || document);
+}
+
+function setForecastDelta(id, text, tone = 'neu') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = `kpi-delta ${tone}`;
+}
+
+function setForecastCardTone(valueId, tone) {
+  const card = document.getElementById(valueId)?.closest('.kpi-card');
+  if (!card) return;
+  card.className = `kpi-card ${tone}`;
+}
+
+function renderForecastPlanningKPIs(kpis) {
+  configureForecastPlanningCards();
+
+  const accuracy = Number(kpis.daily_accuracy_pct ?? kpis.visit_target_accuracy_pct) || 0;
+  const dailyMape = Number(kpis.daily_mape) || 0;
+  const dailyModel = kpis.daily_accuracy_model || 'Daily backtest';
+  const visits = Number(kpis.total_visits) || 0;
+  const visitTarget = Number(kpis.total_visits_target) || 0;
+  const visitDelta = Number(kpis.total_visits_delta) || 0;
+  const success = Number(kpis.success_rate) || 0;
+  const successTarget = Number(kpis.success_rate_target) || 0;
+  const successDelta = Number(kpis.success_rate_delta) || 0;
+  const fallout = Number(kpis.fallout_rate) || 0;
+  const falloutTarget = Number(kpis.fallout_rate_target) || 0;
+  const falloutDelta = Number(kpis.fallout_rate_delta) || 0;
+  const accuracyTone = accuracy > 85 ? 'pos' : (accuracy >= 75 ? 'neu' : 'neg');
+  const accuracyCardTone = accuracy > 85 ? 'ok' : (accuracy >= 75 ? 'warn' : 'crit');
+  const signedNumber = (value) => `${value >= 0 ? '+' : ''}${IMSERV.fmt.num(value)}`;
+  const signedRateGap = (value) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
+
+  setForecastKPI('fc-kpi-accuracy', IMSERV.fmt.pct(accuracy));
+  setForecastDelta('fc-kpi-accuracy-delta', `${dailyModel} MAPE ${dailyMape.toFixed(2)}%`, accuracyTone);
+  setForecastCardTone('fc-kpi-accuracy', accuracyCardTone);
+
+  const visitTone = visitDelta >= 0 ? 'pos' : (visitTarget && Math.abs(visitDelta) <= visitTarget * 0.05 ? 'neu' : 'neg');
+  setForecastKPI('fc-kpi-visits', signedNumber(visitDelta));
+  setForecastDelta('fc-kpi-visits-delta', `${IMSERV.fmt.num(visits)} actual vs ${IMSERV.fmt.num(visitTarget)} target`, visitTone);
+  setForecastCardTone('fc-kpi-visits', visitTone === 'pos' ? 'ok' : (visitTone === 'neu' ? 'warn' : 'crit'));
+
+  const successTone = successDelta >= 0 ? 'pos' : (successDelta >= -2 ? 'neu' : 'neg');
+  setForecastKPI('fc-kpi-success', signedRateGap(successDelta));
+  setForecastDelta('fc-kpi-success-delta', `${IMSERV.fmt.pct(success)} actual vs ${IMSERV.fmt.pct(successTarget)} target`, successTone);
+  setForecastCardTone('fc-kpi-success', successTone === 'pos' ? 'ok' : (successTone === 'neu' ? 'warn' : 'crit'));
+
+  const falloutTone = falloutDelta <= 0 ? 'pos' : (falloutDelta <= 2 ? 'neu' : 'neg');
+  setForecastKPI('fc-kpi-fallout', signedRateGap(falloutDelta));
+  setForecastDelta('fc-kpi-fallout-delta', `${IMSERV.fmt.pct(fallout)} actual vs ${IMSERV.fmt.pct(falloutTarget)} target`, falloutTone);
+  setForecastCardTone('fc-kpi-fallout', falloutTone === 'pos' ? 'ok' : (falloutTone === 'neu' ? 'warn' : 'crit'));
 }
 
 function storeForecastPlanningRates(kpis, funnel) {
@@ -195,6 +276,9 @@ function renderForecastChart(data) {
     : data.p50;
   const centralLabel = activeModel ? `${activeModel} Contact Attempt Forecast` : 'P50 Contact Attempt Forecast';
   const centralColor = activeModel ? (modelColors[activeModel] || IMSERV.colors.accent) : IMSERV.colors.accent;
+  const isLightTheme = IMSERV.getTheme?.() !== 'dark';
+  const bandBorderColor = isLightTheme ? 'rgba(178,128,0,0.72)' : 'rgba(244,210,90,0.5)';
+  const bandFillColor = isLightTheme ? 'rgba(178,128,0,0.10)' : 'rgba(244,210,90,0.06)';
 
   const horizon = Math.min(52, data.labels?.length || centralForecast.length || 0);
   const weekLabels = Array.from({ length: horizon }, (_, i) => `W${i + 1}`);
@@ -238,15 +322,15 @@ function renderForecastChart(data) {
         {
           label: 'P90 Optimistic',
           data: p90Band,
-          borderColor: 'rgba(244,210,90,0.5)',
-          backgroundColor: 'rgba(244,210,90,0.06)',
+          borderColor: bandBorderColor,
+          backgroundColor: bandFillColor,
           fill: '+1', tension: 0.4, pointRadius: 0, borderWidth: 1, borderDash: [3,3],
         },
         {
           label: 'P10 Conservative',
           data: p10Band,
-          borderColor: 'rgba(244,210,90,0.5)',
-          backgroundColor: 'rgba(244,210,90,0.06)',
+          borderColor: bandBorderColor,
+          backgroundColor: bandFillColor,
           fill: false, tension: 0.4, pointRadius: 0, borderWidth: 1, borderDash: [3,3],
         },
       ],
@@ -300,11 +384,11 @@ function renderModelAccuracyVisual(accuracy) {
   const maxRmse = Math.max(...rows.map(d => d.rmse || 0), 1);
   container.innerHTML = rows.map((d, idx) => {
     const accuracyPct = Math.max(0, 100 - (d.mape || 0));
-    const tone = d.mape < 6 ? 'strong' : (d.mape < 10 ? 'steady' : 'risk');
+    const tone = accuracyPct > 85 ? 'strong' : (accuracyPct >= 75 ? 'steady' : 'risk');
     const barColor = tone === 'strong' ? '#028178' : tone === 'steady' ? '#F4D25A' : '#FB8281';
     const maePct = Math.max(4, (d.mae || 0) / maxMae * 100);
     const rmsePct = Math.max(4, (d.rmse || 0) / maxRmse * 100);
-    const label = tone === 'strong' ? 'Best fit' : tone === 'steady' ? 'Planning fit' : 'Watch variance';
+    const label = tone === 'strong' ? 'High accuracy' : tone === 'steady' ? 'Planning fit' : 'Watch variance';
     return `
       <div class="model-accuracy-row ${tone}" style="--accuracy:${accuracyPct}%; --mae:${maePct}%; --rmse:${rmsePct}%; --model-color:${barColor};">
         <div class="model-accuracy-main">

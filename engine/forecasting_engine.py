@@ -11,7 +11,8 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 
 from engine.ingestion import (
-    iter_channel_volume, get_booking_journey, iter_jobs,
+    iter_channel_volume, get_booking_journey, iter_jobs, get_capacity_demand,
+    get_forecast_baseline_2025,
     to_int, to_float, safe_pct
 )
 
@@ -19,6 +20,11 @@ from engine.ingestion import (
 _FORECAST_CACHE = {}
 
 MODELS = ["Prophet", "ARIMA", "XGBoost", "LightGBM"]
+
+
+def clear_forecast_cache() -> None:
+    """Clear cached forecast results after source CSV data changes."""
+    _FORECAST_CACHE.clear()
 
 NOT_COMPLETED_REASON_LABELS = {
     "EXCHANGE": "Exchange still booked",
@@ -172,6 +178,117 @@ def _confidence_bands(point_forecast: list, ci_pct: float = 0.20) -> tuple:
     return p10, p50, p90
 
 
+def _daily_volume_history(region_code: str = None, channel: str = None, year: int = 2025) -> list:
+    """Aggregate actual contact attempts by day for daily-level accuracy checks."""
+    daily: dict = defaultdict(float)
+    for r in iter_channel_volume():
+        if region_code and r.get("region_code") != region_code:
+            continue
+        if channel and r.get("channel") != channel:
+            continue
+        if to_int(r.get("year")) != year or r.get("is_forecast", "0") != "0":
+            continue
+        day = r.get("contact_date") or ""
+        if day:
+            daily[day] += to_float(r.get("volume", 0))
+    return [daily[k] for k in sorted(daily.keys())]
+
+
+def _evaluate_daily_metrics(model_name: str, daily_history: list) -> dict:
+    """Calculate true backtested daily MAPE, MAE, and RMSE for a model."""
+    if len(daily_history) < 30:
+        return {"mae": 0.0, "rmse": 0.0, "mape": 0.0}
+    
+    # Split: predict the last 30 days using data before that
+    train = daily_history[:-30]
+    test = daily_history[-30:]
+    horizon = len(test)
+    
+    if model_name == "Prophet":
+        baseline = statistics.median(train[-14:]) if len(train) >= 14 else statistics.mean(train)
+        pred = [baseline * (1.0 + 0.1 * math.sin(2 * math.pi * (i % 7) / 7)) for i in range(horizon)]
+    elif model_name == "ARIMA":
+        last = train[-1]
+        mu = statistics.mean(train)
+        pred = []
+        prev = last
+        for i in range(horizon):
+            val = mu + 0.65 * (prev - mu)
+            pred.append(val)
+            prev = val
+    elif model_name == "XGBoost":
+        trend = (train[-1] - train[0]) / len(train) if len(train) > 0 else 0
+        pred = [train[-1] + trend * (i + 1) for i in range(horizon)]
+    elif model_name == "LightGBM":
+        baseline = statistics.mean(train[-7:]) if len(train) >= 7 else statistics.mean(train)
+        pred = [baseline * (1.0 + 0.05 * math.sin(2 * math.pi * (i % 7) / 7)) for i in range(horizon)]
+    else:
+        pred = [statistics.mean(train)] * horizon
+        
+    mae = rmse = mape = 0.0
+    mape_n = 0
+    for a, p in zip(test, pred):
+        mae += abs(a - p)
+        rmse += (a - p)**2
+        if a > 0:
+            mape += abs(a - p) / a * 100
+            mape_n += 1
+            
+    return {
+        "mae": round(mae / horizon, 1),
+        "rmse": round(math.sqrt(rmse / horizon), 1),
+        "mape": round(mape / max(mape_n, 1), 2)
+    }
+
+
+def _daily_model_accuracy(region_code: str = None, channel: str = None, year: int = 2025, include_models: list = None) -> dict:
+    """Backtest model proxies against daily actual contact-attempt volume."""
+    if include_models is None:
+        include_models = MODELS
+    daily_history = _daily_volume_history(region_code, channel, year)
+    return {model: _evaluate_daily_metrics(model, daily_history) for model in include_models}
+
+
+def _best_daily_accuracy(region_code: str = None, channel: str = None, year: int = 2025) -> dict:
+    metrics = _daily_model_accuracy(region_code, channel, year)
+    if not metrics:
+        return {"model": None, "mae": 0.0, "rmse": 0.0, "mape": 0.0, "accuracy_pct": 0.0}
+    model, data = min(metrics.items(), key=lambda item: item[1].get("mape", 999))
+    mape = float(data.get("mape") or 0)
+    return {
+        "model": model,
+        "mae": data.get("mae", 0.0),
+        "rmse": data.get("rmse", 0.0),
+        "mape": mape,
+        "accuracy_pct": round(max(0.0, 100.0 - mape), 1),
+    }
+
+
+def _beginning_2025_forecast_accuracy(year: int = 2025) -> dict:
+    """Accuracy of the forecast made at the start of 2025 for 2025 actuals."""
+    rows = [r for r in get_forecast_baseline_2025() if to_int(r.get("year")) == year]
+    if not rows:
+        return {"label": "Beginning-of-year forecast", "mape": 0.0, "accuracy_pct": 0.0}
+
+    mape = 0.0
+    count = 0
+    label = rows[0].get("forecast_name") or "Beginning-of-year forecast"
+    for row in rows:
+        actual = to_float(row.get("actual_volume"))
+        forecast = to_float(row.get("forecast_volume"))
+        if actual <= 0:
+            continue
+        mape += abs(actual - forecast) / actual * 100
+        count += 1
+
+    mape = round(mape / max(count, 1), 2)
+    return {
+        "label": label,
+        "mape": mape,
+        "accuracy_pct": round(max(0.0, 100.0 - mape), 1),
+    }
+
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 def forecast_channel_volume(
@@ -232,13 +349,7 @@ def forecast_channel_volume(
         d = last_date + timedelta(weeks=i + 1)
         labels.append(str(d))
 
-    # Mock accuracy metrics
-    model_accuracy = {
-        m: {"mae": round(random.uniform(80, 250), 1),
-            "rmse": round(random.uniform(120, 380), 1),
-            "mape": round(random.uniform(3.5, 12.0), 2)}
-        for m in include_models
-    }
+    model_accuracy = _daily_model_accuracy(region_code, channel, 2025, include_models)
 
     result = {
         "labels":          labels,
@@ -478,4 +589,53 @@ def get_booking_conversion_funnel(region_code: str = None, year: int = 2025) -> 
         "cancellation_rate":safe_pct(total_cancellations, total_bookings),
         "abort_rate":       safe_pct(total_aborts, total_bookings - total_cancellations),
         "weekly_trend":     weekly_trend[-52:],
+    }
+
+
+def get_planning_target_kpis(region_code: str = None, year: int = 2025) -> dict:
+    """Actual 2025 planning performance against operational targets."""
+    funnel = get_booking_conversion_funnel(region_code, year)
+    f = funnel.get("funnel", {})
+
+    total_bookings = int(f.get("bookings") or 0)
+    total_visits = int(f.get("visits") or 0)
+    total_cancellations = int(f.get("cancellations") or 0)
+    total_aborts = int(f.get("aborts") or 0)
+    total_not_completed = int(f.get("not_completed_after_successful_visit") or 0)
+    total_fallout = total_cancellations + total_aborts + total_not_completed
+
+    visit_target = 0
+    for row in get_capacity_demand():
+        if region_code and row.get("region_code") != region_code:
+            continue
+        if to_int(row.get("year")) != year or str(row.get("is_forecast", "0")) != "0":
+            continue
+        visit_target += to_int(row.get("capacity_jobs"))
+
+    success_target_pct = 85.0
+    fallout_target_pct = 25.0
+    baseline_accuracy = _beginning_2025_forecast_accuracy(year)
+
+    success_rate = float(funnel.get("visit_success_rate") or 0)
+    fallout_rate = safe_pct(total_fallout, total_bookings)
+
+    return {
+        "year": year,
+        "total_visits": total_visits,
+        "total_visits_target": visit_target,
+        "total_visits_delta": total_visits - visit_target,
+        "daily_accuracy_pct": baseline_accuracy["accuracy_pct"],
+        "daily_mape": baseline_accuracy["mape"],
+        "daily_accuracy_model": baseline_accuracy["label"],
+        "visit_target_accuracy_pct": baseline_accuracy["accuracy_pct"],
+        "success_rate": success_rate,
+        "success_rate_target": success_target_pct,
+        "success_rate_delta": round(success_rate - success_target_pct, 1),
+        "fallout": total_fallout,
+        "fallout_rate": fallout_rate,
+        "fallout_rate_target": fallout_target_pct,
+        "fallout_rate_delta": round(fallout_rate - fallout_target_pct, 1),
+        "target_basis": "Accuracy is 100 minus daily MAPE for the forecast created at the beginning of 2025 against 2025 actual contact attempts. Total visits target uses 2025 capacity_jobs. Success target is 85.0%; fallout target is 25.0% or lower.",
+        "contact_to_visit_rate": safe_pct(total_visits, f.get("contacts") or 0),
+        "abandon_rate": None,
     }

@@ -10,7 +10,7 @@ function getOpsLoadKey(tabName = _activeOpsTab) {
   const region = IMSERV.getRegion();
   const year = IMSERV.getYear();
   const target = document.getElementById('opt-target')?.value || 72;
-  const jobsPerFteDay = document.getElementById('opt-jobs-per-fte')?.value || 2;
+  const jobsPerFteDay = document.getElementById('opt-jobs-per-fte')?.value || 4;
   const absenceRate = document.getElementById('opt-absence-rate')?.value || 4;
   return `${tabName}|${region}|${year}|${target}|${jobsPerFteDay}|${absenceRate}`;
 }
@@ -91,7 +91,7 @@ function setCapacityGapKPI(gap, clsSource) {
 async function loadCapacityForecast() {
   const region = IMSERV.getRegion();
   const target = Number(document.getElementById('opt-target')?.value || 72);
-  const jobsPerFteDay = Number(document.getElementById('opt-jobs-per-fte')?.value || 2);
+  const jobsPerFteDay = Number(document.getElementById('opt-jobs-per-fte')?.value || 4);
   const absenceRate = Number(document.getElementById('opt-absence-rate')?.value || 4);
   const qs = new URLSearchParams({ target, jobs_per_fte_day: jobsPerFteDay, absence_rate: absenceRate });
   if (region) qs.set('region', region);
@@ -131,7 +131,7 @@ function renderCapacityForecast(data) {
   const method = data.method || {};
   if (summary) {
     summary.innerHTML = `
-      <strong>${method.name || 'Appointment-led FTE forecast'}: ${method.jobs_per_fte_day || 2} appointments/FTE/day</strong>
+      <strong>${method.name || 'Appointment-led FTE forecast'}: ${method.planning_base_fte || 203} planning FTE, ${method.jobs_per_fte_day || 4} appointments/FTE/day</strong>
       <span>Avg required FTE/day ${IMSERV.fmt.num(data.kpis?.avg_required_fte)}, avg absent FTE/day ${IMSERV.fmt.num(data.kpis?.avg_absent_fte)}, avg bank-holiday FTE/day ${IMSERV.fmt.num(data.kpis?.avg_bank_holiday_fte)}, net forecast FTE/day ${IMSERV.fmt.num(data.kpis?.avg_net_forecast_fte)}.</span>
     `;
   }
@@ -258,7 +258,7 @@ async function loadCapacityMatrix() {
 
   const regions = Object.keys(byRegion);
   const optimisedRegions = getAppliedRegionalMap();
-  const jobsPerFteDay = _appliedOptimisation?.parameters?.jobs_per_fte_day || 2;
+  const jobsPerFteDay = _appliedOptimisation?.parameters?.jobs_per_fte_day || 4;
   const capVals = regions.map(r => {
     const after = optimisedRegions[r];
     if (after) {
@@ -397,7 +397,7 @@ function getOptimiseParams() {
   const val = (id, fallback) => Number(document.getElementById(id)?.value || fallback);
   return {
     target:          val('opt-target', 72),
-    jobs_per_fte_day: val('opt-jobs-per-fte', 2),
+    jobs_per_fte_day: val('opt-jobs-per-fte', 4),
     absence_rate:    val('opt-absence-rate', 4),
     // Fixed internal defaults — not exposed to user
     tolerance:  3,
