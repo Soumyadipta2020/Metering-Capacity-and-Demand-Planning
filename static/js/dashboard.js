@@ -13,16 +13,18 @@ async function loadJourneyDashboard() {
     'funnel-metrics-body',
     'regional-heatmap-grid',
     'channel-comparison-grid',
+    'supplier-behaviour-grid',
   ];
   IMSERV.setLoading(loadingTargets, true);
 
   try {
     // Keep the first paint light; AI recommendations load after the main dashboard.
-    const [kpis, heatmap, trend, funnel] = await Promise.all([
+    const [kpis, heatmap, trend, funnel, suppliers] = await Promise.all([
       IMSERV.apiFetch('/api/journey/kpis' + qs),
       IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
       IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
       IMSERV.apiFetch('/api/forecasting/funnel' + qs),
+      IMSERV.apiFetch('/api/journey/suppliers' + qs + '&top_n=18'),
     ]);
 
     if (kpis)    renderJourneyKPIs(kpis);
@@ -34,6 +36,7 @@ async function loadJourneyDashboard() {
     if (kpis) renderFunnel(kpis);
 
     if (funnel) renderFunnelMetrics(funnel);
+    if (suppliers) renderSupplierBehaviour(suppliers);
 
     await loadChannelComparison(false);
   } finally {
@@ -146,6 +149,15 @@ function renderJourneyKPIs(kpis) {
   if (crCard && kpis.completion_rate) {
     crCard.className = `kpi-card ${kpis.completion_rate >= 65 ? 'ok' : (kpis.completion_rate >= 55 ? 'warn' : 'crit')}`;
   }
+}
+
+function journeyEscapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function renderFunnel(kpis) {
@@ -528,6 +540,149 @@ function renderRegionalHeatmap(data) {
       <div class="region-focus-panel">
         ${focus}
       </div>
+    </div>
+  `;
+}
+
+function renderSupplierBehaviour(data) {
+  const container = document.getElementById('supplier-behaviour-grid');
+  if (!container) return;
+
+  const suppliers = data?.suppliers || [];
+  if (!suppliers.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-title">No supplier data available</div></div>';
+    return;
+  }
+
+  const totals = data.totals || {};
+  const maxRequests = Math.max(...suppliers.map(s => s.requests || 0), 1);
+  const maxContribution = Math.max(...suppliers.map(s => s.contribution_pct || 0), 1);
+  const maxBookings = Math.max(...suppliers.map(s => s.bookings || 0), 1);
+
+  const minScoreRaw = Math.min(...suppliers.map(s => s.behaviour_score || 0));
+  const maxScoreRaw = Math.max(...suppliers.map(s => s.behaviour_score || 0));
+  const scorePadding = Math.max(1, (maxScoreRaw - minScoreRaw) * 0.15);
+  const scoreMin = Math.max(0, minScoreRaw - scorePadding);
+  const scoreMax = Math.min(100, maxScoreRaw + scorePadding);
+  const scoreRange = Math.max(scoreMax - scoreMin, 1);
+
+  const toneFor = (s) => {
+    if ((s.fallout_rate || 0) >= 28 || (s.behaviour_score || 0) < 60) return 'hot';
+    if ((s.fallout_rate || 0) >= 22 || (s.behaviour_score || 0) < 68) return 'warm';
+    return 'cool';
+  };
+
+  const nodes = suppliers.map((s, idx) => {
+    const contribution = Math.max(0, s.contribution_pct || 0);
+    const score = Math.max(0, Math.min(100, s.behaviour_score || 0));
+    const x = 9 + (contribution / maxContribution) * 82;
+    const y = 90 - ((score - scoreMin) / scoreRange) * 76;
+    const size = 28 + ((s.requests || 0) / maxRequests) * 34;
+    const tone = toneFor(s);
+    const name = journeyEscapeHtml(s.supplier_name);
+    const initials = name
+      .replace(/&amp;/g, '&')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(part => part[0])
+      .join('')
+      .toUpperCase();
+
+    return `
+      <button
+        class="supplier-node ${tone}"
+        style="--x:${x}%; --y:${y}%; --s:${size}px; --delay:${idx * 28}ms;"
+        title="${name}: ${IMSERV.fmt.num(s.requests)} requests, ${IMSERV.fmt.pct(s.booking_rate)} booked, ${IMSERV.fmt.pct(s.visit_success_rate)} visit success"
+      >
+        <strong>${initials || 'S'}</strong>
+        <span>${IMSERV.fmt.pct(score)}</span>
+      </button>
+    `;
+  }).join('');
+
+  const lanes = suppliers.slice(0, 8).map((s, idx) => {
+    const tone = toneFor(s);
+    const width = Math.max(8, ((s.requests || 0) / maxRequests) * 100);
+    const bookingWidth = Math.max(6, ((s.bookings || 0) / maxBookings) * 100);
+    return `
+      <div class="supplier-lane ${tone}" style="--rank:${idx + 1};">
+        <div class="supplier-lane-name">
+          <strong>${journeyEscapeHtml(s.supplier_name)}</strong>
+          <span>${journeyEscapeHtml(s.segment)}</span>
+        </div>
+        <div class="supplier-lane-bars">
+          <span class="supplier-request-bar" style="width:${width}%"></span>
+          <span class="supplier-booking-bar" style="width:${bookingWidth}%"></span>
+        </div>
+        <div class="supplier-lane-metrics">
+          <span>${IMSERV.fmt.num(s.requests)} requests</span>
+          <span>${IMSERV.fmt.pct(s.booking_rate)} booked</span>
+          <span>${IMSERV.fmt.pct(s.fallout_rate)} fallout</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const watchlist = (data.watchlist || []).slice(0, 4).map(s => `
+    <div class="supplier-watch-item ${toneFor(s)}">
+      <span>${journeyEscapeHtml(s.supplier_name)}</span>
+      <strong>${IMSERV.fmt.pct(s.fallout_rate)}</strong>
+      <em>${IMSERV.fmt.num(s.unresolved)} unresolved, ${IMSERV.fmt.num(s.cancellations + s.aborts)} fallout</em>
+    </div>
+  `).join('');
+
+  const leaders = (data.leaderboard || []).slice(0, 4).map(s => `
+    <div class="supplier-leader-chip">
+      <span>${journeyEscapeHtml(s.supplier_name)}</span>
+      <strong>${IMSERV.fmt.pct(s.visit_success_rate)}</strong>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="supplier-field">
+      <div class="supplier-axis x">Contribution</div>
+      <div class="supplier-axis y">Behaviour score</div>
+      <div class="supplier-quadrant high">Scale + stable</div>
+      <div class="supplier-quadrant watch">High contribution watch</div>
+      <div class="supplier-quadrant niche">Efficient niche</div>
+      <div class="supplier-quadrant focus">Needs attention</div>
+      ${nodes}
+    </div>
+
+    <div class="supplier-side-panel">
+      <div class="supplier-scoreboard">
+        <div>
+          <span>Suppliers</span>
+          <strong>${IMSERV.fmt.num(data.supplier_count)}</strong>
+        </div>
+        <div>
+          <span>Bookings</span>
+          <strong>${IMSERV.fmt.num(totals.bookings)}</strong>
+        </div>
+        <div>
+          <span>Visit Success</span>
+          <strong>${IMSERV.fmt.pct(totals.visit_success_rate)}</strong>
+        </div>
+        <div>
+          <span>Fallout</span>
+          <strong>${IMSERV.fmt.pct(totals.fallout_rate)}</strong>
+        </div>
+      </div>
+      <div class="supplier-leaders">
+        <div class="supplier-panel-label">Success Rate Leaders</div>
+        ${leaders}
+      </div>
+    </div>
+
+    <div class="supplier-lanes">
+      <div class="supplier-panel-label">Largest supplier contribution lanes</div>
+      ${lanes}
+    </div>
+
+    <div class="supplier-watch">
+      <div class="supplier-panel-label">Supplier watchlist</div>
+      ${watchlist}
     </div>
   `;
 }

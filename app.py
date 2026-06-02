@@ -429,6 +429,152 @@ def journey_weekly_trend():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/journey/suppliers")
+def journey_suppliers():
+    """Supplier-level contribution and behaviour analytics for the journey tab."""
+    region = request.args.get("region")
+    year = _request_year()
+    top_n = int(request.args.get("top_n", 18))
+    try:
+        _, _, to_int_fn, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
+        by_supplier = {}
+        totals = {
+            "requests": 0,
+            "contacts": 0,
+            "bookings": 0,
+            "visits": 0,
+            "completions": 0,
+            "cancellations": 0,
+            "aborts": 0,
+            "unbooked": 0,
+            "unresolved": 0,
+        }
+
+        for job in iter_jobs_fn():
+            if region and job.get("region_code") != region:
+                continue
+            if job.get("requested_date", "")[:4] != str(year) or job.get("is_forecast", "0") != "0":
+                continue
+
+            supplier = (job.get("supplier_name") or "Unassigned Supplier").strip()
+            bucket = by_supplier.setdefault(supplier, {
+                "supplier_name": supplier,
+                "requests": 0,
+                "contacts": 0,
+                "bookings": 0,
+                "visits": 0,
+                "completions": 0,
+                "cancellations": 0,
+                "aborts": 0,
+                "unbooked": 0,
+                "unresolved": 0,
+                "channels": Counter(),
+                "job_types": Counter(),
+            })
+
+            status = job.get("status")
+            booked = bool(job.get("booked_date"))
+            cancelled = status == "Cancelled"
+            aborted = status == "Aborted"
+            completed = status == "Completed"
+            unresolved = status == "Booked"
+            unbooked = not booked and status == "Unbooked"
+            visits = 1 if booked and not cancelled else 0
+            contacts = to_int_fn(job.get("contacts_count"))
+
+            bucket["requests"] += 1
+            bucket["contacts"] += contacts
+            bucket["bookings"] += 1 if booked else 0
+            bucket["visits"] += visits
+            bucket["completions"] += 1 if completed else 0
+            bucket["cancellations"] += 1 if cancelled else 0
+            bucket["aborts"] += 1 if aborted else 0
+            bucket["unbooked"] += 1 if unbooked else 0
+            bucket["unresolved"] += 1 if unresolved else 0
+            bucket["channels"][job.get("primary_channel") or "Unknown"] += 1
+            bucket["job_types"][job.get("job_type") or "Other"] += 1
+
+            totals["requests"] += 1
+            totals["contacts"] += contacts
+            totals["bookings"] += 1 if booked else 0
+            totals["visits"] += visits
+            totals["completions"] += 1 if completed else 0
+            totals["cancellations"] += 1 if cancelled else 0
+            totals["aborts"] += 1 if aborted else 0
+            totals["unbooked"] += 1 if unbooked else 0
+            totals["unresolved"] += 1 if unresolved else 0
+
+        suppliers = []
+        for item in by_supplier.values():
+            fallout = item["cancellations"] + item["aborts"] + item["unresolved"]
+            booking_rate = safe_pct_fn(item["bookings"], item["requests"])
+            visit_success_rate = safe_pct_fn(item["completions"], item["visits"])
+            fallout_rate = safe_pct_fn(fallout, item["bookings"])
+            contribution_pct = round(item["requests"] / max(totals["requests"], 1) * 100, 2)
+            behaviour_score = round(
+                (booking_rate * 0.25) + (visit_success_rate * 0.55) - (fallout_rate * 0.20),
+                1,
+            )
+
+            suppliers.append({
+                "supplier_name": item["supplier_name"],
+                "requests": item["requests"],
+                "contacts": item["contacts"],
+                "bookings": item["bookings"],
+                "visits": item["visits"],
+                "completions": item["completions"],
+                "cancellations": item["cancellations"],
+                "aborts": item["aborts"],
+                "unbooked": item["unbooked"],
+                "unresolved": item["unresolved"],
+                "contribution_pct": contribution_pct,
+                "booking_rate": booking_rate,
+                "visit_success_rate": visit_success_rate,
+                "fallout_rate": fallout_rate,
+                "behaviour_score": behaviour_score,
+                "dominant_channel": item["channels"].most_common(1)[0][0] if item["channels"] else "Unknown",
+                "dominant_job_type": item["job_types"].most_common(1)[0][0] if item["job_types"] else "Other",
+                "segment": "",
+            })
+
+        if suppliers:
+            avg_score = sum(s["behaviour_score"] for s in suppliers) / len(suppliers)
+            sorted_requests = sorted(s["requests"] for s in suppliers)
+            median_requests = sorted_requests[len(sorted_requests) // 2]
+            for supplier in suppliers:
+                high_contribution = supplier["requests"] >= median_requests
+                strong_behaviour = supplier["behaviour_score"] >= avg_score
+                if high_contribution and strong_behaviour:
+                    supplier["segment"] = "Scale and stable"
+                elif high_contribution:
+                    supplier["segment"] = "High-volume watch"
+                elif strong_behaviour:
+                    supplier["segment"] = "Efficient niche"
+                else:
+                    supplier["segment"] = "Needs attention"
+
+        suppliers.sort(key=lambda r: (r["requests"], r["behaviour_score"]), reverse=True)
+        leaders = sorted(suppliers, key=lambda r: r["visit_success_rate"], reverse=True)[:5]
+        watchlist = sorted(suppliers, key=lambda r: (r["fallout_rate"], r["requests"]), reverse=True)[:5]
+        total_fallout = totals["cancellations"] + totals["aborts"] + totals["unresolved"]
+
+        return jsonify({
+            "suppliers": suppliers[:max(top_n, 1)],
+            "leaderboard": leaders,
+            "watchlist": watchlist,
+            "totals": {
+                **totals,
+                "fallout": total_fallout,
+                "booking_rate": safe_pct_fn(totals["bookings"], totals["requests"]),
+                "visit_success_rate": safe_pct_fn(totals["completions"], totals["visits"]),
+                "fallout_rate": safe_pct_fn(total_fallout, totals["bookings"]),
+            },
+            "supplier_count": len(suppliers),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/journey/regional-heatmap")
 def journey_regional_heatmap():
     """Regional completion rate heatmap data."""
