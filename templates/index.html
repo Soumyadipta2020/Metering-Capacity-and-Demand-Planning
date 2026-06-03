@@ -121,8 +121,8 @@
           <div class="kpi-card info"><div class="kpi-label">Contact Attempts</div><div class="kpi-value" id="kpi-contacts">—</div><div class="kpi-icon">📞</div></div>
           <div class="kpi-card info"><div class="kpi-label">Appointments Booked</div><div class="kpi-value" id="kpi-appointments-booked">—</div><div class="kpi-icon">📋</div></div>
           <div class="kpi-card warn"><div class="kpi-label">Appointments Cancelled (D-1)</div><div class="kpi-value" id="kpi-cancellations">—</div><div class="kpi-icon">⚠️</div></div>
-          <div class="kpi-card info"><div class="kpi-label">Total Visits</div><div class="kpi-value" id="kpi-bookings">—</div><div class="kpi-icon">📅</div></div>
           <div class="kpi-card warn"><div class="kpi-label">Appointments Aborted On The Day Of Visit</div><div class="kpi-value" id="kpi-aborts">—</div><div class="kpi-icon">🚫</div></div>
+          <div class="kpi-card info"><div class="kpi-label">Total Visits</div><div class="kpi-value" id="kpi-bookings">—</div><div class="kpi-icon">📅</div></div>
           <div class="kpi-card ok"><div class="kpi-label">Executed Successfully</div><div class="kpi-value" id="kpi-completions">—</div><div class="kpi-icon">✅</div></div>
           <div class="kpi-card ok" id="kpi-success-rate-card"><div class="kpi-label">Success Rate</div><div class="kpi-value" id="kpi-completion-rate">—</div><div class="kpi-icon">📈</div></div>
           <div class="kpi-card"><div class="kpi-label">Average Contacts Per Customer</div><div class="kpi-value" id="kpi-avg-contacts">—</div><div class="kpi-icon">👤</div></div>
@@ -148,7 +148,7 @@
             <div class="card-header">
               <div>
                 <div class="card-title">📈 Weekly Smart Meter Appointment and Success Trend</div>
-                <div class="card-subtitle">Compares total visits, executed-successfully outcomes, D-1 cancellations and same-day aborts</div>
+                <div class="card-subtitle">Monthly stacked trend of appointments booked, D-1 cancellations and same-day aborts</div>
               </div>
             </div>
             <div class="card-body">
@@ -158,20 +158,12 @@
 
         </div>
 
-        <!-- Appointment to Visit Success Funnel -->
-        <div class="card mb-16">
-          <div class="card-header"><div class="card-title">🎯 Appointment to Visit Success Funnel</div></div>
-          <div class="card-body" id="funnel-metrics-body">
-            <div class="loading"><span class="spinner"></span></div>
-          </div>
-        </div>
-
         <!-- Regional Heatmap -->
-        <div class="card mb-16">
+        <div class="card regional-map-card mb-16">
           <div class="card-header">
             <div>
               <div class="card-title">🗺️ Regional Appointment and Success Status</div>
-              <div class="card-subtitle">Shows appointments booked, success rate and regional RAG status</div>
+              <div class="card-subtitle">UK map coloured by selected regional success rate</div>
             </div>
           </div>
           <div class="card-body">

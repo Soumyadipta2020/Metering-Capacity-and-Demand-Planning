@@ -588,8 +588,9 @@ def journey_regional_heatmap():
         for r in rows:
             rc = r["region_code"]
             if rc not in by_region:
-                by_region[rc] = {"requests": 0, "completions": 0, "cancellations": 0, "aborts": 0, "region_name": r.get("region_name", rc)}
+                by_region[rc] = {"requests": 0, "bookings": 0, "completions": 0, "cancellations": 0, "aborts": 0, "region_name": r.get("region_name", rc)}
             by_region[rc]["requests"]     += to_int_fn(r["total_requests"])
+            by_region[rc]["bookings"]     += to_int_fn(r["total_bookings"])
             by_region[rc]["completions"]  += to_int_fn(r["total_completions"])
             by_region[rc]["cancellations"]+= to_int_fn(r["total_cancellations"])
             by_region[rc]["aborts"]       += to_int_fn(r["total_aborts"])
@@ -602,6 +603,7 @@ def journey_regional_heatmap():
                 "region_code":    rc,
                 "region_name":    d["region_name"],
                 "requests":       d["requests"],
+                "bookings":       d["bookings"],
                 "completions":    d["completions"],
                 "cancellations":  d["cancellations"],
                 "aborts":         d["aborts"],

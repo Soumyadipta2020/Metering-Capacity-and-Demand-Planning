@@ -1,6 +1,9 @@
 /* IMSERV — Module 1: Appointment Journey Dashboard */
 
 let _journeyTrendChart = null;
+let _regionalSuccessView = 'requests';
+let _lastRegionalHeatmapData = null;
+let _ukBoundaryGeoJsonPromise = null;
 
 async function loadJourneyDashboard() {
   const region = IMSERV.getRegion();
@@ -10,7 +13,6 @@ async function loadJourneyDashboard() {
   const loadingTargets = [
     'funnel-chart',
     'journey-trend-chart',
-    'funnel-metrics-body',
     'regional-heatmap-grid',
     'channel-comparison-grid',
     'supplier-behaviour-grid',
@@ -19,11 +21,10 @@ async function loadJourneyDashboard() {
 
   try {
     // Keep the first paint light; AI recommendations load after the main dashboard.
-    const [kpis, heatmap, trend, funnel, suppliers] = await Promise.all([
+    const [kpis, heatmap, trend, suppliers] = await Promise.all([
       IMSERV.apiFetch('/api/journey/kpis' + qs),
       IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
       IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
-      IMSERV.apiFetch('/api/forecasting/funnel' + qs),
       IMSERV.apiFetch('/api/journey/suppliers' + qs + '&top_n=18'),
     ]);
 
@@ -35,7 +36,6 @@ async function loadJourneyDashboard() {
     // Render funnel (uses KPI data)
     if (kpis) renderFunnel(kpis);
 
-    if (funnel) renderFunnelMetrics(funnel);
     if (suppliers) renderSupplierBehaviour(suppliers);
 
     await loadChannelComparison(false);
@@ -53,8 +53,8 @@ async function loadJourneyDashboard() {
 function refreshJourneyVisualLabels() {
   const updates = [
     ['Smart Meter Appointment Journey Funnel', 'Shows customer data loaded into dialler, contact attempts, appointments booked, D-1 cancellations, total visits, same-day aborts and successful execution'],
-    ['Weekly Smart Meter Appointment and Success Trend', 'Compares total visits, executed-successfully outcomes, D-1 cancellations and same-day aborts'],
-    ['Regional Appointment and Success Status', 'Shows appointments booked, success rate and regional RAG status'],
+    ['Weekly Smart Meter Appointment and Success Trend', 'Monthly stacked trend of appointments booked, D-1 cancellations and same-day aborts'],
+    ['Regional Appointment and Success Status', 'UK map coloured by selected regional success rate'],
   ];
 
   document.querySelectorAll('#view-journey .card-title').forEach(title => {
@@ -169,8 +169,8 @@ function renderFunnel(kpis) {
     { label: 'Contact Attempts',                  key: 'contacts',      cls: 'contacts',      val: kpis.total_contacts },
     { label: 'Appointments Booked',               key: 'appointments',  cls: 'bookings',      val: kpis.total_bookings },
     { label: 'Appointments Cancelled (D-1)',      key: 'cancelled',     cls: 'cancellations', val: kpis.total_cancellations },
-    { label: 'Total Visits',                      key: 'visits',        cls: 'visits',        val: visits },
     { label: 'Appointments Aborted On The Day Of Visit', key: 'aborted', cls: 'aborts',        val: kpis.total_aborts },
+    { label: 'Total Visits',                      key: 'visits',        cls: 'visits',        val: visits },
     { label: 'Executed Successfully',             key: 'executed',      cls: 'completions',   val: kpis.total_completions },
   ];
 
@@ -199,197 +199,122 @@ function renderFunnel(kpis) {
   `;
 }
 
-function renderFunnelMetrics(funnel) {
-  const body = document.getElementById('funnel-metrics-body');
-  if (!body || !funnel) return;
-  const f = funnel.funnel || {};
-  const uniqueCustomers = f.unique_customers
-    ?? (f.avg_contacts_per_customer ? Math.round((f.contacts || 0) / f.avg_contacts_per_customer) : f.requests || 0);
-  const appointmentsBooked = f.bookings || 0;
-  const visits = f.visits ?? Math.max((f.bookings || 0) - (f.cancellations || 0), 0);
-  const completions = f.completions || 0;
-  const notCompleted = f.not_completed_after_successful_visit ?? Math.max((f.post_abort_visits ?? Math.max(visits - (f.aborts || 0), 0)) - completions, 0);
-  const reasons = (funnel.not_completed_reasons || []).slice(0, 4);
-  const reasonHtml = reasons.length ? reasons.map(r => `
-    <div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center;">
-      <span style="font-size:11px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${r.reason}</span>
-      <strong style="font-size:12px; color:var(--text-primary);">${IMSERV.fmt.num(r.count)}</strong>
-      <div style="grid-column:1 / -1; height:4px; border-radius:999px; background:rgba(255,255,255,0.06); overflow:hidden;">
-        <div style="height:100%; width:${Math.max(4, Math.min(100, r.pct || 0))}%; background:rgba(2,194,183,0.75);"></div>
-      </div>
-    </div>
-  `).join('') : '<div style="font-size:11px; color:var(--text-muted);">No unresolved executed appointments</div>';
-
-  body.innerHTML = `
-    <div style="display:flex; flex-direction:column; gap:14px; padding: 10px 0;">
-      <!-- Main Funnel Path -->
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:4px; min-height:88px; position:relative;">
-        
-        <!-- Customer data loaded into dialler -->
-        <div style="background: linear-gradient(135deg, rgba(2,194,183,0.05), rgba(2,194,183,0.15)); border: 1px solid rgba(2,194,183,0.2); border-radius: 8px 0 0 8px; display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Customer Data Loaded Into Dialler</div>
-          <div style="font-size:26px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(uniqueCustomers)}</div>
-          <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,194,183,0.3); z-index:2;"></div>
-        </div>
-
-        <!-- Contact attempts -->
-        <div style="background: linear-gradient(135deg, rgba(2,194,183,0.08), rgba(2,194,183,0.16)); border: 1px solid rgba(2,194,183,0.28); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Contact Attempts</div>
-          <div style="font-size:22px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(f.contacts)}</div>
-          <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,194,183,0.4); z-index:2;"></div>
-        </div>
-
-        <!-- Appointments booked -->
-        <div style="background: linear-gradient(135deg, rgba(2,194,183,0.06), rgba(2,194,183,0.14)); border: 1px solid rgba(2,194,183,0.24); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Appointments Booked</div>
-          <div style="font-size:26px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(appointmentsBooked)}</div>
-          <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,194,183,0.32); z-index:2;"></div>
-        </div>
-
-        <!-- Total visits -->
-        <div style="background: linear-gradient(135deg, rgba(2,129,120,0.05), rgba(2,129,120,0.15)); border: 1px solid rgba(2,129,120,0.2); display:flex; flex-direction:column; justify-content:center; align-items:center; position:relative; min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Total Visits</div>
-          <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(visits)}</div>
-          <div style="position:absolute; right:-12px; top:50%; transform:translateY(-50%); width:0; height:0; border-top: 16px solid transparent; border-bottom: 16px solid transparent; border-left: 12px solid rgba(2,129,120,0.3); z-index:2;"></div>
-        </div>
-
-        <!-- Executed successfully -->
-        <div style="background: linear-gradient(135deg, rgba(2,129,120,0.15), rgba(2,129,120,0.25)); border: 1px solid rgba(2,129,120,0.4); border-radius: 0 8px 8px 0; display:flex; flex-direction:column; justify-content:center; align-items:center; box-shadow: inset 0 0 12px rgba(2,129,120,0.1); min-width:0;">
-          <div style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; font-weight:600; text-align:center;">Executed Successfully</div>
-          <div style="font-size:26px; font-weight:800; color:var(--ok);">${IMSERV.fmt.num(completions)}</div>
-        </div>
-
-      </div>
-
-      <!-- Falloff branches -->
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; align-items:start;">
-        <div></div><div></div>
-        <div>
-          <div style="height:18px; width:50%; border-right:2px dashed rgba(251,130,129,0.35); border-bottom:2px dashed rgba(251,130,129,0.35); border-bottom-right-radius:10px; margin-top:-8px;"></div>
-          <div style="background: rgba(251, 130, 129, 0.05); border: 1px solid rgba(251, 130, 129, 0.15); border-left: 4px solid var(--crit); padding: 12px 14px; border-radius: 8px;">
-            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Appointments Cancelled (D-1)</div>
-            <div style="font-size:20px; font-weight:800; color:var(--crit); margin-top:2px;">${IMSERV.fmt.num(f.cancellations)}</div>
-          </div>
-        </div>
-        <div>
-          <div style="height:18px; width:50%; border-right:2px dashed rgba(244,210,90,0.45); border-bottom:2px dashed rgba(244,210,90,0.45); border-bottom-right-radius:10px; margin-top:-8px;"></div>
-          <div style="background: rgba(244, 210, 90, 0.05); border: 1px solid rgba(244, 210, 90, 0.15); border-left: 4px solid var(--warn); padding: 12px 14px; border-radius: 8px;">
-            <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Appointments Aborted On The Day Of Visit</div>
-            <div style="font-size:20px; font-weight:800; color:var(--warn); margin-top:2px;">${IMSERV.fmt.num(f.aborts)}</div>
-          </div>
-        </div>
-        <div style="grid-column:5;">
-          <div style="height:18px; width:28%; border-right:2px dashed rgba(2,194,183,0.38); border-bottom:2px dashed rgba(2,194,183,0.38); border-bottom-right-radius:10px; margin-top:-8px;"></div>
-          <div style="background: rgba(2, 194, 183, 0.05); border: 1px solid rgba(2, 194, 183, 0.15); border-left: 4px solid var(--info); padding: 12px 14px; border-radius: 8px;">
-            <div style="display:flex; justify-content:space-between; gap:12px; align-items:baseline;">
-              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; font-weight:700; letter-spacing: 0.5px;">Not Executed After Visit</div>
-              <div style="font-size:20px; font-weight:800; color:var(--info);">${IMSERV.fmt.num(notCompleted)}</div>
-            </div>
-            <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin-top:10px;">
-              ${reasonHtml}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="mt-8" style="border-top: 1px solid var(--border); padding-top: 16px; display:flex; gap: 16px; justify-content:center; flex-wrap:wrap;">
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: var(--bg-card); border:1px solid var(--border);">Total Visit Rate: <strong style="color:var(--text-primary); margin-left:4px;">${IMSERV.fmt.pct(funnel.visit_rate)}</strong></div>
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,129,120,0.05); border:1px solid rgba(2,129,120,0.1);">Success Rate: <strong style="color:var(--ok); margin-left:4px;">${IMSERV.fmt.pct(funnel.completion_rate)}</strong></div>
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,129,120,0.05); border:1px solid rgba(2,129,120,0.1);">Executed / Total Visits: <strong style="color:var(--ok); margin-left:4px;">${IMSERV.fmt.pct(funnel.visit_success_rate)}</strong></div>
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: rgba(2,194,183,0.05); border:1px solid rgba(2,194,183,0.1);">Execution Gap: <strong style="color:var(--info); margin-left:4px;">${IMSERV.fmt.num(notCompleted)}</strong></div>
-      <div class="stat-chip" style="font-size: 13px; padding: 6px 14px; background: var(--bg-card); border:1px solid var(--border);">Average Contacts Per Customer: <strong style="color:var(--text-primary); margin-left:4px;">${funnel.avg_contacts_per_customer}</strong></div>
-    </div>
-  `;
-}
-
 function renderJourneyTrend(data) {
   IMSERV.destroyChart('journey-trend');
   const container = document.getElementById('journey-trend-chart');
   if (!container) return;
 
-  // Limit to last 52 weeks for performance
-  const limit = 52;
-  const labels       = data.labels.slice(-limit);
-  const completions  = data.completions.slice(-limit);
-  const visits       = (data.visits || data.bookings || []).slice(-limit);
-  const cancellations= data.cancellations.slice(-limit);
-  const aborts       = data.aborts.slice(-limit);
+  const labels = data.labels || [];
+  const bookings = data.bookings || [];
+  const cancellations = data.cancellations || [];
+  const aborts = data.aborts || [];
 
   if (!labels.length) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-title">No weekly rhythm available</div></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-title">No appointment trend available</div></div>';
     return;
   }
 
-  const last = labels.length - 1;
-  const recentCompletion = completions[last] || 0;
-  const recentVisit = visits[last] || 0;
-  const recentCancelled = cancellations[last] || 0;
-  const recentAborted = aborts[last] || 0;
-  const recentLoss = recentCancelled + recentAborted;
-  const recentSuccessRate = recentVisit ? (recentCompletion / recentVisit) * 100 : 0;
-  const periods = [
-    { name: 'Q1', range: [0, 13] },
-    { name: 'Q2', range: [13, 26] },
-    { name: 'Q3', range: [26, 39] },
-    { name: 'Q4', range: [39, 52] },
-  ].map(p => {
-    const [start, end] = p.range;
-    const slice = labels.slice(start, end);
-    const c = completions.slice(start, end).reduce((a, b) => a + b, 0);
-    const b = visits.slice(start, end).reduce((a, v) => a + v, 0);
-    const cancelled = cancellations.slice(start, end).reduce((a, v) => a + v, 0);
-    const aborted = aborts.slice(start, end).reduce((a, v) => a + v, 0);
-    const loss = cancelled + aborted;
-    const yieldPct = b ? (c / b) * 100 : 0;
-    const lossPct = b ? (loss / b) * 100 : 0;
-    return { ...p, weeks: slice.length, completions: c, visits: b, cancelled, aborted, losses: loss, yieldPct, lossPct };
-  }).filter(p => p.weeks);
-  const strongest = periods.reduce((best, p) => p.yieldPct > best.yieldPct ? p : best, periods[0]);
-  const hottest = periods.reduce((best, p) => p.lossPct > best.lossPct ? p : best, periods[0]);
+  const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short' });
+  const monthly = new Map();
 
-  const periodHtml = periods.map(p => {
-    const tone = p.lossPct > 28 ? 'hot' : (p.lossPct > 20 ? 'warm' : 'cool');
-    const completionAngle = Math.min(360, p.yieldPct * 3.6);
-    const lossAngle = Math.min(360, p.lossPct * 3.6);
-    return `
-      <div class="season-pulse ${tone}" style="--completion:${completionAngle}deg; --loss:${lossAngle}deg;">
-        <div class="season-orb">
-          <div class="season-ring">
-            <strong>${p.name}</strong>
-          </div>
-          <span class="season-ring-value">${IMSERV.fmt.pct(p.yieldPct)}</span>
-        </div>
-        <div class="season-copy">
-          <span>${p.weeks} weeks</span>
-          <strong>${IMSERV.fmt.num(p.completions)}</strong>
-          <em>${IMSERV.fmt.num(p.cancelled)} cancelled, ${IMSERV.fmt.num(p.aborted)} aborted</em>
-        </div>
-      </div>
-    `;
-  }).join('');
+  labels.forEach((label, idx) => {
+    const date = new Date(label);
+    if (Number.isNaN(date.getTime())) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthly.has(key)) {
+      monthly.set(key, {
+        label: monthFormatter.format(date),
+        bookings: 0,
+        cancellations: 0,
+        aborts: 0,
+      });
+    }
+    const bucket = monthly.get(key);
+    bucket.bookings += Number(bookings[idx]) || 0;
+    bucket.cancellations += Number(cancellations[idx]) || 0;
+    bucket.aborts += Number(aborts[idx]) || 0;
+  });
+
+  const months = Array.from(monthly.values()).slice(-12);
+  if (!months.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon"></div><div class="empty-title">No monthly appointment trend available</div></div>';
+    return;
+  }
 
   container.innerHTML = `
-    <div class="season-stage">
-      <div class="season-summary">
-        <span>Latest executed successfully</span>
-        <strong>${IMSERV.fmt.num(recentCompletion)}</strong>
-        <em>${IMSERV.fmt.num(recentVisit)} total visits</em>
-      </div>
-      <div class="season-pulse-grid">${periodHtml}</div>
-    </div>
-    <div class="rhythm-readouts">
-      <div><span>Best success rate quarter</span><strong>${strongest.name} at ${IMSERV.fmt.pct(strongest.yieldPct)}</strong></div>
-      <div><span>Highest appointment fallout quarter</span><strong>${hottest.name} at ${IMSERV.fmt.pct(hottest.lossPct)}</strong></div>
-      <div><span>Latest appointment fallout</span><strong>${IMSERV.fmt.num(recentLoss)}</strong></div>
-    </div>
-    <div class="weekly-flow-strip">
-      <div><span>Total visits</span><strong>${IMSERV.fmt.num(recentVisit)}</strong></div>
-      <div><span>Appointments Cancelled (D-1)</span><strong>${IMSERV.fmt.num(recentCancelled)}</strong></div>
-      <div><span>Appointments Aborted</span><strong>${IMSERV.fmt.num(recentAborted)}</strong></div>
-      <div><span>Success rate</span><strong>${IMSERV.fmt.pct(recentSuccessRate)}</strong></div>
+    <div class="journey-monthly-chart">
+      <canvas id="journey-trend-canvas" aria-label="Monthly stacked bar chart of appointments booked, cancelled and aborted"></canvas>
     </div>
   `;
+
+  const ctx = document.getElementById('journey-trend-canvas')?.getContext('2d');
+  if (!ctx) return;
+
+  IMSERV.registerChart('journey-trend', new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        {
+          label: 'Appointments Booked',
+          data: months.map(m => m.bookings),
+          backgroundColor: 'rgba(2, 194, 183, 0.72)',
+          borderColor: 'rgba(2, 194, 183, 1)',
+          borderWidth: 1,
+          borderRadius: 4,
+          stack: 'appointments',
+        },
+        {
+          label: 'Appointments Cancelled (D-1)',
+          data: months.map(m => m.cancellations),
+          backgroundColor: 'rgba(251, 130, 129, 0.78)',
+          borderColor: 'rgba(251, 130, 129, 1)',
+          borderWidth: 1,
+          borderRadius: 4,
+          stack: 'appointments',
+        },
+        {
+          label: 'Appointments Aborted',
+          data: months.map(m => m.aborts),
+          backgroundColor: 'rgba(244, 210, 90, 0.82)',
+          borderColor: 'rgba(244, 210, 90, 1)',
+          borderWidth: 1,
+          borderRadius: 4,
+          stack: 'appointments',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        ...IMSERV.chartDefaults.plugins,
+        tooltip: {
+          ...IMSERV.chartDefaults.plugins.tooltip,
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${IMSERV.fmt.num(ctx.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ...IMSERV.chartDefaults.scales.x,
+          stacked: true,
+          grid: { display: false },
+        },
+        y: {
+          ...IMSERV.chartDefaults.scales.y,
+          stacked: true,
+          beginAtZero: true,
+          ticks: {
+            ...IMSERV.chartDefaults.scales.y.ticks,
+            callback: value => IMSERV.fmt.num(value),
+          },
+        },
+      },
+    },
+  }));
 }
 
 function renderRegionalHeatmapLegacy(data) {
@@ -478,7 +403,83 @@ function renderRegionalHeatmapLegacy(data) {
   }).join('');
 }
 
-function renderRegionalHeatmap(data) {
+function loadUkBoundaryGeoJson() {
+  if (!_ukBoundaryGeoJsonPromise) {
+    _ukBoundaryGeoJsonPromise = fetch('/static/data/gb-all.geo.json')
+      .then(response => {
+        if (!response.ok) throw new Error('UK boundary map failed to load');
+        return response.json();
+      });
+  }
+  return _ukBoundaryGeoJsonPromise;
+}
+
+function boundaryRegionCode(feature) {
+  if (feature?.properties?.region_code) return feature.properties.region_code;
+  const region = feature?.properties?.region || '';
+  if (region === 'Northern Ireland') return null;
+  if (region.includes('Wales')) return 'WAL';
+  if (['Highlands and Islands', 'North Eastern', 'Eastern', 'South Western'].includes(region)) return 'SCO';
+  if (region === 'North East') return 'NE';
+  if (region === 'North West') return 'NW';
+  if (region === 'Yorkshire and the Humber') return 'YRK';
+  if (region === 'East Midlands' || region === 'West Midlands') return 'MID';
+  if (region === 'South West') return 'SW';
+  if (['South East', 'Greater London', 'East'].includes(region)) return 'SE';
+  return null;
+}
+
+function collectGeoCoordinates(geometry, points = []) {
+  if (!geometry) return points;
+  if (geometry.type === 'Point') {
+    points.push(geometry.coordinates);
+    return points;
+  }
+  if (geometry.type === 'Polygon') {
+    geometry.coordinates.forEach(ring => ring.forEach(point => points.push(point)));
+    return points;
+  }
+  if (geometry.type === 'MultiPolygon') {
+    geometry.coordinates.forEach(poly => poly.forEach(ring => ring.forEach(point => points.push(point))));
+  }
+  return points;
+}
+
+function createUkProjection(features, width = 560, height = 680, padding = 14) {
+  const points = features.flatMap(feature => collectGeoCoordinates(feature.geometry, []));
+  const xs = points.map(point => point[0]);
+  const ys = points.map(point => point[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  const project = ([x, y]) => {
+    return [
+      padding + ((x - minX) / (maxX - minX)) * (width - padding * 2),
+      padding + ((maxY - y) / (maxY - minY)) * (height - padding * 2),
+    ];
+  };
+
+  return { width, height, project };
+}
+
+function geometryToSvgPath(geometry, project) {
+  const ringToPath = ring => ring.map((point, index) => {
+    const [x, y] = project(point);
+    return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(' ') + ' Z';
+
+  if (geometry.type === 'Polygon') {
+    return geometry.coordinates.map(ringToPath).join(' ');
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates.flatMap(poly => poly.map(ringToPath)).join(' ');
+  }
+  return '';
+}
+
+async function renderRegionalHeatmap(data) {
   const container = document.getElementById('regional-heatmap-grid');
   if (!container) return;
   if (!data || !data.length) {
@@ -486,37 +487,117 @@ function renderRegionalHeatmap(data) {
     return;
   }
 
-  const rows = [...data].sort((a, b) => b.completion_rate - a.completion_rate);
+  _lastRegionalHeatmapData = data;
+
+  const metric = _regionalSuccessView === 'booked' ? 'booked' : 'requests';
+  const metricLabel = metric === 'booked' ? 'Complete vs booked' : 'Complete vs request';
+  const denominatorFor = (r) => metric === 'booked' ? (r.bookings ?? r.requests ?? 0) : (r.requests || 0);
+  const rateFor = (r) => {
+    const denominator = denominatorFor(r);
+    return denominator ? ((r.completions || 0) / denominator) * 100 : 0;
+  };
+  let toneForRate = () => 'good';
+
+  const rows = [...data]
+    .map(r => ({
+      ...r,
+      bookings: r.bookings ?? r.requests ?? 0,
+      selected_success_rate: rateFor(r),
+    }))
+    .sort((a, b) => b.selected_success_rate - a.selected_success_rate);
+  const selectedRates = rows.map(r => r.selected_success_rate);
+  const minSelectedRate = Math.min(...selectedRates);
+  const maxSelectedRate = Math.max(...selectedRates);
+  const selectedRateRange = Math.max(maxSelectedRate - minSelectedRate, 0.1);
+  toneForRate = (rate) => {
+    const scaled = (rate - minSelectedRate) / selectedRateRange;
+    if (scaled >= 0.72) return 'strong';
+    if (scaled >= 0.48) return 'good';
+    if (scaled >= 0.24) return 'watch';
+    return 'risk';
+  };
+
   const totalRequests = rows.reduce((sum, r) => sum + (r.requests || 0), 0);
+  const totalBookings = rows.reduce((sum, r) => sum + (r.bookings || 0), 0);
   const totalCompletions = rows.reduce((sum, r) => sum + (r.completions || 0), 0);
   const totalLosses = rows.reduce((sum, r) => sum + (r.cancellations || 0) + (r.aborts || 0), 0);
-  const averageCompletion = totalRequests ? (totalCompletions / totalRequests) * 100 : 0;
+  const totalDenominator = metric === 'booked' ? totalBookings : totalRequests;
+  const averageCompletion = totalDenominator ? (totalCompletions / totalDenominator) * 100 : 0;
   const strongest = rows[0];
   const watch = rows[rows.length - 1];
-  const busiest = rows.reduce((best, r) => (r.requests || 0) > (best.requests || 0) ? r : best, rows[0]);
-  const maxRequests = Math.max(...rows.map(r => r.requests || 0), 1);
+  const busiest = rows.reduce((best, r) => (r.bookings || 0) > (best.bookings || 0) ? r : best, rows[0]);
+  const maxBookings = Math.max(...rows.map(r => r.bookings || 0), 1);
 
-  const nodes = rows.map((r, index) => {
-    const tone = r.rag === 'Red' ? 'red' : (r.rag === 'Amber' ? 'amber' : 'green');
-    const lossTotal = (r.cancellations || 0) + (r.aborts || 0);
-    const angle = -105 + (index / Math.max(rows.length - 1, 1)) * 210;
-    const radius = 35 + ((r.requests || 0) / maxRequests) * 12;
-    const x = 50 + radius * Math.cos(angle * Math.PI / 180);
-    const y = 52 + radius * 0.52 * Math.sin(angle * Math.PI / 180);
-    const size = 42 + ((r.requests || 0) / maxRequests) * 26;
+  container.innerHTML = '<div class="loading"><span class="spinner"></span> Loading UK map...</div>';
 
+  let geoJson;
+  try {
+    geoJson = await loadUkBoundaryGeoJson();
+  } catch (error) {
+    container.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;"><div class="empty-icon"></div><div class="empty-title">UK map boundaries unavailable</div></div>';
+    return;
+  }
+
+  const regionByCode = Object.fromEntries(rows.map(row => [row.region_code, row]));
+  const projection = createUkProjection(geoJson.features);
+  const labelBuckets = {};
+  const shapes = geoJson.features.map(feature => {
+    const code = boundaryRegionCode(feature);
+    const region = code ? regionByCode[code] : null;
+    const path = geometryToSvgPath(feature.geometry, projection.project);
+    const featurePoints = collectGeoCoordinates(feature.geometry, []);
+    if (region && featurePoints.length) {
+      const bucket = labelBuckets[code] || (labelBuckets[code] = { x: 0, y: 0, count: 0 });
+      const centroid = featurePoints.reduce(
+        (sum, point) => [sum[0] + point[0], sum[1] + point[1]],
+        [0, 0],
+      ).map(total => total / featurePoints.length);
+      const [x, y] = projection.project(centroid);
+      bucket.x += x;
+      bucket.y += y;
+      bucket.count += 1;
+    }
+    if (!region) {
+      return `<path class="uk-map-context" d="${path}"></path>`;
+    }
+    const rate = region.selected_success_rate;
+    const tone = toneForRate(rate);
+    const lossTotal = (region.cancellations || 0) + (region.aborts || 0);
+    const opacity = 0.70 + Math.min(0.24, ((region.bookings || 0) / maxBookings) * 0.24);
     return `
-      <button class="region-star ${tone}" style="--x:${x}%; --y:${y}%; --s:${size}px;" title="${r.region_name || r.region_code}: ${IMSERV.fmt.pct(r.completion_rate)} success rate, ${IMSERV.fmt.num(lossTotal)} cancelled + aborted">
-        <strong>${r.region_code}</strong>
-        <span>${IMSERV.fmt.pct(r.completion_rate)}</span>
-      </button>
+      <path class="uk-region ${tone}" style="--region-opacity:${opacity};" d="${path}">
+        <title>${feature.properties.name}, ${region.region_name || region.region_code}: ${IMSERV.fmt.pct(rate)} ${metricLabel.toLowerCase()}, ${IMSERV.fmt.num(region.bookings)} booked, ${IMSERV.fmt.num(lossTotal)} cancelled + aborted</title>
+      </path>
+    `;
+  }).join('');
+
+  const labelOffsets = {
+    SCO: { x: 15, y: 40 },
+    NW: { x: -2, y: -10 },
+    NE: { x: -8, y: 10 },
+    YRK: { x: -15, y: 25 },
+    MID: { x: -10, y: 10 },
+    WAL: { x: 10, y: 20 },
+    SW: { x: 20, y: -10 },
+    SE: { x: -25, y: -5 },
+  };
+  const labels = Object.entries(labelBuckets).map(([code, bucket]) => {
+    const region = regionByCode[code];
+    const offset = labelOffsets[code] || { x: 0, y: 0 };
+    const x = (bucket.x / bucket.count) + offset.x;
+    const y = (bucket.y / bucket.count) + offset.y;
+    return `
+      <g class="uk-region-label">
+        <text x="${x.toFixed(1)}" y="${(y - 7).toFixed(1)}">${code}</text>
+        <text class="uk-region-rate" x="${x.toFixed(1)}" y="${(y + 9).toFixed(1)}">${IMSERV.fmt.pct(region.selected_success_rate)}</text>
+      </g>
     `;
   }).join('');
 
   const focus = [
-    { label: 'Strongest', region: strongest, metric: IMSERV.fmt.pct(strongest.completion_rate) },
-    { label: 'Needs focus', region: watch, metric: IMSERV.fmt.pct(watch.completion_rate) },
-    { label: 'Highest appointments booked', region: busiest, metric: IMSERV.fmt.num(busiest.requests) },
+    { label: 'Strongest', region: strongest, metric: IMSERV.fmt.pct(strongest.selected_success_rate) },
+    { label: 'Needs focus', region: watch, metric: IMSERV.fmt.pct(watch.selected_success_rate) },
+    { label: 'Highest appointments booked', region: busiest, metric: IMSERV.fmt.num(busiest.bookings) },
   ].map(item => `
     <div class="region-focus-item">
       <span>${item.label}</span>
@@ -526,22 +607,53 @@ function renderRegionalHeatmap(data) {
   `).join('');
 
   container.innerHTML = `
-    <div class="regional-constellation">
-      <div class="region-orbit-field">
-        <div class="region-orbit one"></div>
-        <div class="region-orbit two"></div>
-        <div class="region-orbit-core">
-          <span>Network avg</span>
-          <strong>${IMSERV.fmt.pct(averageCompletion)}</strong>
-          <em>${IMSERV.fmt.num(totalLosses)} cancelled + aborted</em>
+    <div class="uk-region-dashboard">
+      <div class="uk-map-panel">
+        <div class="uk-map-toolbar">
+          <div>
+            <span>Success view</span>
+            <strong>${metricLabel}</strong>
+          </div>
+          <div class="uk-map-toggle" role="tablist" aria-label="Regional success rate view">
+            <button type="button" class="${metric === 'requests' ? 'active' : ''}" data-region-view="requests" role="tab" aria-selected="${metric === 'requests'}">Complete vs request</button>
+            <button type="button" class="${metric === 'booked' ? 'active' : ''}" data-region-view="booked" role="tab" aria-selected="${metric === 'booked'}">Complete vs booked</button>
+          </div>
         </div>
-        ${nodes}
+        <div class="uk-map-stage">
+          <svg class="uk-map-svg" viewBox="0 0 ${projection.width} ${projection.height}" role="img" aria-label="UK regional success rate map" preserveAspectRatio="xMidYMid meet">
+            ${shapes}
+            ${labels}
+          </svg>
+          <div class="uk-network-card">
+            <span>Network average</span>
+            <strong>${IMSERV.fmt.pct(averageCompletion)}</strong>
+            <em>${IMSERV.fmt.num(totalCompletions)} completed / ${IMSERV.fmt.num(totalDenominator)} ${metric === 'booked' ? 'booked' : 'requests'}</em>
+          </div>
+        </div>
+        <div class="uk-map-legend" aria-label="Success rate legend">
+          <span><i class="legend-strong"></i>Highest</span>
+          <span><i class="legend-good"></i>Above avg</span>
+          <span><i class="legend-watch"></i>Below avg</span>
+          <span><i class="legend-risk"></i>Lowest</span>
+        </div>
       </div>
       <div class="region-focus-panel">
         ${focus}
+        <div class="region-focus-item">
+          <span>Cancelled + aborted</span>
+          <strong>${IMSERV.fmt.num(totalLosses)}</strong>
+          <em>${metricLabel}</em>
+        </div>
       </div>
     </div>
   `;
+
+  container.querySelectorAll('[data-region-view]').forEach(button => {
+    button.addEventListener('click', () => {
+      _regionalSuccessView = button.dataset.regionView === 'booked' ? 'booked' : 'requests';
+      renderRegionalHeatmap(_lastRegionalHeatmapData);
+    });
+  });
 }
 
 function renderSupplierBehaviour(data) {
