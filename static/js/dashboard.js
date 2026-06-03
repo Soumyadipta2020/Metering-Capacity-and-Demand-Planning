@@ -54,7 +54,7 @@ function refreshJourneyVisualLabels() {
   const updates = [
     ['Smart Meter Appointment Journey Funnel', 'Shows customer data loaded into dialler, contact attempts, appointments booked, D-1 cancellations, total visits, same-day aborts and successful execution'],
     ['Weekly Smart Meter Appointment and Success Trend', 'Monthly stacked trend of appointments booked, D-1 cancellations and same-day aborts'],
-    ['Regional Appointment and Success Status', 'UK map coloured by selected regional success rate'],
+    ['Regional Success Rate - UK Map', 'UK map coloured by selected regional success rate'],
   ];
 
   document.querySelectorAll('#view-journey .card-title').forEach(title => {

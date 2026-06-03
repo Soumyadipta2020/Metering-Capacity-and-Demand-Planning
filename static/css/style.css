@@ -2105,11 +2105,8 @@ body {
   min-height: 340px;
   border: 1px solid var(--scene-border);
   border-radius: 8px;
-  background:
-    linear-gradient(var(--scene-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--scene-grid) 1px, transparent 1px),
-    var(--scene-stage-bg);
-  background-size: 34px 34px, 34px 34px, auto;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2175,6 +2172,15 @@ body {
   display: grid;
   place-items: center;
   padding: 4px 14px;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.50) 0%, transparent 55%),
+    linear-gradient(175deg, #d6ebf7 0%, #bfd8ed 45%, #cae1f5 100%);
+}
+
+[data-theme="dark"] .uk-map-stage {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(3, 244, 232, 0.06) 0%, transparent 52%),
+    linear-gradient(175deg, #04101e 0%, #020b17 45%, #030d1b 100%);
 }
 
 .uk-map-svg {
@@ -2182,32 +2188,40 @@ body {
   height: min(100%, 620px);
   max-height: 100%;
   min-height: 0;
-  filter: drop-shadow(0 20px 34px rgba(0,0,0,0.20));
+  filter:
+    drop-shadow(0 2px 3px rgba(0,0,0,0.22))
+    drop-shadow(0 8px 28px rgba(0,0,0,0.26));
 }
 
 .uk-map-context {
-  fill: var(--scene-track);
-  stroke: var(--scene-border);
+  fill: rgba(155, 196, 220, 0.42);
+  stroke: rgba(100, 155, 185, 0.40);
   stroke-linejoin: round;
-  stroke-width: 0.7;
+  stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
+}
+
+[data-theme="dark"] .uk-map-context {
+  fill: rgba(18, 48, 76, 0.70);
+  stroke: rgba(35, 80, 120, 0.50);
 }
 
 .uk-region {
   --region-color: var(--ok);
-  --region-opacity: 0.82;
+  --region-opacity: 0.88;
   fill: var(--region-color);
   opacity: var(--region-opacity);
-  stroke: var(--scene-core);
+  stroke: rgba(255, 255, 255, 0.82);
   stroke-linejoin: round;
-  stroke-width: 1.15;
+  stroke-width: 1.3;
   cursor: default;
-  transition: filter 0.2s ease, opacity 0.2s ease;
+  transition: filter 0.18s ease, opacity 0.18s ease;
   vector-effect: non-scaling-stroke;
 }
 
 .uk-region:hover {
-  filter: brightness(1.12);
+  filter: brightness(1.14) saturate(1.1);
+  opacity: 1;
 }
 
 .uk-region.tier1 { --region-color: #1B5E35; }
