@@ -2210,10 +2210,12 @@ body {
   filter: brightness(1.12);
 }
 
-.uk-region.strong { --region-color: #00A896; }
-.uk-region.good { --region-color: #7FB069; }
-.uk-region.watch { --region-color: #F4D25A; }
-.uk-region.risk { --region-color: #B83B4B; }
+.uk-region.tier1 { --region-color: #1B5E35; }
+.uk-region.tier2 { --region-color: #52BE80; }
+.uk-region.tier3 { --region-color: #FDD835; }
+.uk-region.tier4 { --region-color: #C8960C; }
+.uk-region.tier5 { --region-color: #E57373; }
+.uk-region.tier6 { --region-color: #B71C1C; }
 
 .uk-region-label text {
   fill: #ffffff;
@@ -2287,10 +2289,83 @@ body {
   display: inline-block;
 }
 
-.uk-map-legend .legend-strong { background: #00A896; }
-.uk-map-legend .legend-good { background: #7FB069; }
-.uk-map-legend .legend-watch { background: #F4D25A; }
-.uk-map-legend .legend-risk { background: #B83B4B; }
+.uk-map-legend .legend-tier1 { background: #1B5E35; }
+.uk-map-legend .legend-tier2 { background: #52BE80; }
+.uk-map-legend .legend-tier3 { background: #FDD835; }
+.uk-map-legend .legend-tier4 { background: #C8960C; }
+.uk-map-legend .legend-tier5 { background: #E57373; }
+.uk-map-legend .legend-tier6 { background: #B71C1C; }
+
+/* Map hover tooltip */
+.uk-map-tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 20;
+  min-width: 190px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.36), 0 2px 8px rgba(0,0,0,0.18);
+  padding: 10px 14px 12px;
+  backdrop-filter: blur(6px);
+}
+.umt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.umt-region {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.2px;
+}
+.umt-badge {
+  font-size: 13px;
+  font-weight: 900;
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: #fff;
+}
+.umt-badge.tier1 { background: #1B5E35; color: #fff; }
+.umt-badge.tier2 { background: #52BE80; color: #0a2e18; }
+.umt-badge.tier3 { background: #FDD835; color: #4a3700; }
+.umt-badge.tier4 { background: #C8960C; color: #fff; }
+.umt-badge.tier5 { background: #E57373; color: #4a0a0a; }
+.umt-badge.tier6 { background: #B71C1C; color: #fff; }
+.umt-divider {
+  height: 1px;
+  background: var(--scene-border);
+  margin: 0 0 8px;
+}
+.umt-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.umt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.umt-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+.umt-val {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.umt-val--completed { color: #27AE60; }
+.umt-row--rate .umt-label { color: var(--text-secondary); }
+.umt-val--rate { color: var(--text-primary); font-size: 14px; }
 
 .regional-constellation {
   display: grid;

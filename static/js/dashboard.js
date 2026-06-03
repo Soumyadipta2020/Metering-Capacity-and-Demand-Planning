@@ -501,7 +501,8 @@ async function renderRegionalHeatmap(data) {
   const projection = createUkProjection(geoJson.features);
 
   const generateMapPanel = (metric) => {
-    const metricLabel = metric === 'booked' ? 'Complete vs booked' : 'Complete vs request';
+    const metricLabel = metric === 'booked' ? 'Success Rate - Completed vs Appointments Booked' : 'Success Rate - Completed vs Requested';
+    const denominatorLabel = metric === 'booked' ? 'Appointments Booked' : 'Requested';
     const denominatorFor = (r) => metric === 'booked' ? (r.bookings ?? r.requests ?? 0) : (r.requests || 0);
     const rateFor = (r) => {
       const denominator = denominatorFor(r);
@@ -522,11 +523,19 @@ async function renderRegionalHeatmap(data) {
     const selectedRateRange = Math.max(maxSelectedRate - minSelectedRate, 0.1);
     const toneForRate = (rate) => {
       const scaled = (rate - minSelectedRate) / selectedRateRange;
-      if (scaled >= 0.72) return 'strong';
-      if (scaled >= 0.48) return 'good';
-      if (scaled >= 0.24) return 'watch';
-      return 'risk';
+      if (scaled >= 0.83) return 'tier1';
+      if (scaled >= 0.66) return 'tier2';
+      if (scaled >= 0.50) return 'tier3';
+      if (scaled >= 0.33) return 'tier4';
+      if (scaled >= 0.16) return 'tier5';
+      return 'tier6';
     };
+    const fmtBp = v => v.toFixed(1) + '%';
+    const bp1 = minSelectedRate + 0.83 * selectedRateRange;
+    const bp2 = minSelectedRate + 0.66 * selectedRateRange;
+    const bp3 = minSelectedRate + 0.50 * selectedRateRange;
+    const bp4 = minSelectedRate + 0.33 * selectedRateRange;
+    const bp5 = minSelectedRate + 0.16 * selectedRateRange;
 
     const totalRequests = rows.reduce((sum, r) => sum + (r.requests || 0), 0);
     const totalBookings = rows.reduce((sum, r) => sum + (r.bookings || 0), 0);
@@ -570,13 +579,13 @@ async function renderRegionalHeatmap(data) {
       }
       const rate = region.selected_success_rate;
       const tone = toneForRate(rate);
-      const lossTotal = (region.cancellations || 0) + (region.aborts || 0);
-      const opacity = 0.70 + Math.min(0.24, ((region.bookings || 0) / maxBookings) * 0.24);
-      return `
-        <path class="uk-region ${tone}" style="--region-opacity:${opacity};" d="${path}">
-          <title>${feature.properties.name}, ${region.region_name || region.region_code}: ${IMSERV.fmt.pct(rate)} ${metricLabel.toLowerCase()}, ${IMSERV.fmt.num(region.bookings)} booked, ${IMSERV.fmt.num(lossTotal)} cancelled + aborted</title>
-        </path>
-      `;
+      const opacity = 0.78 + Math.min(0.20, ((region.bookings || 0) / maxBookings) * 0.20);
+      return `<path class="uk-region ${tone}" style="--region-opacity:${opacity};" d="${path}"
+        data-region-name="${(region.region_name || region.region_code).replace(/"/g, '&quot;')}"
+        data-rate="${rate.toFixed(2)}"
+        data-completed="${region.completions || 0}"
+        data-denominator="${denominatorFor(region)}"
+        data-denominator-label="${denominatorLabel}"></path>`;
     }).join('');
 
     const labelOffsets = {};
@@ -599,8 +608,8 @@ async function renderRegionalHeatmap(data) {
         <div class="uk-map-panel">
           <div class="uk-map-toolbar">
             <div>
-              <span>Success view</span>
-              <strong>${metricLabel}</strong>
+              <span>Success Rate</span>
+              <strong>${metric === 'booked' ? 'Completed vs Appointments Booked' : 'Completed vs Requested'}</strong>
             </div>
           </div>
           <div class="uk-map-stage">
@@ -611,14 +620,17 @@ async function renderRegionalHeatmap(data) {
             <div class="uk-network-card">
               <span>Network average</span>
               <strong>${IMSERV.fmt.pct(averageCompletion)}</strong>
-              <em>${IMSERV.fmt.num(totalCompletions)} completed / ${IMSERV.fmt.num(totalDenominator)} ${metric === 'booked' ? 'booked' : 'requests'}</em>
+              <em>${IMSERV.fmt.num(totalCompletions)} completed / ${IMSERV.fmt.num(totalDenominator)} ${metric === 'booked' ? 'booked' : 'requested'}</em>
             </div>
+            <div class="uk-map-tooltip" hidden></div>
           </div>
           <div class="uk-map-legend" aria-label="Success rate legend">
-            <span><i class="legend-strong"></i>Highest</span>
-            <span><i class="legend-good"></i>Above avg</span>
-            <span><i class="legend-watch"></i>Below avg</span>
-            <span><i class="legend-risk"></i>Lowest</span>
+            <span><i class="legend-tier1"></i>${fmtBp(bp1)} – ${fmtBp(maxSelectedRate)}</span>
+            <span><i class="legend-tier2"></i>${fmtBp(bp2)} – ${fmtBp(bp1)}</span>
+            <span><i class="legend-tier3"></i>${fmtBp(bp3)} – ${fmtBp(bp2)}</span>
+            <span><i class="legend-tier4"></i>${fmtBp(bp4)} – ${fmtBp(bp3)}</span>
+            <span><i class="legend-tier5"></i>${fmtBp(bp5)} – ${fmtBp(bp4)}</span>
+            <span><i class="legend-tier6"></i>${fmtBp(minSelectedRate)} – ${fmtBp(bp5)}</span>
           </div>
         </div>
       `,
@@ -637,6 +649,49 @@ async function renderRegionalHeatmap(data) {
       ${mapBooked.html}
     </div>
   `;
+
+  container.querySelectorAll('.uk-map-stage').forEach(stage => {
+    const svg = stage.querySelector('.uk-map-svg');
+    const tooltip = stage.querySelector('.uk-map-tooltip');
+    if (!svg || !tooltip) return;
+
+    svg.addEventListener('mouseover', (e) => {
+      const path = e.target.closest('.uk-region[data-region-name]');
+      if (!path) { tooltip.hidden = true; return; }
+      const name = path.dataset.regionName;
+      const rate = parseFloat(path.dataset.rate);
+      const completed = parseInt(path.dataset.completed, 10);
+      const denominator = parseInt(path.dataset.denominator, 10);
+      const denomLabel = path.dataset.denominatorLabel;
+      const toneClass = [...path.classList].find(c => c.startsWith('tier')) || '';
+      tooltip.innerHTML = `
+        <div class="umt-header">
+          <span class="umt-region">${name}</span>
+          <span class="umt-badge ${toneClass}">${rate.toFixed(1)}%</span>
+        </div>
+        <div class="umt-divider"></div>
+        <div class="umt-rows">
+          <div class="umt-row"><span class="umt-label">Completed</span><strong class="umt-val umt-val--completed">${IMSERV.fmt.num(completed)}</strong></div>
+          <div class="umt-row"><span class="umt-label">${denomLabel}</span><strong class="umt-val">${IMSERV.fmt.num(denominator)}</strong></div>
+          <div class="umt-row umt-row--rate"><span class="umt-label">Success Rate</span><strong class="umt-val umt-val--rate">${rate.toFixed(1)}%</strong></div>
+        </div>
+      `;
+      tooltip.hidden = false;
+    });
+
+    svg.addEventListener('mousemove', (e) => {
+      if (tooltip.hidden) return;
+      const rect = stage.getBoundingClientRect();
+      let x = e.clientX - rect.left + 16;
+      let y = e.clientY - rect.top - 16;
+      if (x + 210 > rect.width) x = e.clientX - rect.left - 226;
+      if (y < 4) y = 4;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top = y + 'px';
+    });
+
+    svg.addEventListener('mouseleave', () => { tooltip.hidden = true; });
+  });
 }
 
 function renderSupplierBehaviour(data) {
