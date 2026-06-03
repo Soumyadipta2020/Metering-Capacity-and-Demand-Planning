@@ -704,43 +704,89 @@ function renderSupplierBehaviour(data) {
     return;
   }
 
+  const fmt = IMSERV.fmt.num;
+
+  const segCfg = {
+    'Scale and stable':  { cls: 'seg-scale', icon: '▲' },
+    'High-volume watch': { cls: 'seg-watch', icon: '◉' },
+    'Efficient niche':   { cls: 'seg-niche', icon: '◆' },
+    'Needs attention':   { cls: 'seg-attn',  icon: '▼' },
+  };
+
+  const rateCol  = v => v >= 80 ? '#10b981' : v >= 60 ? '#f59e0b' : '#ef4444';
+  const abortCol = v => v <= 5  ? '#10b981' : v <= 15 ? '#f59e0b' : '#ef4444';
+  const contCol  = v => v >= 10 ? '#3b82f6' : v >= 5  ? '#6366f1' : '#8b5cf6';
+  const bkCol    = v => v >= 85 ? '#3b82f6' : v >= 65 ? '#6366f1' : '#8b5cf6';
+
   const cardsHtml = suppliers.map((r, i) => {
-    // If it's the last element and named "Others", don't show a rank number
-    const isOthers = r.supplier_name === "Others";
-    const rankStr = isOthers ? "—" : `#${i + 1}`;
-    
-    // Style logic
-    const successColor = r.visit_success_rate >= 70 ? '#028178' : r.visit_success_rate >= 50 ? '#F4D25A' : '#FB8281';
-    const falloutColor = r.fallout_rate <= 15 ? '#028178' : r.fallout_rate <= 25 ? '#F4D25A' : '#FB8281';
+    const isOthers  = r.supplier_name === "Others";
+    const rankStr   = isOthers ? '—' : `#${i + 1}`;
+    const seg       = segCfg[r.segment] || null;
+    const contPct   = r.contribution_pct || 0;
+    const contW     = Math.min(contPct, 100);
+    const bookW     = Math.min(r.booking_rate || 0, 100);
+    const succW     = Math.min(r.visit_success_rate || 0, 100);
+    const abortPct  = r.visits > 0 ? +((r.aborts / r.visits) * 100).toFixed(1) : 0;
+
+    const segBadge = seg && !isOthers
+      ? `<span class="sup-seg ${seg.cls}">${seg.icon} ${r.segment}</span>`
+      : '';
+
+    const contRow = `
+      <div class="sup-score-row">
+        <span class="sup-score-lbl">Contribution</span>
+        <div class="sup-score-track">
+          <div class="sup-score-fill" style="width:${contW}%;background:${contCol(contW)};"></div>
+        </div>
+        <span class="sup-score-num" style="color:${contCol(contW)};">${contPct}%</span>
+      </div>`;
 
     return `
-      <div class="rc-supplier-card">
-        <div class="rc-supplier-header">
-          <div class="rc-supplier-rank">${rankStr}</div>
-          <div class="rc-supplier-name" title="${journeyEscapeHtml(r.supplier_name)}">${journeyEscapeHtml(r.supplier_name)}</div>
-          <div class="rc-supplier-volume" title="Total Requests">Requests: ${IMSERV.fmt.num(r.requests)}</div>
+      <div class="sup-card${isOthers ? ' sup-card--others' : ''}" data-seg="${r.segment || ''}">
+        <div class="sup-card-hd">
+          <span class="sup-rank">${rankStr}</span>
+          <span class="sup-name" title="${journeyEscapeHtml(r.supplier_name)}">${journeyEscapeHtml(r.supplier_name)}</span>
+          ${segBadge}
         </div>
-        <div class="rc-supplier-main-metric">
-          <div class="rc-supplier-main-metric-label">
-            <span>Booked</span>
-            <span>${IMSERV.fmt.num(r.bookings)}</span>
+        ${contRow}
+        <div class="sup-pipeline">
+          <div class="sup-pipe-row">
+            <span class="sup-pipe-lbl">Booking Rate</span>
+            <div class="sup-pipe-track">
+              <div class="sup-pipe-fill" style="width:${bookW}%;background:${bkCol(bookW)};"></div>
+            </div>
+            <span class="sup-pipe-meta">${fmt(r.bookings)}&nbsp;<em style="color:${bkCol(bookW)};">${r.booking_rate}%</em></span>
           </div>
-          <div class="rc-supplier-bar-bg" style="position: relative; overflow: hidden; background: rgba(255, 255, 255, 0.08);">
-            <!-- Booked bar (total booked out of requests) -->
-            <div class="rc-supplier-bar-fill" style="position: absolute; top: 0; left: 0; height: 100%; width: ${r.booking_rate}%; background: #3498db; opacity: 0.4;" title="Booked (${r.booking_rate}%)"></div>
-            <!-- Completed bar (total completed out of requests) -->
-            <div class="rc-supplier-bar-fill" style="position: absolute; top: 0; left: 0; height: 100%; width: ${(r.completions / Math.max(r.requests, 1)) * 100}%; background: #2ecc71;" title="Completed (${((r.completions / Math.max(r.requests, 1)) * 100).toFixed(1)}%)"></div>
+          <div class="sup-pipe-row">
+            <span class="sup-pipe-lbl">Success Rate</span>
+            <div class="sup-pipe-track">
+              <div class="sup-pipe-fill" style="width:${succW}%;background:${rateCol(succW)};"></div>
+            </div>
+            <span class="sup-pipe-meta">${fmt(r.completions)}&nbsp;<em style="color:${rateCol(succW)};">${r.visit_success_rate}%</em></span>
           </div>
         </div>
-        <div class="rc-supplier-secondary-metrics">
-          <div class="rc-supplier-sec-metric">
-            <span>Successful Completions</span>
-            <strong>${IMSERV.fmt.num(r.completions)}</strong>
+        <div class="sup-stats">
+          <div class="sup-stat">
+            <span class="sup-stat-lbl">Requests</span>
+            <strong class="sup-stat-val">${fmt(r.requests)}</strong>
           </div>
-          <div class="rc-supplier-sec-metric" style="text-align: right;">
-            <span>Success Rate</span>
-            <strong style="color: ${successColor}">${r.visit_success_rate}%</strong>
+          <div class="sup-stat">
+            <span class="sup-stat-lbl">Abort Rate</span>
+            <strong class="sup-stat-val" style="color:${abortCol(abortPct)};">${abortPct}%</strong>
           </div>
+          <div class="sup-stat">
+            <span class="sup-stat-lbl">Cancellations</span>
+            <strong class="sup-stat-val">${fmt(r.cancellations)}</strong>
+          </div>
+          <div class="sup-stat">
+            <span class="sup-stat-lbl">Unresolved</span>
+            <strong class="sup-stat-val">${fmt(r.unresolved)}</strong>
+          </div>
+        </div>
+        <div class="sup-footer">
+          ${r.dominant_channel && !isOthers ? `<span class="sup-tag sup-tag--ch">${journeyEscapeHtml(r.dominant_channel)}</span>` : ''}
+          ${r.dominant_job_type && !isOthers ? `<span class="sup-tag sup-tag--jt">${journeyEscapeHtml(r.dominant_job_type)}</span>` : ''}
+          <span class="sup-tag sup-tag--ct">Contacts: ${fmt(r.contacts)}</span>
         </div>
       </div>
     `;
