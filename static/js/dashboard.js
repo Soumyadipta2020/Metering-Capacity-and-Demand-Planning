@@ -844,17 +844,18 @@ function renderDecompositionTree(data, container) {
   const totalCancelled = data.channels.reduce((s, c) => s + (c.cancelled || 0), 0);
   const totalAborted   = data.channels.reduce((s, c) => s + (c.aborted || 0), 0);
 
-  function makeNode(id, title, value, maxVal, colorClass, subPct, children, extra) {
+  function makeNode(id, title, value, maxVal, colorClass, subPct, children, extra, parentId) {
     subPct    = subPct    || '';
     children  = children  || [];
     extra     = extra     || '';
     const p          = maxVal > 0 ? Math.min((value / maxVal) * 100, 100) : 0;
     const childAttr  = children.length ? `data-children="${children.join(',')}"` : '';
+    const parentAttr = parentId ? `data-parent="${parentId}"` : '';
     const hidden     = id === 'node-total' ? '' : 'style="display:none;"';
     const clickable  = children.length ? 'clickable-node' : '';
     const pctBadge   = subPct ? `<span class="dnode-pct dnode-pct--${colorClass}">${subPct}</span>` : '';
     const extraHtml  = extra  ? `<div class="dnode-extra">${extra}</div>` : '';
-    return `<div class="decomp-node type-${colorClass} ${clickable}" id="${id}" data-color="${colorClass}" ${childAttr} ${hidden} onclick="toggleDecompNode('${id}')">
+    return `<div class="decomp-node type-${colorClass} ${clickable}" id="${id}" data-color="${colorClass}" ${childAttr} ${parentAttr} ${hidden} onclick="toggleDecompNode('${id}')">
       <div class="dnode-top"><span class="dnode-dot dnode-dot--${colorClass}"></span><span class="dnode-header">${title}</span></div>
       <div class="dnode-value-row"><strong class="dnode-value">${fmt(value)}</strong>${pctBadge}</div>
       ${extraHtml}
@@ -878,26 +879,29 @@ function renderDecompositionTree(data, container) {
       reg.booked, data.booked, 'blue',
       pct(reg.booked, data.booked),
       regChNodes,
-      `E2E: ${pct(reg.executed_successfully, reg.booked)}`
+      `E2E: ${pct(reg.executed_successfully, reg.booked)}`,
+      'node-booked'
     );
 
     (reg.channels || []).forEach((ch, cidx) => {
       const chId = `${regId}-ch-${cidx}`;
       col4 += makeNode(`node-${chId}`, ch.channel, ch.booked, reg.booked, 'blue',
         pct(ch.booked, reg.booked), [`node-${chId}-visited`, `node-${chId}-cancel`],
-        `E2E: ${pct(ch.executed_successfully, ch.booked)}`);
+        `E2E: ${pct(ch.executed_successfully, ch.booked)}`, `node-${regId}`);
       col5 += makeNode(`node-${chId}-visited`, 'Visited', ch.visited, ch.booked, 'blue',
-        pct(ch.visited, ch.booked), [`node-${chId}-success`, `node-${chId}-abort`]);
+        pct(ch.visited, ch.booked), [`node-${chId}-success`, `node-${chId}-abort`],
+        '', `node-${chId}`);
       col5 += makeNode(`node-${chId}-cancel`, 'Cancelled (D-1)', ch.cancelled, ch.booked, 'red',
-        pct(ch.cancelled, ch.booked));
+        pct(ch.cancelled, ch.booked), [], '', `node-${chId}`);
       col6 += makeNode(`node-${chId}-success`, 'Successful Visit', ch.successful_visit, ch.visited, 'green',
-        pct(ch.successful_visit, ch.visited), [`node-${chId}-executed`, `node-${chId}-unresolved`]);
+        pct(ch.successful_visit, ch.visited), [`node-${chId}-executed`, `node-${chId}-unresolved`],
+        '', `node-${chId}-visited`);
       col6 += makeNode(`node-${chId}-abort`, 'Aborted', ch.aborted, ch.visited, 'red',
-        pct(ch.aborted, ch.visited));
+        pct(ch.aborted, ch.visited), [], '', `node-${chId}-visited`);
       col7 += makeNode(`node-${chId}-executed`, 'Executed Successfully', ch.executed_successfully, ch.successful_visit, 'green',
-        pct(ch.executed_successfully, ch.successful_visit));
+        pct(ch.executed_successfully, ch.successful_visit), [], '', `node-${chId}-success`);
       col7 += makeNode(`node-${chId}-unresolved`, 'Unresolved', ch.unresolved, ch.successful_visit, 'amber',
-        pct(ch.unresolved, ch.successful_visit));
+        pct(ch.unresolved, ch.successful_visit), [], '', `node-${chId}-success`);
     });
   });
 
@@ -951,8 +955,8 @@ function renderDecompositionTree(data, container) {
       </div>
       <div class="decomp-col" id="col-2">
         <div class="decomp-stage-hdr decomp-stage-hdr--blue">Booking Outcome</div>
-        ${makeNode('node-booked', 'Appointments Booked', data.booked, data.total_loaded, 'blue', pct(data.booked, data.total_loaded), regionNodes)}
-        ${makeNode('node-notbooked', 'Not Booked', data.not_booked, data.total_loaded, 'red', pct(data.not_booked, data.total_loaded))}
+        ${makeNode('node-booked', 'Appointments Booked', data.booked, data.total_loaded, 'blue', pct(data.booked, data.total_loaded), regionNodes, '', 'node-total')}
+        ${makeNode('node-notbooked', 'Not Booked', data.not_booked, data.total_loaded, 'red', pct(data.not_booked, data.total_loaded), [], '', 'node-total')}
       </div>
       <div class="decomp-col" id="col-3">
         <div class="decomp-stage-hdr decomp-stage-hdr--blue">Region Split</div>
@@ -984,7 +988,7 @@ window.toggleDecompNode = function(id) {
   const node = document.getElementById(id);
   if (!node) return;
   const childrenAttr = node.getAttribute('data-children');
-  if (!childrenAttr) return; // Leaf node
+  if (!childrenAttr) return;
 
   const childrenIds = childrenAttr.split(',');
   const firstChild = document.getElementById(childrenIds[0]);
@@ -993,21 +997,36 @@ window.toggleDecompNode = function(id) {
   const isExpanded = firstChild.style.display !== 'none';
 
   if (isExpanded) {
-    // Collapse: hide all descendants
     hideDescendants(id);
     node.classList.remove('expanded');
   } else {
-    // Expand: show immediate children
+    // Accordion: collapse any expanded sibling (and its descendants) first
+    const parentId = node.getAttribute('data-parent');
+    if (parentId) {
+      const parentNode = document.getElementById(parentId);
+      if (parentNode) {
+        const siblingsAttr = parentNode.getAttribute('data-children');
+        if (siblingsAttr) {
+          siblingsAttr.split(',').forEach(sibId => {
+            if (sibId === id) return;
+            const sib = document.getElementById(sibId);
+            if (sib && sib.classList.contains('expanded')) {
+              hideDescendants(sibId);
+              sib.classList.remove('expanded');
+            }
+          });
+        }
+      }
+    }
+
+    // Show immediate children
     childrenIds.forEach(cid => {
       const cnode = document.getElementById(cid);
-      if (cnode) {
-        cnode.style.display = 'flex';
-      }
+      if (cnode) cnode.style.display = 'flex';
     });
     node.classList.add('expanded');
   }
 
-  // Redraw lines
   drawDecompLines();
 };
 
