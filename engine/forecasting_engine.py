@@ -644,63 +644,93 @@ def get_planning_target_kpis(region_code: str = None, year: int = 2025) -> dict:
 def get_decomposition_tree(region_code: str = None, year: int = 2025) -> dict:
     """Build the appointment journey decomposition tree data."""
     year_str = str(year)
-    total_loaded = 0
-    total_booked = 0
-    total_not_booked = 0
-    
-    channels = defaultdict(lambda: {
-        "bookings": 0,
-        "cancellations": 0,
-        "aborts": 0,
-        "completions": 0
-    })
+
+    # region_code -> channel -> raw counters
+    reg_ch = defaultdict(lambda: defaultdict(lambda: {
+        "bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0
+    }))
+    reg_loaded     = defaultdict(int)
+    reg_not_booked = defaultdict(int)
 
     for job in iter_jobs():
         if region_code and job.get("region_code") != region_code:
             continue
         if job.get("requested_date", "")[:4] != year_str or job.get("is_forecast", "0") != "0":
             continue
-            
-        total_loaded += 1
-        is_booked = bool(job.get("booked_date"))
-        if is_booked:
-            total_booked += 1
-            ch = job.get("primary_channel") or "Unknown"
-            status = job.get("status")
-            channels[ch]["bookings"] += 1
-            if status == "Cancelled":
-                channels[ch]["cancellations"] += 1
-            elif status == "Aborted":
-                channels[ch]["aborts"] += 1
-            elif status == "Completed":
-                channels[ch]["completions"] += 1
-        else:
-            total_not_booked += 1
 
-    channel_list = []
-    for ch, d in channels.items():
-        visits = max(d["bookings"] - d["cancellations"], 0)
-        successful_visits = max(visits - d["aborts"], 0)
-        completions = d["completions"]
-        unresolved = max(successful_visits - completions, 0)
-        
-        channel_list.append({
+        reg = job.get("region_code") or "Unknown"
+        reg_loaded[reg] += 1
+
+        if bool(job.get("booked_date")):
+            ch     = job.get("primary_channel") or "Unknown"
+            status = job.get("status")
+            reg_ch[reg][ch]["bookings"] += 1
+            if status == "Cancelled":
+                reg_ch[reg][ch]["cancellations"] += 1
+            elif status == "Aborted":
+                reg_ch[reg][ch]["aborts"] += 1
+            elif status == "Completed":
+                reg_ch[reg][ch]["completions"] += 1
+        else:
+            reg_not_booked[reg] += 1
+
+    def _build_channel(ch, d):
+        visits   = max(d["bookings"] - d["cancellations"], 0)
+        succ     = max(visits - d["aborts"], 0)
+        compl    = d["completions"]
+        return {
             "channel": ch,
             "booked": d["bookings"],
             "visited": visits,
             "cancelled": d["cancellations"],
-            "successful_visit": successful_visits,
+            "successful_visit": succ,
             "aborted": d["aborts"],
-            "executed_successfully": completions,
-            "unresolved": unresolved
+            "executed_successfully": compl,
+            "unresolved": max(succ - compl, 0),
+        }
+
+    # Build region list (each region carries its own channel breakdown)
+    region_list = []
+    channel_totals = defaultdict(lambda: {"bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0})
+
+    for reg in sorted(reg_loaded):
+        reg_channels = []
+        for ch, d in reg_ch[reg].items():
+            reg_channels.append(_build_channel(ch, d))
+            for k in ("bookings", "cancellations", "aborts", "completions"):
+                channel_totals[ch][k] += d[k]
+
+        reg_channels.sort(key=lambda x: -x["booked"])
+
+        region_list.append({
+            "region_code": reg,
+            "loaded":   reg_loaded[reg],
+            "booked":   sum(c["booked"]   for c in reg_channels),
+            "not_booked": reg_not_booked[reg],
+            "visited":  sum(c["visited"]  for c in reg_channels),
+            "cancelled": sum(c["cancelled"] for c in reg_channels),
+            "successful_visit": sum(c["successful_visit"] for c in reg_channels),
+            "aborted":  sum(c["aborted"]  for c in reg_channels),
+            "executed_successfully": sum(c["executed_successfully"] for c in reg_channels),
+            "unresolved": sum(c["unresolved"] for c in reg_channels),
+            "channels": reg_channels,
         })
-        
+
+    region_list.sort(key=lambda x: -x["booked"])
+
+    # Overall channel summary (aggregated across all regions)
+    channel_list = [_build_channel(ch, d) for ch, d in channel_totals.items()]
     channel_list.sort(key=lambda x: -x["booked"])
+
+    total_loaded    = sum(reg_loaded.values())
+    total_booked    = sum(r["booked"]     for r in region_list)
+    total_not_booked = sum(r["not_booked"] for r in region_list)
 
     return {
         "total_loaded": total_loaded,
-        "booked": total_booked,
-        "not_booked": total_not_booked,
-        "channels": channel_list
+        "booked":       total_booked,
+        "not_booked":   total_not_booked,
+        "channels":     channel_list,
+        "regions":      region_list,
     }
 

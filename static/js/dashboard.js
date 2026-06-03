@@ -789,76 +789,148 @@ async function loadDecompositionTree() {
 
 function renderDecompositionTree(data, container) {
   container.innerHTML = '';
-  
-  const fmt = (val) => val.toLocaleString();
-  const pct = (val, maxVal) => maxVal > 0 ? ((val/maxVal)*100).toFixed(1) + '%' : '0%';
 
-  let html = `<svg class="decomp-svg-layer" id="decomp-lines"></svg>`;
+  const fmt = IMSERV.fmt.num;
+  const pct = (v, d) => d > 0 ? ((v / d) * 100).toFixed(1) + '%' : '—';
 
-  // data-children will hold comma separated IDs of immediate children
-  function makeNode(id, title, value, maxVal, colorClass, subTitle="", children=[]) {
-    const p = maxVal ? (value / maxVal) * 100 : 0;
-    const childrenAttr = children.length > 0 ? `data-children="${children.join(',')}"` : '';
-    // Initially hide all nodes except the root
-    const isRoot = id === 'node-total';
-    const displayStyle = isRoot ? '' : 'style="display: none;"';
-    const clickableClass = children.length > 0 ? 'clickable-node' : '';
-    
-    return `
-      <div class="decomp-node ${clickableClass}" id="${id}" ${childrenAttr} ${displayStyle} onclick="toggleDecompNode('${id}')">
-        <div class="decomp-node-header">${title}</div>
-        <div class="decomp-node-value">${fmt(value)}</div>
-        <div class="decomp-node-sub">${subTitle}</div>
-        <div class="decomp-bar-container">
-          <div class="decomp-bar ${colorClass}" style="width: ${p}%"></div>
-        </div>
-      </div>
-    `;
+  const totalVisited   = data.channels.reduce((s, c) => s + (c.visited || 0), 0);
+  const totalExecuted  = data.channels.reduce((s, c) => s + (c.executed_successfully || 0), 0);
+  const totalCancelled = data.channels.reduce((s, c) => s + (c.cancelled || 0), 0);
+  const totalAborted   = data.channels.reduce((s, c) => s + (c.aborted || 0), 0);
+
+  function makeNode(id, title, value, maxVal, colorClass, subPct, children, extra) {
+    subPct    = subPct    || '';
+    children  = children  || [];
+    extra     = extra     || '';
+    const p          = maxVal > 0 ? Math.min((value / maxVal) * 100, 100) : 0;
+    const childAttr  = children.length ? `data-children="${children.join(',')}"` : '';
+    const hidden     = id === 'node-total' ? '' : 'style="display:none;"';
+    const clickable  = children.length ? 'clickable-node' : '';
+    const pctBadge   = subPct ? `<span class="dnode-pct dnode-pct--${colorClass}">${subPct}</span>` : '';
+    const extraHtml  = extra  ? `<div class="dnode-extra">${extra}</div>` : '';
+    return `<div class="decomp-node type-${colorClass} ${clickable}" id="${id}" data-color="${colorClass}" ${childAttr} ${hidden} onclick="toggleDecompNode('${id}')">
+      <div class="dnode-top"><span class="dnode-dot dnode-dot--${colorClass}"></span><span class="dnode-header">${title}</span></div>
+      <div class="dnode-value-row"><strong class="dnode-value">${fmt(value)}</strong>${pctBadge}</div>
+      ${extraHtml}
+      <div class="decomp-bar-container"><div class="decomp-bar ${colorClass}" style="width:${p.toFixed(1)}%"></div></div>
+    </div>`;
   }
 
-  const channelNodes = [];
-  data.channels.forEach((ch, idx) => { channelNodes.push(`node-ch-${idx}`); });
+  // Region nodes are the children of node-booked
+  const regionNodes = (data.regions || []).map((_, i) => `node-reg-${i}`);
 
-  // Col 1
-  html += `<div class="decomp-col" id="col-1">
-    ${makeNode('node-total', 'Customer Data Loaded', data.total_loaded, data.total_loaded, 'blue', '100%', ['node-booked', 'node-notbooked'])}
-  </div>`;
+  // Build columns: col3=Regions, col4=Channels(per region), col5=Visit Outcome, col6=Visit Result, col7=Execution
+  let col3 = '', col4 = '', col5 = '', col6 = '', col7 = '';
 
-  // Col 2
-  html += `<div class="decomp-col" id="col-2">
-    ${makeNode('node-booked', 'Appointments Booked', data.booked, data.total_loaded, 'blue', pct(data.booked, data.total_loaded), channelNodes)}
-    ${makeNode('node-notbooked', 'Not Booked', data.not_booked, data.total_loaded, 'amber', pct(data.not_booked, data.total_loaded))}
-  </div>`;
+  (data.regions || []).forEach((reg, ridx) => {
+    const regId  = `reg-${ridx}`;
+    const regChNodes = (reg.channels || []).map((_, cidx) => `node-${regId}-ch-${cidx}`);
 
-  // Channels
-  let col3 = '<div class="decomp-col" id="col-3">';
-  let col4 = '<div class="decomp-col" id="col-4">';
-  let col5 = '<div class="decomp-col" id="col-5">';
-  let col6 = '<div class="decomp-col" id="col-6">';
+    col3 += makeNode(
+      `node-${regId}`,
+      reg.region_code,
+      reg.booked, data.booked, 'blue',
+      pct(reg.booked, data.booked),
+      regChNodes,
+      `E2E: ${pct(reg.executed_successfully, reg.booked)}`
+    );
 
-  data.channels.forEach((ch, idx) => {
-    const chId = `ch-${idx}`;
-    col3 += makeNode(`node-${chId}`, `Channel: ${ch.channel}`, ch.booked, data.booked, 'blue', pct(ch.booked, data.booked), [`node-${chId}-visited`, `node-${chId}-cancel`]);
-    
-    col4 += makeNode(`node-${chId}-visited`, `Visited (${ch.channel})`, ch.visited, ch.booked, 'blue', pct(ch.visited, ch.booked), [`node-${chId}-success`, `node-${chId}-abort`]);
-    col4 += makeNode(`node-${chId}-cancel`, `Cancelled (${ch.channel})`, ch.cancelled, ch.booked, 'red', pct(ch.cancelled, ch.booked));
-
-    col5 += makeNode(`node-${chId}-success`, `Successful Visit`, ch.successful_visit, ch.visited, 'green', pct(ch.successful_visit, ch.visited), [`node-${chId}-executed`, `node-${chId}-unresolved`]);
-    col5 += makeNode(`node-${chId}-abort`, `Aborted`, ch.aborted, ch.visited, 'red', pct(ch.aborted, ch.visited));
-
-    col6 += makeNode(`node-${chId}-executed`, `Executed Successfully`, ch.executed_successfully, ch.successful_visit, 'green', pct(ch.executed_successfully, ch.successful_visit));
-    col6 += makeNode(`node-${chId}-unresolved`, `Unresolved`, ch.unresolved, ch.successful_visit, 'amber', pct(ch.unresolved, ch.successful_visit));
+    (reg.channels || []).forEach((ch, cidx) => {
+      const chId = `${regId}-ch-${cidx}`;
+      col4 += makeNode(`node-${chId}`, ch.channel, ch.booked, reg.booked, 'blue',
+        pct(ch.booked, reg.booked), [`node-${chId}-visited`, `node-${chId}-cancel`],
+        `E2E: ${pct(ch.executed_successfully, ch.booked)}`);
+      col5 += makeNode(`node-${chId}-visited`, 'Visited', ch.visited, ch.booked, 'blue',
+        pct(ch.visited, ch.booked), [`node-${chId}-success`, `node-${chId}-abort`]);
+      col5 += makeNode(`node-${chId}-cancel`, 'Cancelled (D-1)', ch.cancelled, ch.booked, 'red',
+        pct(ch.cancelled, ch.booked));
+      col6 += makeNode(`node-${chId}-success`, 'Successful Visit', ch.successful_visit, ch.visited, 'green',
+        pct(ch.successful_visit, ch.visited), [`node-${chId}-executed`, `node-${chId}-unresolved`]);
+      col6 += makeNode(`node-${chId}-abort`, 'Aborted', ch.aborted, ch.visited, 'red',
+        pct(ch.aborted, ch.visited));
+      col7 += makeNode(`node-${chId}-executed`, 'Executed Successfully', ch.executed_successfully, ch.successful_visit, 'green',
+        pct(ch.executed_successfully, ch.successful_visit));
+      col7 += makeNode(`node-${chId}-unresolved`, 'Unresolved', ch.unresolved, ch.successful_visit, 'amber',
+        pct(ch.unresolved, ch.successful_visit));
+    });
   });
 
-  col3 += '</div>';
-  col4 += '</div>';
-  col5 += '</div>';
-  col6 += '</div>';
+  container.innerHTML = `
+    <div class="decomp-summary">
+      <div class="dsum-step">
+        <span class="dsum-label">Data Loaded</span>
+        <strong class="dsum-val">${fmt(data.total_loaded)}</strong>
+      </div>
+      <span class="dsum-arrow">→</span>
+      <div class="dsum-step">
+        <span class="dsum-label">Booked</span>
+        <strong class="dsum-val">${fmt(data.booked)}</strong>
+        <span class="dsum-rate dsum-rate--blue">${pct(data.booked, data.total_loaded)}</span>
+      </div>
+      <span class="dsum-arrow">→</span>
+      <div class="dsum-step">
+        <span class="dsum-label">Visited</span>
+        <strong class="dsum-val">${fmt(totalVisited)}</strong>
+        <span class="dsum-rate dsum-rate--blue">${pct(totalVisited, data.booked)}</span>
+      </div>
+      <span class="dsum-arrow">→</span>
+      <div class="dsum-step">
+        <span class="dsum-label">Executed</span>
+        <strong class="dsum-val">${fmt(totalExecuted)}</strong>
+        <span class="dsum-rate dsum-rate--green">${pct(totalExecuted, data.booked)}</span>
+      </div>
+      <div class="dsum-sep"></div>
+      <div class="dsum-e2e">
+        <span class="dsum-label">End-to-End Rate</span>
+        <strong class="dsum-e2e-val">${pct(totalExecuted, data.total_loaded)}</strong>
+        <span class="dsum-label">Loaded → Executed</span>
+      </div>
+      <div class="dsum-sep"></div>
+      <div class="dsum-step">
+        <span class="dsum-label">D-1 Cancellations</span>
+        <strong class="dsum-val dsum-val--red">${fmt(totalCancelled)}</strong>
+        <span class="dsum-rate dsum-rate--red">${pct(totalCancelled, data.booked)}</span>
+      </div>
+      <div class="dsum-step">
+        <span class="dsum-label">Same-Day Aborts</span>
+        <strong class="dsum-val dsum-val--red">${fmt(totalAborted)}</strong>
+        <span class="dsum-rate dsum-rate--red">${pct(totalAborted, totalVisited)}</span>
+      </div>
+    </div>
+    <div class="decomp-cols-area" id="decomp-cols-area">
+      <svg class="decomp-svg-layer" id="decomp-lines"></svg>
+      <div class="decomp-col" id="col-1">
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Dialler Load</div>
+        ${makeNode('node-total', 'Customer Data Loaded', data.total_loaded, data.total_loaded, 'blue', '100%', ['node-booked', 'node-notbooked'])}
+      </div>
+      <div class="decomp-col" id="col-2">
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Booking Outcome</div>
+        ${makeNode('node-booked', 'Appointments Booked', data.booked, data.total_loaded, 'blue', pct(data.booked, data.total_loaded), regionNodes)}
+        ${makeNode('node-notbooked', 'Not Booked', data.not_booked, data.total_loaded, 'red', pct(data.not_booked, data.total_loaded))}
+      </div>
+      <div class="decomp-col" id="col-3">
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Region Split</div>
+        ${col3}
+      </div>
+      <div class="decomp-col" id="col-4">
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Channel Split</div>
+        ${col4}
+      </div>
+      <div class="decomp-col" id="col-5">
+        <div class="decomp-stage-hdr decomp-stage-hdr--mixed">Visit Outcome</div>
+        ${col5}
+      </div>
+      <div class="decomp-col" id="col-6">
+        <div class="decomp-stage-hdr decomp-stage-hdr--mixed">Visit Result</div>
+        ${col6}
+      </div>
+      <div class="decomp-col" id="col-7">
+        <div class="decomp-stage-hdr decomp-stage-hdr--green">Execution</div>
+        ${col7}
+      </div>
+    </div>
+  `;
 
-  html += col3 + col4 + col5 + col6;
-  container.innerHTML = html;
-
-  // Draw lines after render
   setTimeout(() => drawDecompLines(), 50);
 }
 
@@ -911,56 +983,62 @@ function hideDescendants(id) {
 }
 
 function drawDecompLines() {
-  const svg = document.getElementById('decomp-lines');
-  const container = document.getElementById('decomposition-tree-container');
-  if (!svg || !container) return;
-  
-  const rectC = container.getBoundingClientRect();
+  const svg      = document.getElementById('decomp-lines');
+  const colsArea = document.getElementById('decomp-cols-area');
+  if (!svg || !colsArea) return;
+
+  const rectC = colsArea.getBoundingClientRect();
   svg.innerHTML = '';
+
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  svg.appendChild(defs);
+
+  const colorMap = { blue: '#3b82f6', green: '#10b981', amber: '#f59e0b', red: '#ef4444' };
+  let gi = 0;
 
   function connect(id1, id2) {
     const el1 = document.getElementById(id1);
     const el2 = document.getElementById(id2);
-    // Only connect if both are visible
     if (!el1 || !el2 || el1.style.display === 'none' || el2.style.display === 'none') return;
-    
+
     const r1 = el1.getBoundingClientRect();
     const r2 = el2.getBoundingClientRect();
+    const x1 = r1.right  - rectC.left + colsArea.scrollLeft;
+    const y1 = r1.top    + r1.height / 2 - rectC.top  + colsArea.scrollTop;
+    const x2 = r2.left   - rectC.left + colsArea.scrollLeft;
+    const y2 = r2.top    + r2.height / 2 - rectC.top  + colsArea.scrollTop;
 
-    const x1 = r1.right - rectC.left + container.scrollLeft;
-    const y1 = r1.top + r1.height/2 - rectC.top + container.scrollTop;
-    const x2 = r2.left - rectC.left + container.scrollLeft;
-    const y2 = r2.top + r2.height/2 - rectC.top + container.scrollTop;
+    const c1  = colorMap[el1.dataset.color] || '#64748b';
+    const c2  = colorMap[el2.dataset.color] || c1;
+    const gid = `dg${gi++}`;
 
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    const cpX1 = x1 + (x2 - x1) / 2;
-    const cpX2 = x1 + (x2 - x1) / 2;
-    
-    path.setAttribute("d", `M ${x1} ${y1} C ${cpX1} ${y1}, ${cpX2} ${y2}, ${x2} ${y2}`);
+    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+    grad.setAttribute('id', gid);
+    grad.setAttribute('x1', '0%'); grad.setAttribute('y1', '0%');
+    grad.setAttribute('x2', '100%'); grad.setAttribute('y2', '0%');
+    grad.innerHTML = `<stop offset="0%" stop-color="${c1}" stop-opacity="0.6"/>
+                      <stop offset="100%" stop-color="${c2}" stop-opacity="0.6"/>`;
+    defs.appendChild(grad);
+
+    const mx   = x1 + (x2 - x1) / 2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`);
+    path.setAttribute('stroke', `url(#${gid})`);
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-linecap', 'round');
     svg.appendChild(path);
   }
 
-  // Iterate over all nodes to draw lines to their visible children
   document.querySelectorAll('.decomp-node').forEach(node => {
     if (node.style.display !== 'none') {
-       const childrenAttr = node.getAttribute('data-children');
-       if (childrenAttr) {
-         childrenAttr.split(',').forEach(cid => {
-            connect(node.id, cid);
-         });
-       }
+      const ch = node.getAttribute('data-children');
+      if (ch) ch.split(',').forEach(cid => connect(node.id, cid));
     }
   });
 }
 
 
-// Redraw lines on window resize or scroll
 window.addEventListener('resize', () => {
-  const container = document.getElementById('decomposition-tree-container');
-  if (container && container.innerHTML.includes('decomp-node')) {
-    // Re-fetch data? or just redraw
-    // We don't have data globally stored in a clean way in this snippet, 
-    // but we can trigger a reload or re-draw. 
-    loadDecompositionTree();
-  }
+  if (document.getElementById('decomp-cols-area')) drawDecompLines();
 });

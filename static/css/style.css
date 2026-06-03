@@ -6392,18 +6392,103 @@ body {
 }
 
 /* Decomposition Tree */
+/* ── Decomposition Tree ────────────────────────────────────── */
 .decomp-tree-container {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  overflow-x: auto;
-  padding: 20px;
-  min-height: 400px;
+  flex-direction: column;
   position: relative;
-  gap: 60px;
+  min-height: 360px;
+  overflow: hidden;
 }
 
+/* ── Summary strip ─────────────────────────────────────────── */
+.decomp-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--scene-border);
+  background: var(--scene-surface-soft);
+  flex-shrink: 0;
+}
+.dsum-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.dsum-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.dsum-val {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.dsum-val--red { color: #c0392b; }
+[data-theme="dark"] .dsum-val--red { color: #f87171; }
+.dsum-rate {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.dsum-rate--blue  { background: rgba(59,130,246,0.14);  color: #1e40af; }
+.dsum-rate--green { background: rgba(16,185,129,0.14);  color: #065f46; }
+.dsum-rate--red   { background: rgba(239,68,68,0.14);   color: #991b1b; }
+[data-theme="dark"] .dsum-rate--blue  { color: #93c5fd; }
+[data-theme="dark"] .dsum-rate--green { color: #6ee7b7; }
+[data-theme="dark"] .dsum-rate--red   { color: #fca5a5; }
+.dsum-arrow {
+  font-size: 16px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  line-height: 1;
+  align-self: center;
+  margin-top: 14px;
+}
+.dsum-sep {
+  width: 1px;
+  height: 36px;
+  background: var(--border);
+  align-self: center;
+  margin: 0 4px;
+}
+.dsum-e2e {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+}
+.dsum-e2e-val {
+  font-size: 22px;
+  font-weight: 900;
+  color: #028178;
+  line-height: 1;
+}
+[data-theme="dark"] .dsum-e2e-val { color: #6ee7b7; }
+
+/* ── Scrollable columns area ───────────────────────────────── */
+.decomp-cols-area {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding: 20px 24px 24px;
+  position: relative;
+  gap: 44px;
+  flex: 1;
+  min-height: 320px;
+}
+
+/* ── SVG connector lines ───────────────────────────────────── */
 .decomp-svg-layer {
   position: absolute;
   top: 0;
@@ -6412,109 +6497,169 @@ body {
   height: 100%;
   pointer-events: none;
   z-index: 1;
+  overflow: visible;
 }
 
-.decomp-svg-layer path {
-  fill: none;
-  stroke: var(--border);
-  stroke-width: 2px;
-  stroke-opacity: 0.5;
-  transition: stroke 0.3s ease;
-}
-
+/* ── Stage column headers ──────────────────────────────────── */
 .decomp-col {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   z-index: 2;
   position: relative;
+  flex-shrink: 0;
 }
-
-.decomp-node {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  min-width: 180px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  transition: border-color 0.2s ease, transform 0.2s ease;
-}
-.decomp-node:hover {
-  border-color: var(--primary);
-  transform: translateY(-2px);
-}
-.decomp-node:hover + .decomp-svg-layer path {
-  /* We will handle highlighting via JS */
-}
-
-.decomp-node-header {
-  font-size: 11px;
+.decomp-stage-hdr {
+  font-size: 10px;
+  font-weight: 800;
   text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  margin-bottom: 4px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-}
-
-.decomp-node-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text);
+  padding: 0 0 4px 12px;
+  border-left: 2px solid var(--border);
+  white-space: nowrap;
   margin-bottom: 2px;
 }
+.decomp-stage-hdr--blue  { border-left-color: #3b82f6; color: #1e40af; }
+.decomp-stage-hdr--green { border-left-color: #10b981; color: #065f46; }
+.decomp-stage-hdr--mixed { border-left-color: var(--border); }
+[data-theme="dark"] .decomp-stage-hdr--blue  { color: rgba(147,197,253,0.90); }
+[data-theme="dark"] .decomp-stage-hdr--green { color: rgba(110,231,183,0.90); }
 
-.decomp-node-sub {
-  font-size: 12px;
+/* ── Node cards ────────────────────────────────────────────── */
+.decomp-node {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: 8px;
+  padding: 12px 14px 11px;
+  min-width: 175px;
+  max-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  position: relative;
+  transition: background 0.18s, transform 0.18s, box-shadow 0.18s;
+  box-shadow: var(--shadow-sm);
+}
+.decomp-node:hover {
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.decomp-node.type-blue  { border-left-color: #3b82f6; }
+.decomp-node.type-green { border-left-color: #10b981; }
+.decomp-node.type-amber { border-left-color: #f59e0b; }
+.decomp-node.type-red   { border-left-color: #ef4444; }
+
+/* Node top row: dot + label */
+.dnode-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-right: 22px;
+}
+.dnode-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dnode-dot--blue  { background: #3b82f6; box-shadow: 0 0 5px rgba(59,130,246,0.5); }
+.dnode-dot--green { background: #10b981; box-shadow: 0 0 5px rgba(16,185,129,0.5); }
+.dnode-dot--amber { background: #f59e0b; box-shadow: 0 0 5px rgba(245,158,11,0.5); }
+.dnode-dot--red   { background: #ef4444; box-shadow: 0 0 5px rgba(239,68,68,0.5); }
+.dnode-header {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  line-height: 1.3;
 }
 
+/* Value + percentage badge on same row */
+.dnode-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dnode-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.dnode-pct {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.dnode-pct--blue  { background: rgba(59,130,246,0.12);  color: #1e40af; }
+.dnode-pct--green { background: rgba(16,185,129,0.12);  color: #065f46; }
+.dnode-pct--amber { background: rgba(245,158,11,0.12);  color: #78350f; }
+.dnode-pct--red   { background: rgba(239,68,68,0.12);   color: #991b1b; }
+[data-theme="dark"] .dnode-pct--blue  { color: #93c5fd; }
+[data-theme="dark"] .dnode-pct--green { color: #6ee7b7; }
+[data-theme="dark"] .dnode-pct--amber { color: #fcd34d; }
+[data-theme="dark"] .dnode-pct--red   { color: #fca5a5; }
+
+/* Extra detail line (e.g. E2E rate) */
+.dnode-extra {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+
+/* Progress bar */
 .decomp-bar-container {
-  height: 4px;
-  background: var(--bg);
-  border-radius: 2px;
+  height: 5px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
   overflow: hidden;
-  margin-top: auto;
+  margin-top: 2px;
 }
-
+[data-theme="dark"] .decomp-bar-container { background: rgba(255,255,255,0.10); }
 .decomp-bar {
   height: 100%;
-  border-radius: 2px;
+  border-radius: 3px;
+  transition: width 0.4s ease;
 }
+.decomp-bar.blue  { background: linear-gradient(90deg, #2563eb, #3b82f6); }
+.decomp-bar.green { background: linear-gradient(90deg, #059669, #10b981); }
+.decomp-bar.amber { background: linear-gradient(90deg, #d97706, #f59e0b); }
+.decomp-bar.red   { background: linear-gradient(90deg, #dc2626, #ef4444); }
 
-/* Colors for progress bars */
-.decomp-bar.blue { background-color: #3b82f6; }
-.decomp-bar.green { background-color: #10b981; }
-.decomp-bar.amber { background-color: #f59e0b; }
-.decomp-bar.red { background-color: #ef4444; }
-.decomp-bar.purple { background-color: #8b5cf6; }
-
-
-
+/* Expand / collapse toggle */
 .clickable-node {
   cursor: pointer;
 }
 .clickable-node::after {
-  content: '+';
+  content: '›';
   position: absolute;
   top: 10px;
   right: 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
   width: 18px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: 50%;
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
   line-height: 1;
-  font-weight: bold;
+  font-weight: 700;
+  transition: transform 0.2s ease, background 0.18s;
+}
+.clickable-node:hover::after {
+  border-color: var(--brand-accent);
+  color: var(--brand-accent);
 }
 .clickable-node.expanded::after {
-  content: '-';
+  transform: rotate(90deg);
 }
