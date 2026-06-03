@@ -64,12 +64,15 @@ for feat in data['features']:
 new_features = []
 for code, polys in region_polygons.items():
     merged = unary_union([p.buffer(0) for p in polys])
+    rep_point = merged.representative_point()
     new_features.append({
         'type': 'Feature',
         'properties': {
             'region': region_names[code],
             'name': display_names[code],
-            'region_code': code
+            'region_code': code,
+            'label_lon': rep_point.x,
+            'label_lat': rep_point.y
         },
         'geometry': mapping(merged)
     })

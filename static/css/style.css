@@ -2095,7 +2095,7 @@ body {
 
 .uk-region-dashboard {
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) 260px;
+  grid-template-columns: 1fr 1fr;
   align-items: stretch;
   gap: 10px;
 }
@@ -2231,8 +2231,8 @@ body {
 
 .uk-network-card {
   position: absolute;
-  right: 12px;
-  bottom: 8px;
+  left: 12px;
+  top: 12px;
   width: min(200px, calc(100% - 24px));
   border: 1px solid var(--border);
   border-radius: 8px;

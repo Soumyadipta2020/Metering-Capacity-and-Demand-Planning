@@ -488,46 +488,6 @@ async function renderRegionalHeatmap(data) {
   }
 
   _lastRegionalHeatmapData = data;
-
-  const metric = _regionalSuccessView === 'booked' ? 'booked' : 'requests';
-  const metricLabel = metric === 'booked' ? 'Complete vs booked' : 'Complete vs request';
-  const denominatorFor = (r) => metric === 'booked' ? (r.bookings ?? r.requests ?? 0) : (r.requests || 0);
-  const rateFor = (r) => {
-    const denominator = denominatorFor(r);
-    return denominator ? ((r.completions || 0) / denominator) * 100 : 0;
-  };
-  let toneForRate = () => 'good';
-
-  const rows = [...data]
-    .map(r => ({
-      ...r,
-      bookings: r.bookings ?? r.requests ?? 0,
-      selected_success_rate: rateFor(r),
-    }))
-    .sort((a, b) => b.selected_success_rate - a.selected_success_rate);
-  const selectedRates = rows.map(r => r.selected_success_rate);
-  const minSelectedRate = Math.min(...selectedRates);
-  const maxSelectedRate = Math.max(...selectedRates);
-  const selectedRateRange = Math.max(maxSelectedRate - minSelectedRate, 0.1);
-  toneForRate = (rate) => {
-    const scaled = (rate - minSelectedRate) / selectedRateRange;
-    if (scaled >= 0.72) return 'strong';
-    if (scaled >= 0.48) return 'good';
-    if (scaled >= 0.24) return 'watch';
-    return 'risk';
-  };
-
-  const totalRequests = rows.reduce((sum, r) => sum + (r.requests || 0), 0);
-  const totalBookings = rows.reduce((sum, r) => sum + (r.bookings || 0), 0);
-  const totalCompletions = rows.reduce((sum, r) => sum + (r.completions || 0), 0);
-  const totalLosses = rows.reduce((sum, r) => sum + (r.cancellations || 0) + (r.aborts || 0), 0);
-  const totalDenominator = metric === 'booked' ? totalBookings : totalRequests;
-  const averageCompletion = totalDenominator ? (totalCompletions / totalDenominator) * 100 : 0;
-  const strongest = rows[0];
-  const watch = rows[rows.length - 1];
-  const busiest = rows.reduce((best, r) => (r.bookings || 0) > (best.bookings || 0) ? r : best, rows[0]);
-  const maxBookings = Math.max(...rows.map(r => r.bookings || 0), 1);
-
   container.innerHTML = '<div class="loading"><span class="spinner"></span> Loading UK map...</div>';
 
   let geoJson;
@@ -538,122 +498,145 @@ async function renderRegionalHeatmap(data) {
     return;
   }
 
-  const regionByCode = Object.fromEntries(rows.map(row => [row.region_code, row]));
   const projection = createUkProjection(geoJson.features);
-  const labelBuckets = {};
-  const shapes = geoJson.features.map(feature => {
-    const code = boundaryRegionCode(feature);
-    const region = code ? regionByCode[code] : null;
-    const path = geometryToSvgPath(feature.geometry, projection.project);
-    const featurePoints = collectGeoCoordinates(feature.geometry, []);
-    if (region && featurePoints.length) {
-      const bucket = labelBuckets[code] || (labelBuckets[code] = { x: 0, y: 0, count: 0 });
-      const centroid = featurePoints.reduce(
-        (sum, point) => [sum[0] + point[0], sum[1] + point[1]],
-        [0, 0],
-      ).map(total => total / featurePoints.length);
-      const [x, y] = projection.project(centroid);
-      bucket.x += x;
-      bucket.y += y;
-      bucket.count += 1;
-    }
-    if (!region) {
-      return `<path class="uk-map-context" d="${path}"></path>`;
-    }
-    const rate = region.selected_success_rate;
-    const tone = toneForRate(rate);
-    const lossTotal = (region.cancellations || 0) + (region.aborts || 0);
-    const opacity = 0.70 + Math.min(0.24, ((region.bookings || 0) / maxBookings) * 0.24);
-    return `
-      <path class="uk-region ${tone}" style="--region-opacity:${opacity};" d="${path}">
-        <title>${feature.properties.name}, ${region.region_name || region.region_code}: ${IMSERV.fmt.pct(rate)} ${metricLabel.toLowerCase()}, ${IMSERV.fmt.num(region.bookings)} booked, ${IMSERV.fmt.num(lossTotal)} cancelled + aborted</title>
-      </path>
-    `;
-  }).join('');
 
-  const labelOffsets = {
-    SCO: { x: 15, y: 40 },
-    NW: { x: -2, y: -10 },
-    NE: { x: -8, y: 10 },
-    YRK: { x: -15, y: 25 },
-    MID: { x: -10, y: 10 },
-    WAL: { x: 10, y: 20 },
-    SW: { x: 20, y: -10 },
-    SE: { x: -25, y: -5 },
+  const generateMapPanel = (metric) => {
+    const metricLabel = metric === 'booked' ? 'Complete vs booked' : 'Complete vs request';
+    const denominatorFor = (r) => metric === 'booked' ? (r.bookings ?? r.requests ?? 0) : (r.requests || 0);
+    const rateFor = (r) => {
+      const denominator = denominatorFor(r);
+      return denominator ? ((r.completions || 0) / denominator) * 100 : 0;
+    };
+
+    const rows = [...data]
+      .map(r => ({
+        ...r,
+        bookings: r.bookings ?? r.requests ?? 0,
+        selected_success_rate: rateFor(r),
+      }))
+      .sort((a, b) => b.selected_success_rate - a.selected_success_rate);
+
+    const selectedRates = rows.map(r => r.selected_success_rate);
+    const minSelectedRate = Math.min(...selectedRates);
+    const maxSelectedRate = Math.max(...selectedRates);
+    const selectedRateRange = Math.max(maxSelectedRate - minSelectedRate, 0.1);
+    const toneForRate = (rate) => {
+      const scaled = (rate - minSelectedRate) / selectedRateRange;
+      if (scaled >= 0.72) return 'strong';
+      if (scaled >= 0.48) return 'good';
+      if (scaled >= 0.24) return 'watch';
+      return 'risk';
+    };
+
+    const totalRequests = rows.reduce((sum, r) => sum + (r.requests || 0), 0);
+    const totalBookings = rows.reduce((sum, r) => sum + (r.bookings || 0), 0);
+    const totalCompletions = rows.reduce((sum, r) => sum + (r.completions || 0), 0);
+    const totalDenominator = metric === 'booked' ? totalBookings : totalRequests;
+    const averageCompletion = totalDenominator ? (totalCompletions / totalDenominator) * 100 : 0;
+    const maxBookings = Math.max(...rows.map(r => r.bookings || 0), 1);
+    
+    const regionByCode = Object.fromEntries(rows.map(row => [row.region_code, row]));
+    const labelBuckets = {};
+
+    const shapes = geoJson.features.map(feature => {
+      const code = boundaryRegionCode(feature);
+      const region = code ? regionByCode[code] : null;
+      const path = geometryToSvgPath(feature.geometry, projection.project);
+      
+      if (region) {
+        const bucket = labelBuckets[code] || (labelBuckets[code] = { x: 0, y: 0, count: 0 });
+        if (feature.properties.label_lon !== undefined) {
+          const [x, y] = projection.project([feature.properties.label_lon, feature.properties.label_lat]);
+          bucket.x = x;
+          bucket.y = y;
+          bucket.count = 1;
+        } else {
+          const featurePoints = collectGeoCoordinates(feature.geometry, []);
+          if (featurePoints.length) {
+            const centroid = featurePoints.reduce(
+              (sum, point) => [sum[0] + point[0], sum[1] + point[1]],
+              [0, 0],
+            ).map(total => total / featurePoints.length);
+            const [x, y] = projection.project(centroid);
+            bucket.x += x;
+            bucket.y += y;
+            bucket.count += 1;
+          }
+        }
+      }
+      
+      if (!region) {
+        return `<path class="uk-map-context" d="${path}"></path>`;
+      }
+      const rate = region.selected_success_rate;
+      const tone = toneForRate(rate);
+      const lossTotal = (region.cancellations || 0) + (region.aborts || 0);
+      const opacity = 0.70 + Math.min(0.24, ((region.bookings || 0) / maxBookings) * 0.24);
+      return `
+        <path class="uk-region ${tone}" style="--region-opacity:${opacity};" d="${path}">
+          <title>${feature.properties.name}, ${region.region_name || region.region_code}: ${IMSERV.fmt.pct(rate)} ${metricLabel.toLowerCase()}, ${IMSERV.fmt.num(region.bookings)} booked, ${IMSERV.fmt.num(lossTotal)} cancelled + aborted</title>
+        </path>
+      `;
+    }).join('');
+
+    const labelOffsets = {};
+    
+    const labels = Object.entries(labelBuckets).map(([code, bucket]) => {
+      const region = regionByCode[code];
+      const offset = labelOffsets[code] || { x: 0, y: 0 };
+      const x = (bucket.x / bucket.count) + offset.x;
+      const y = (bucket.y / bucket.count) + offset.y;
+      return `
+        <g class="uk-region-label">
+          <text x="${x.toFixed(1)}" y="${(y - 7).toFixed(1)}">${code}</text>
+          <text class="uk-region-rate" x="${x.toFixed(1)}" y="${(y + 9).toFixed(1)}">${IMSERV.fmt.pct(region.selected_success_rate)}</text>
+        </g>
+      `;
+    }).join('');
+
+    return {
+      html: `
+        <div class="uk-map-panel">
+          <div class="uk-map-toolbar">
+            <div>
+              <span>Success view</span>
+              <strong>${metricLabel}</strong>
+            </div>
+          </div>
+          <div class="uk-map-stage">
+            <svg class="uk-map-svg" viewBox="0 0 ${projection.width} ${projection.height}" role="img" aria-label="UK regional success rate map" preserveAspectRatio="xMidYMid meet">
+              ${shapes}
+              ${labels}
+            </svg>
+            <div class="uk-network-card">
+              <span>Network average</span>
+              <strong>${IMSERV.fmt.pct(averageCompletion)}</strong>
+              <em>${IMSERV.fmt.num(totalCompletions)} completed / ${IMSERV.fmt.num(totalDenominator)} ${metric === 'booked' ? 'booked' : 'requests'}</em>
+            </div>
+          </div>
+          <div class="uk-map-legend" aria-label="Success rate legend">
+            <span><i class="legend-strong"></i>Highest</span>
+            <span><i class="legend-good"></i>Above avg</span>
+            <span><i class="legend-watch"></i>Below avg</span>
+            <span><i class="legend-risk"></i>Lowest</span>
+          </div>
+        </div>
+      `,
+      rows,
+      metricLabel,
+      totalLosses: rows.reduce((sum, r) => sum + (r.cancellations || 0) + (r.aborts || 0), 0)
+    };
   };
-  const labels = Object.entries(labelBuckets).map(([code, bucket]) => {
-    const region = regionByCode[code];
-    const offset = labelOffsets[code] || { x: 0, y: 0 };
-    const x = (bucket.x / bucket.count) + offset.x;
-    const y = (bucket.y / bucket.count) + offset.y;
-    return `
-      <g class="uk-region-label">
-        <text x="${x.toFixed(1)}" y="${(y - 7).toFixed(1)}">${code}</text>
-        <text class="uk-region-rate" x="${x.toFixed(1)}" y="${(y + 9).toFixed(1)}">${IMSERV.fmt.pct(region.selected_success_rate)}</text>
-      </g>
-    `;
-  }).join('');
 
-  const focus = [
-    { label: 'Strongest', region: strongest, metric: IMSERV.fmt.pct(strongest.selected_success_rate) },
-    { label: 'Needs focus', region: watch, metric: IMSERV.fmt.pct(watch.selected_success_rate) },
-    { label: 'Highest appointments booked', region: busiest, metric: IMSERV.fmt.num(busiest.bookings) },
-  ].map(item => `
-    <div class="region-focus-item">
-      <span>${item.label}</span>
-      <strong>${item.region.region_name || item.region.region_code}</strong>
-      <em>${item.metric}</em>
-    </div>
-  `).join('');
+  const mapRequest = generateMapPanel('requests');
+  const mapBooked = generateMapPanel('booked');
 
   container.innerHTML = `
     <div class="uk-region-dashboard">
-      <div class="uk-map-panel">
-        <div class="uk-map-toolbar">
-          <div>
-            <span>Success view</span>
-            <strong>${metricLabel}</strong>
-          </div>
-          <div class="uk-map-toggle" role="tablist" aria-label="Regional success rate view">
-            <button type="button" class="${metric === 'requests' ? 'active' : ''}" data-region-view="requests" role="tab" aria-selected="${metric === 'requests'}">Complete vs request</button>
-            <button type="button" class="${metric === 'booked' ? 'active' : ''}" data-region-view="booked" role="tab" aria-selected="${metric === 'booked'}">Complete vs booked</button>
-          </div>
-        </div>
-        <div class="uk-map-stage">
-          <svg class="uk-map-svg" viewBox="0 0 ${projection.width} ${projection.height}" role="img" aria-label="UK regional success rate map" preserveAspectRatio="xMidYMid meet">
-            ${shapes}
-            ${labels}
-          </svg>
-          <div class="uk-network-card">
-            <span>Network average</span>
-            <strong>${IMSERV.fmt.pct(averageCompletion)}</strong>
-            <em>${IMSERV.fmt.num(totalCompletions)} completed / ${IMSERV.fmt.num(totalDenominator)} ${metric === 'booked' ? 'booked' : 'requests'}</em>
-          </div>
-        </div>
-        <div class="uk-map-legend" aria-label="Success rate legend">
-          <span><i class="legend-strong"></i>Highest</span>
-          <span><i class="legend-good"></i>Above avg</span>
-          <span><i class="legend-watch"></i>Below avg</span>
-          <span><i class="legend-risk"></i>Lowest</span>
-        </div>
-      </div>
-      <div class="region-focus-panel">
-        ${focus}
-        <div class="region-focus-item">
-          <span>Cancelled + aborted</span>
-          <strong>${IMSERV.fmt.num(totalLosses)}</strong>
-          <em>${metricLabel}</em>
-        </div>
-      </div>
+      ${mapRequest.html}
+      ${mapBooked.html}
     </div>
   `;
-
-  container.querySelectorAll('[data-region-view]').forEach(button => {
-    button.addEventListener('click', () => {
-      _regionalSuccessView = button.dataset.regionView === 'booked' ? 'booked' : 'requests';
-      renderRegionalHeatmap(_lastRegionalHeatmapData);
-    });
-  });
 }
 
 function renderSupplierBehaviour(data) {
