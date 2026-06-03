@@ -6301,3 +6301,131 @@ body {
   font-size: 13px;
   color: var(--text-primary);
 }
+
+/* Decomposition Tree */
+.decomp-tree-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding: 20px;
+  min-height: 400px;
+  position: relative;
+  gap: 60px;
+}
+
+.decomp-svg-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.decomp-svg-layer path {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2px;
+  stroke-opacity: 0.5;
+  transition: stroke 0.3s ease;
+}
+
+.decomp-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 2;
+  position: relative;
+}
+
+.decomp-node {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  min-width: 180px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.decomp-node:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+.decomp-node:hover + .decomp-svg-layer path {
+  /* We will handle highlighting via JS */
+}
+
+.decomp-node-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.decomp-node-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.decomp-node-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.decomp-bar-container {
+  height: 4px;
+  background: var(--bg);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: auto;
+}
+
+.decomp-bar {
+  height: 100%;
+  border-radius: 2px;
+}
+
+/* Colors for progress bars */
+.decomp-bar.blue { background-color: #3b82f6; }
+.decomp-bar.green { background-color: #10b981; }
+.decomp-bar.amber { background-color: #f59e0b; }
+.decomp-bar.red { background-color: #ef4444; }
+.decomp-bar.purple { background-color: #8b5cf6; }
+
+
+
+.clickable-node {
+  cursor: pointer;
+}
+.clickable-node::after {
+  content: '+';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  font-weight: bold;
+}
+.clickable-node.expanded::after {
+  content: '-';
+}

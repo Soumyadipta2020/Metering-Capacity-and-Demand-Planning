@@ -14,7 +14,7 @@ async function loadJourneyDashboard() {
     'funnel-chart',
     'journey-trend-chart',
     'regional-heatmap-grid',
-    'channel-comparison-grid',
+    'decomposition-tree-container',
     'supplier-behaviour-grid',
   ];
   IMSERV.setLoading(loadingTargets, true);
@@ -25,7 +25,7 @@ async function loadJourneyDashboard() {
       IMSERV.apiFetch('/api/journey/kpis' + qs),
       IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
       IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
-      IMSERV.apiFetch('/api/journey/suppliers' + qs + '&top_n=18'),
+      IMSERV.apiFetch('/api/journey/suppliers' + qs + '&top_n=25'),
     ]);
 
     if (kpis)    renderJourneyKPIs(kpis);
@@ -38,7 +38,7 @@ async function loadJourneyDashboard() {
 
     if (suppliers) renderSupplierBehaviour(suppliers);
 
-    await loadChannelComparison(false);
+    await loadDecompositionTree();
   } finally {
     IMSERV.setLoading(loadingTargets, false);
   }
@@ -649,137 +649,49 @@ function renderSupplierBehaviour(data) {
     return;
   }
 
-  const totals = data.totals || {};
-  const maxRequests = Math.max(...suppliers.map(s => s.requests || 0), 1);
-  const maxContribution = Math.max(...suppliers.map(s => s.contribution_pct || 0), 1);
-  const maxBookings = Math.max(...suppliers.map(s => s.bookings || 0), 1);
-
-  const minScoreRaw = Math.min(...suppliers.map(s => s.behaviour_score || 0));
-  const maxScoreRaw = Math.max(...suppliers.map(s => s.behaviour_score || 0));
-  const scorePadding = Math.max(1, (maxScoreRaw - minScoreRaw) * 0.15);
-  const scoreMin = Math.max(0, minScoreRaw - scorePadding);
-  const scoreMax = Math.min(100, maxScoreRaw + scorePadding);
-  const scoreRange = Math.max(scoreMax - scoreMin, 1);
-
-  const toneFor = (s) => {
-    if ((s.fallout_rate || 0) >= 28 || (s.behaviour_score || 0) < 60) return 'hot';
-    if ((s.fallout_rate || 0) >= 22 || (s.behaviour_score || 0) < 68) return 'warm';
-    return 'cool';
-  };
-
-  const nodes = suppliers.map((s, idx) => {
-    const contribution = Math.max(0, s.contribution_pct || 0);
-    const score = Math.max(0, Math.min(100, s.behaviour_score || 0));
-    const x = 9 + (contribution / maxContribution) * 82;
-    const y = 90 - ((score - scoreMin) / scoreRange) * 76;
-    const size = 28 + ((s.requests || 0) / maxRequests) * 34;
-    const tone = toneFor(s);
-    const name = journeyEscapeHtml(s.supplier_name);
-    const initials = name
-      .replace(/&amp;/g, '&')
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map(part => part[0])
-      .join('')
-      .toUpperCase();
+  const cardsHtml = suppliers.map((r, i) => {
+    // If it's the last element and named "Others", don't show a rank number
+    const isOthers = r.supplier_name === "Others";
+    const rankStr = isOthers ? "—" : `#${i + 1}`;
+    
+    // Style logic
+    const successColor = r.visit_success_rate >= 70 ? '#028178' : r.visit_success_rate >= 50 ? '#F4D25A' : '#FB8281';
+    const falloutColor = r.fallout_rate <= 15 ? '#028178' : r.fallout_rate <= 25 ? '#F4D25A' : '#FB8281';
 
     return `
-      <button
-        class="supplier-node ${tone}"
-        style="--x:${x}%; --y:${y}%; --s:${size}px; --delay:${idx * 28}ms;"
-        title="${name}: ${IMSERV.fmt.num(s.requests)} requests, ${IMSERV.fmt.pct(s.booking_rate)} booked, ${IMSERV.fmt.pct(s.visit_success_rate)} visit success"
-      >
-        <strong>${initials || 'S'}</strong>
-        <span>${IMSERV.fmt.pct(score)}</span>
-      </button>
-    `;
-  }).join('');
-
-  const lanes = suppliers.slice(0, 8).map((s, idx) => {
-    const tone = toneFor(s);
-    const width = Math.max(8, ((s.requests || 0) / maxRequests) * 100);
-    const bookingWidth = Math.max(6, ((s.bookings || 0) / maxBookings) * 100);
-    return `
-      <div class="supplier-lane ${tone}" style="--rank:${idx + 1};">
-        <div class="supplier-lane-name">
-          <strong>${journeyEscapeHtml(s.supplier_name)}</strong>
-          <span>${journeyEscapeHtml(s.segment)}</span>
+      <div class="rc-supplier-card">
+        <div class="rc-supplier-header">
+          <div class="rc-supplier-rank">${rankStr}</div>
+          <div class="rc-supplier-name" title="${journeyEscapeHtml(r.supplier_name)}">${journeyEscapeHtml(r.supplier_name)}</div>
+          <div class="rc-supplier-volume" title="Total Requests">Requests: ${IMSERV.fmt.num(r.requests)}</div>
         </div>
-        <div class="supplier-lane-bars">
-          <span class="supplier-request-bar" style="width:${width}%"></span>
-          <span class="supplier-booking-bar" style="width:${bookingWidth}%"></span>
+        <div class="rc-supplier-main-metric">
+          <div class="rc-supplier-main-metric-label">
+            <span>Booked</span>
+            <span>${IMSERV.fmt.num(r.bookings)}</span>
+          </div>
+          <div class="rc-supplier-bar-bg" style="position: relative; overflow: hidden; background: rgba(255, 255, 255, 0.08);">
+            <!-- Booked bar (total booked out of requests) -->
+            <div class="rc-supplier-bar-fill" style="position: absolute; top: 0; left: 0; height: 100%; width: ${r.booking_rate}%; background: #3498db; opacity: 0.4;" title="Booked (${r.booking_rate}%)"></div>
+            <!-- Completed bar (total completed out of requests) -->
+            <div class="rc-supplier-bar-fill" style="position: absolute; top: 0; left: 0; height: 100%; width: ${(r.completions / Math.max(r.requests, 1)) * 100}%; background: #2ecc71;" title="Completed (${((r.completions / Math.max(r.requests, 1)) * 100).toFixed(1)}%)"></div>
+          </div>
         </div>
-        <div class="supplier-lane-metrics">
-          <span>${IMSERV.fmt.num(s.requests)} requests</span>
-          <span>${IMSERV.fmt.pct(s.booking_rate)} booked</span>
-          <span>${IMSERV.fmt.pct(s.fallout_rate)} fallout</span>
+        <div class="rc-supplier-secondary-metrics">
+          <div class="rc-supplier-sec-metric">
+            <span>Successful Completions</span>
+            <strong>${IMSERV.fmt.num(r.completions)}</strong>
+          </div>
+          <div class="rc-supplier-sec-metric" style="text-align: right;">
+            <span>Success Rate</span>
+            <strong style="color: ${successColor}">${r.visit_success_rate}%</strong>
+          </div>
         </div>
       </div>
     `;
   }).join('');
 
-  const watchlist = (data.watchlist || []).slice(0, 4).map(s => `
-    <div class="supplier-watch-item ${toneFor(s)}">
-      <span>${journeyEscapeHtml(s.supplier_name)}</span>
-      <strong>${IMSERV.fmt.pct(s.fallout_rate)}</strong>
-      <em>${IMSERV.fmt.num(s.unresolved)} unresolved, ${IMSERV.fmt.num(s.cancellations + s.aborts)} fallout</em>
-    </div>
-  `).join('');
-
-  const leaders = (data.leaderboard || []).slice(0, 4).map(s => `
-    <div class="supplier-leader-chip">
-      <span>${journeyEscapeHtml(s.supplier_name)}</span>
-      <strong>${IMSERV.fmt.pct(s.visit_success_rate)}</strong>
-    </div>
-  `).join('');
-
-  container.innerHTML = `
-    <div class="supplier-field">
-      <div class="supplier-axis x">Contribution</div>
-      <div class="supplier-axis y">Behaviour score</div>
-      <div class="supplier-quadrant high">Scale + stable</div>
-      <div class="supplier-quadrant watch">High contribution watch</div>
-      <div class="supplier-quadrant niche">Efficient niche</div>
-      <div class="supplier-quadrant focus">Needs attention</div>
-      ${nodes}
-    </div>
-
-    <div class="supplier-side-panel">
-      <div class="supplier-scoreboard">
-        <div>
-          <span>Suppliers</span>
-          <strong>${IMSERV.fmt.num(data.supplier_count)}</strong>
-        </div>
-        <div>
-          <span>Bookings</span>
-          <strong>${IMSERV.fmt.num(totals.bookings)}</strong>
-        </div>
-        <div>
-          <span>Visit Success</span>
-          <strong>${IMSERV.fmt.pct(totals.visit_success_rate)}</strong>
-        </div>
-        <div>
-          <span>Fallout</span>
-          <strong>${IMSERV.fmt.pct(totals.fallout_rate)}</strong>
-        </div>
-      </div>
-      <div class="supplier-leaders">
-        <div class="supplier-panel-label">Success Rate Leaders</div>
-        ${leaders}
-      </div>
-    </div>
-
-    <div class="supplier-lanes">
-      <div class="supplier-panel-label">Largest supplier contribution lanes</div>
-      ${lanes}
-    </div>
-
-    <div class="supplier-watch">
-      <div class="supplier-panel-label">Supplier watchlist</div>
-      ${watchlist}
-    </div>
-  `;
+  container.innerHTML = cardsHtml;
 }
 
 function updateAiTriggerState(data) {
@@ -800,155 +712,200 @@ function updateAiTriggerState(data) {
       : 'AI Insights: stable';
 }
 
-async function loadChannelComparison(showLoading = true) {
-  const region = IMSERV.getRegion();
-  const year   = IMSERV.getYear();
-  if (showLoading) IMSERV.setLoading('channel-comparison-grid', true);
-  const kpis = await IMSERV.apiFetch('/api/forecasting/channel-kpis?region=' + region + '&year=' + year);
-  if (!kpis) {
-    if (showLoading) IMSERV.setLoading('channel-comparison-grid', false);
-    return;
+
+
+async function loadDecompositionTree() {
+  const container = document.getElementById('decomposition-tree-container');
+  if (!container) return;
+  container.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
+
+  try {
+    const region = IMSERV.getRegion();
+    const year = IMSERV.getYear();
+    const res = await fetch(`/api/journey/decomposition-tree?region=${region}&year=${year}`);
+    if (!res.ok) throw new Error('Failed to load decomposition tree');
+    const data = await res.json();
+    renderDecompositionTree(data, container);
+  } catch (err) {
+    container.innerHTML = `<div class="error-msg">${err.message}</div>`;
   }
-  const container = document.getElementById('channel-comparison-grid');
-  if (!container) {
-    if (showLoading) IMSERV.setLoading('channel-comparison-grid', false);
-    return;
-  }
-  const channels = kpis.channel_breakdown || [];
-  if (!channels.length) {
-     container.innerHTML = '<div class="empty-state"><div class="empty-title">No data available</div></div>';
-     if (showLoading) IMSERV.setLoading('channel-comparison-grid', false);
-     return;
-  }
-
-  const sorted = [...channels].sort((a, b) => b.volume - a.volume);
-  const maxVolume = Math.max(...sorted.map(c => c.volume), 1);
-  const maxBookings = Math.max(...sorted.map(c => c.bookings), 1);
-  const totalVolume = sorted.reduce((sum, c) => sum + c.volume, 0);
-  const totalBookings = sorted.reduce((sum, c) => sum + c.bookings, 0);
-  const totalSuccessfulVisits = sorted.reduce((sum, c) => sum + (c.successful_visits ?? Math.max((c.bookings || 0) - (c.cancellations || 0), 0)), 0);
-  const totalAbandoned = sorted.reduce((sum, c) => sum + c.abandon_pct * c.volume / 100, 0);
-  const blendedVisitSuccess = totalBookings ? (totalSuccessfulVisits / totalBookings) * 100 : 0;
-  const blendedAbandon = totalVolume ? (totalAbandoned / totalVolume) * 100 : 0;
-  const successfulVisitsFor = (c) => c.successful_visits ?? Math.max((c.bookings || 0) - (c.cancellations || 0), 0);
-  const visitSuccessFor = (c) => Math.max(0, Math.min(100, c.visit_success_pct ?? (c.bookings ? (successfulVisitsFor(c) / c.bookings) * 100 : 0)));
-
-  const positions = [
-    { x: 18, y: 46 },
-    { x: 33, y: 18 },
-    { x: 68, y: 18 },
-    { x: 82, y: 48 },
-    { x: 66, y: 76 },
-    { x: 31, y: 77 },
-  ];
-  const accent = ['#02C2B7', '#028178', '#4A6B7C', '#F4D25A', '#FB8281', '#4AC5BB'];
-
-  const escapeHtml = (value) => String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-
-  const channelCode = (name) => {
-    const clean = name.replace(/[^A-Za-z ]/g, '').trim();
-    if (clean.toLowerCase() === 'agent callback') return 'CB';
-    return clean.split(/\s+/).map(part => part[0]).join('').slice(0, 3).toUpperCase();
-  };
-
-  const ribbons = sorted.map((c, idx) => {
-    const pos = positions[idx % positions.length];
-    const stroke = Math.max(1.2, Math.min(4.2, 1.2 + (c.bookings / maxBookings) * 3));
-    const mx = (pos.x + 50) / 2;
-    const my = (pos.y + 48) / 2;
-    const bend = idx % 2 === 0 ? -8 : 8;
-    return `
-      <path
-        class="channel-ribbon"
-        d="M ${pos.x} ${pos.y} Q ${mx} ${my + bend} 50 48"
-        style="--flow-color:${accent[idx % accent.length]}; --flow-width:${stroke};"
-      />
-    `;
-  }).join('');
-
-  const nodes = sorted.map((c, idx) => {
-    const pos = positions[idx % positions.length];
-    const size = Math.round(84 + (c.volume / maxVolume) * 76);
-    const successfulVisits = successfulVisitsFor(c);
-    const visitSuccess = visitSuccessFor(c);
-    const abandon = Math.max(0, Math.min(100, c.abandon_pct || 0));
-    const share = totalVolume ? (c.volume / totalVolume) * 100 : 0;
-    const bookingShare = totalBookings ? (c.bookings / totalBookings) * 100 : 0;
-    const colour = accent[idx % accent.length];
-    const safeName = escapeHtml(c.channel);
-
-    return `
-      <button
-        class="channel-orb"
-        style="--x:${pos.x}%; --y:${pos.y}%; --size:${size}px; --channel-color:${colour}; --conversion:${visitSuccess * 3.6}deg; --abandon:${Math.max(10, abandon * 3.6)}deg;"
-        title="${safeName}: ${IMSERV.fmt.num(c.volume)} contact attempts, ${IMSERV.fmt.num(c.bookings)} appointments booked, ${IMSERV.fmt.pct(visitSuccess)} to total visits"
-        aria-label="${safeName} channel signal"
-      >
-        <span class="channel-orb-ring"></span>
-        <span class="channel-orb-core">
-          <span class="channel-orb-code">${channelCode(c.channel)}</span>
-          <span class="channel-orb-name">${safeName}</span>
-          <span class="channel-orb-volume">${IMSERV.fmt.num(c.bookings)}</span>
-          <span class="channel-orb-success">${IMSERV.fmt.pct(visitSuccess)}</span>
-        </span>
-        <span class="channel-orb-marker" title="${IMSERV.fmt.pct(abandon)} abandoned"></span>
-        <span class="channel-orb-metrics">
-          <strong>${IMSERV.fmt.num(successfulVisits)}</strong>
-          <em>total visits</em>
-          <small>${bookingShare.toFixed(1)}% of appointments booked</small>
-          <small>${share.toFixed(1)}% of contact attempts</small>
-        </span>
-      </button>
-    `;
-  }).join('');
-
-  const insight = sorted[0];
-  const bestConversion = [...sorted].sort((a, b) => visitSuccessFor(b) - visitSuccessFor(a))[0];
-  const mostAbandoned = [...sorted].sort((a, b) => b.abandon_pct - a.abandon_pct)[0];
-
-  container.innerHTML = `
-    <div class="channel-map-stage">
-      <svg class="channel-ribbons" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        ${ribbons}
-      </svg>
-
-      <div class="booking-core">
-        <div class="booking-core-ring"></div>
-        <div class="booking-core-label">Appointments Booked Core</div>
-        <div class="booking-core-value">${IMSERV.fmt.num(totalBookings)}</div>
-        <div class="booking-core-sub">${IMSERV.fmt.pct(blendedVisitSuccess)} to total visits</div>
-      </div>
-
-      ${nodes}
-    </div>
-
-    <div class="channel-storyline">
-      <div class="channel-story-pill dominant">
-        <span>Dominant intake</span>
-        <strong>${escapeHtml(insight.channel)}</strong>
-        <em>${IMSERV.fmt.num(insight.volume)} contact attempts</em>
-      </div>
-      <div class="channel-story-pill efficient">
-        <span>Most efficient</span>
-        <strong>${escapeHtml(bestConversion.channel)}</strong>
-        <em>${IMSERV.fmt.pct(visitSuccessFor(bestConversion))} to total visits</em>
-      </div>
-      <div class="channel-story-pill friction">
-        <span>Highest friction</span>
-        <strong>${escapeHtml(mostAbandoned.channel)}</strong>
-        <em>${IMSERV.fmt.pct(mostAbandoned.abandon_pct)} abandoned</em>
-      </div>
-      <div class="channel-story-pill">
-        <span>Blended abandon</span>
-        <strong>${IMSERV.fmt.pct(blendedAbandon)}</strong>
-        <em>across channels</em>
-      </div>
-    </div>
-  `;
-  if (showLoading) IMSERV.setLoading('channel-comparison-grid', false);
 }
+
+
+function renderDecompositionTree(data, container) {
+  container.innerHTML = '';
+  
+  const fmt = (val) => val.toLocaleString();
+  const pct = (val, maxVal) => maxVal > 0 ? ((val/maxVal)*100).toFixed(1) + '%' : '0%';
+
+  let html = `<svg class="decomp-svg-layer" id="decomp-lines"></svg>`;
+
+  // data-children will hold comma separated IDs of immediate children
+  function makeNode(id, title, value, maxVal, colorClass, subTitle="", children=[]) {
+    const p = maxVal ? (value / maxVal) * 100 : 0;
+    const childrenAttr = children.length > 0 ? `data-children="${children.join(',')}"` : '';
+    // Initially hide all nodes except the root
+    const isRoot = id === 'node-total';
+    const displayStyle = isRoot ? '' : 'style="display: none;"';
+    const clickableClass = children.length > 0 ? 'clickable-node' : '';
+    
+    return `
+      <div class="decomp-node ${clickableClass}" id="${id}" ${childrenAttr} ${displayStyle} onclick="toggleDecompNode('${id}')">
+        <div class="decomp-node-header">${title}</div>
+        <div class="decomp-node-value">${fmt(value)}</div>
+        <div class="decomp-node-sub">${subTitle}</div>
+        <div class="decomp-bar-container">
+          <div class="decomp-bar ${colorClass}" style="width: ${p}%"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  const channelNodes = [];
+  data.channels.forEach((ch, idx) => { channelNodes.push(`node-ch-${idx}`); });
+
+  // Col 1
+  html += `<div class="decomp-col" id="col-1">
+    ${makeNode('node-total', 'Customer Data Loaded', data.total_loaded, data.total_loaded, 'blue', '100%', ['node-booked', 'node-notbooked'])}
+  </div>`;
+
+  // Col 2
+  html += `<div class="decomp-col" id="col-2">
+    ${makeNode('node-booked', 'Appointments Booked', data.booked, data.total_loaded, 'blue', pct(data.booked, data.total_loaded), channelNodes)}
+    ${makeNode('node-notbooked', 'Not Booked', data.not_booked, data.total_loaded, 'amber', pct(data.not_booked, data.total_loaded))}
+  </div>`;
+
+  // Channels
+  let col3 = '<div class="decomp-col" id="col-3">';
+  let col4 = '<div class="decomp-col" id="col-4">';
+  let col5 = '<div class="decomp-col" id="col-5">';
+  let col6 = '<div class="decomp-col" id="col-6">';
+
+  data.channels.forEach((ch, idx) => {
+    const chId = `ch-${idx}`;
+    col3 += makeNode(`node-${chId}`, `Channel: ${ch.channel}`, ch.booked, data.booked, 'blue', pct(ch.booked, data.booked), [`node-${chId}-visited`, `node-${chId}-cancel`]);
+    
+    col4 += makeNode(`node-${chId}-visited`, `Visited (${ch.channel})`, ch.visited, ch.booked, 'blue', pct(ch.visited, ch.booked), [`node-${chId}-success`, `node-${chId}-abort`]);
+    col4 += makeNode(`node-${chId}-cancel`, `Cancelled (${ch.channel})`, ch.cancelled, ch.booked, 'red', pct(ch.cancelled, ch.booked));
+
+    col5 += makeNode(`node-${chId}-success`, `Successful Visit`, ch.successful_visit, ch.visited, 'green', pct(ch.successful_visit, ch.visited), [`node-${chId}-executed`, `node-${chId}-unresolved`]);
+    col5 += makeNode(`node-${chId}-abort`, `Aborted`, ch.aborted, ch.visited, 'red', pct(ch.aborted, ch.visited));
+
+    col6 += makeNode(`node-${chId}-executed`, `Executed Successfully`, ch.executed_successfully, ch.successful_visit, 'green', pct(ch.executed_successfully, ch.successful_visit));
+    col6 += makeNode(`node-${chId}-unresolved`, `Unresolved`, ch.unresolved, ch.successful_visit, 'amber', pct(ch.unresolved, ch.successful_visit));
+  });
+
+  col3 += '</div>';
+  col4 += '</div>';
+  col5 += '</div>';
+  col6 += '</div>';
+
+  html += col3 + col4 + col5 + col6;
+  container.innerHTML = html;
+
+  // Draw lines after render
+  setTimeout(() => drawDecompLines(), 50);
+}
+
+window.toggleDecompNode = function(id) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  const childrenAttr = node.getAttribute('data-children');
+  if (!childrenAttr) return; // Leaf node
+
+  const childrenIds = childrenAttr.split(',');
+  const firstChild = document.getElementById(childrenIds[0]);
+  if (!firstChild) return;
+
+  const isExpanded = firstChild.style.display !== 'none';
+
+  if (isExpanded) {
+    // Collapse: hide all descendants
+    hideDescendants(id);
+    node.classList.remove('expanded');
+  } else {
+    // Expand: show immediate children
+    childrenIds.forEach(cid => {
+      const cnode = document.getElementById(cid);
+      if (cnode) {
+        cnode.style.display = 'flex';
+      }
+    });
+    node.classList.add('expanded');
+  }
+
+  // Redraw lines
+  drawDecompLines();
+};
+
+function hideDescendants(id) {
+  const node = document.getElementById(id);
+  if (!node) return;
+  const childrenAttr = node.getAttribute('data-children');
+  if (childrenAttr) {
+    const childrenIds = childrenAttr.split(',');
+    childrenIds.forEach(cid => {
+      const cnode = document.getElementById(cid);
+      if (cnode) {
+        cnode.style.display = 'none';
+        cnode.classList.remove('expanded');
+        hideDescendants(cid);
+      }
+    });
+  }
+}
+
+function drawDecompLines() {
+  const svg = document.getElementById('decomp-lines');
+  const container = document.getElementById('decomposition-tree-container');
+  if (!svg || !container) return;
+  
+  const rectC = container.getBoundingClientRect();
+  svg.innerHTML = '';
+
+  function connect(id1, id2) {
+    const el1 = document.getElementById(id1);
+    const el2 = document.getElementById(id2);
+    // Only connect if both are visible
+    if (!el1 || !el2 || el1.style.display === 'none' || el2.style.display === 'none') return;
+    
+    const r1 = el1.getBoundingClientRect();
+    const r2 = el2.getBoundingClientRect();
+
+    const x1 = r1.right - rectC.left + container.scrollLeft;
+    const y1 = r1.top + r1.height/2 - rectC.top + container.scrollTop;
+    const x2 = r2.left - rectC.left + container.scrollLeft;
+    const y2 = r2.top + r2.height/2 - rectC.top + container.scrollTop;
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const cpX1 = x1 + (x2 - x1) / 2;
+    const cpX2 = x1 + (x2 - x1) / 2;
+    
+    path.setAttribute("d", `M ${x1} ${y1} C ${cpX1} ${y1}, ${cpX2} ${y2}, ${x2} ${y2}`);
+    svg.appendChild(path);
+  }
+
+  // Iterate over all nodes to draw lines to their visible children
+  document.querySelectorAll('.decomp-node').forEach(node => {
+    if (node.style.display !== 'none') {
+       const childrenAttr = node.getAttribute('data-children');
+       if (childrenAttr) {
+         childrenAttr.split(',').forEach(cid => {
+            connect(node.id, cid);
+         });
+       }
+    }
+  });
+}
+
+
+// Redraw lines on window resize or scroll
+window.addEventListener('resize', () => {
+  const container = document.getElementById('decomposition-tree-container');
+  if (container && container.innerHTML.includes('decomp-node')) {
+    // Re-fetch data? or just redraw
+    // We don't have data globally stored in a clean way in this snippet, 
+    // but we can trigger a reload or re-draw. 
+    loadDecompositionTree();
+  }
+});

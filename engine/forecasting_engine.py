@@ -639,3 +639,68 @@ def get_planning_target_kpis(region_code: str = None, year: int = 2025) -> dict:
         "contact_to_visit_rate": safe_pct(total_visits, f.get("contacts") or 0),
         "abandon_rate": None,
     }
+
+
+def get_decomposition_tree(region_code: str = None, year: int = 2025) -> dict:
+    """Build the appointment journey decomposition tree data."""
+    year_str = str(year)
+    total_loaded = 0
+    total_booked = 0
+    total_not_booked = 0
+    
+    channels = defaultdict(lambda: {
+        "bookings": 0,
+        "cancellations": 0,
+        "aborts": 0,
+        "completions": 0
+    })
+
+    for job in iter_jobs():
+        if region_code and job.get("region_code") != region_code:
+            continue
+        if job.get("requested_date", "")[:4] != year_str or job.get("is_forecast", "0") != "0":
+            continue
+            
+        total_loaded += 1
+        is_booked = bool(job.get("booked_date"))
+        if is_booked:
+            total_booked += 1
+            ch = job.get("primary_channel") or "Unknown"
+            status = job.get("status")
+            channels[ch]["bookings"] += 1
+            if status == "Cancelled":
+                channels[ch]["cancellations"] += 1
+            elif status == "Aborted":
+                channels[ch]["aborts"] += 1
+            elif status == "Completed":
+                channels[ch]["completions"] += 1
+        else:
+            total_not_booked += 1
+
+    channel_list = []
+    for ch, d in channels.items():
+        visits = max(d["bookings"] - d["cancellations"], 0)
+        successful_visits = max(visits - d["aborts"], 0)
+        completions = d["completions"]
+        unresolved = max(successful_visits - completions, 0)
+        
+        channel_list.append({
+            "channel": ch,
+            "booked": d["bookings"],
+            "visited": visits,
+            "cancelled": d["cancellations"],
+            "successful_visit": successful_visits,
+            "aborted": d["aborts"],
+            "executed_successfully": completions,
+            "unresolved": unresolved
+        })
+        
+    channel_list.sort(key=lambda x: -x["booked"])
+
+    return {
+        "total_loaded": total_loaded,
+        "booked": total_booked,
+        "not_booked": total_not_booked,
+        "channels": channel_list
+    }
+
