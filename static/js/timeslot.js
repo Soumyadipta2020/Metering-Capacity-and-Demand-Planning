@@ -102,12 +102,11 @@ async function loadTimeslotDashboard(force = false) {
 
   tsSetLoading();
   try {
-    const [chData, bizData, attData, agData] = await Promise.all([
-      IMSERV.apiFetch('/api/timeslot/channel-booking?' + tsQs()),
-      IMSERV.apiFetch('/api/timeslot/business-type?'   + tsQs()),
-      IMSERV.apiFetch('/api/timeslot/attempts-overview?' + tsQs()),
-      IMSERV.apiFetch('/api/timeslot/agent-view?'      + tsQs()),
-    ]);
+    const dashboard = await IMSERV.apiFetch('/api/timeslot/dashboard?' + tsQs(), { force });
+    const chData = dashboard?.channel_booking;
+    const bizData = dashboard?.business_type;
+    const attData = dashboard?.attempts_overview;
+    const agData = dashboard?.agent_view;
     if (chData)  renderTsChannelGrid(chData);
     if (bizData) renderTsBizWrap(bizData);
     if (attData) renderTsAttemptsGrid(attData);

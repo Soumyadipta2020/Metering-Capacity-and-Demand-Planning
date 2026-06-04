@@ -11,11 +11,12 @@ Modules:
 """
 import os
 import json
+import threading
 import urllib.error
 import urllib.request
 from collections import Counter
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
@@ -1073,6 +1074,7 @@ def data_reload():
     from engine.forecasting_engine import clear_forecast_cache
     health_info = clear_data_caches()
     clear_forecast_cache()
+    _clear_timeslot_cache()
     return jsonify({"status": "ok", "message": "Data caches cleared", "data_health": health_info})
 
 
@@ -1091,6 +1093,7 @@ def data_generate():
         generate_all()
         health_info = clear_data_caches()
         clear_forecast_cache()
+        _clear_timeslot_cache()
         return jsonify({"status": "ok", "message": "Datasets regenerated successfully", "data_health": health_info})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1153,64 +1156,218 @@ def _job_voice_agent(job_ref: str) -> str:
     """Deterministic voice agent from job_ref hash."""
     return _VOICE_AGENTS[_job_hash(job_ref, "va") % len(_VOICE_AGENTS)]
 
+SLOTS = ["Morning", "Afternoon", "Evening"]
+DAYS  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+
+_TIMESLOT_CACHE = {}
+_TIMESLOT_CACHE_LOCK = threading.RLock()
+_TIMESLOT_CACHE_MAX = 32
+
+def _timeslot_source_signature() -> tuple:
+    """Return a compact signature for invalidating derived time-slot analytics."""
+    master = BASE_DIR / "data" / "inputs" / "master_operations.csv"
+    path = master if master.exists() else BASE_DIR / "data" / "inputs" / "smart_meter_jobs.csv"
+    try:
+        stat = path.stat()
+        return (str(path), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return (str(path), 0, 0)
+
+def _clear_timeslot_cache() -> None:
+    with _TIMESLOT_CACHE_LOCK:
+        _TIMESLOT_CACHE.clear()
+
+def _parse_ts_date(value: str):
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except (TypeError, ValueError):
+        return None
+
 def _ts_filter(requested_date: str, ftype: str, fval: str) -> bool:
-    """Return True when the job falls within the requested time window (year always 2025)."""
-    if requested_date[:4] != "2025":
+    """Return True when the job falls within the requested rolling time window."""
+    return _ts_filter_date(_parse_ts_date(requested_date), ftype, fval)
+
+def _ts_filter_date(requested_date, ftype: str, fval: str) -> bool:
+    if not requested_date:
         return False
     if not ftype or ftype == "all" or not fval:
         return True
     try:
-        dt = datetime.strptime(requested_date, "%Y-%m-%d")
         if ftype == "month":
-            return dt.month == int(fval)
+            if "-" in str(fval):
+                year, month = str(fval).split("-", 1)
+                return requested_date.year == int(year) and requested_date.month == int(month)
+            return requested_date.month == int(fval)
         if ftype == "week":
-            return dt.isocalendar()[1] == int(fval)
+            if "-" in str(fval):
+                week_start = date.fromisoformat(str(fval)[:10])
+                return week_start <= requested_date <= week_start + timedelta(days=6)
+            return requested_date.isocalendar()[1] == int(fval)
         if ftype == "day":
-            return requested_date == fval
+            return requested_date == date.fromisoformat(str(fval)[:10])
     except Exception:
-        pass
+        return True
     return True
 
-SLOTS = ["Morning", "Afternoon", "Evening"]
-DAYS  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+def _fmt_ts_channel(data: dict, safe_pct_fn) -> dict:
+    result = {}
+    for slot, channels in data.items():
+        result[slot] = []
+        for ch, d in sorted(channels.items(), key=lambda x: -x[1]["attempts"]):
+            result[slot].append({
+                "channel": ch,
+                "attempts": d["attempts"],
+                "bookings": d["bookings"],
+                "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+            })
+    return result
+
+def _fmt_ts_business(store: dict, safe_pct_fn) -> dict:
+    out = {}
+    for key, types in store.items():
+        rows = []
+        for bt, d in sorted(types.items(), key=lambda x: -x[1]["attempts"]):
+            rows.append({
+                "type": bt,
+                "attempts": d["attempts"],
+                "bookings": d["bookings"],
+                "completions": d["completions"],
+                "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+                "success_rate": safe_pct_fn(d["completions"], d["bookings"]),
+            })
+        out[key] = rows
+    return out
+
+def _fmt_ts_attempts(data: dict, safe_pct_fn) -> dict:
+    return {
+        slot: {
+            "attempts": d["attempts"],
+            "contacts": d["contacts"],
+            "bookings": d["bookings"],
+            "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+            "contact_rate": safe_pct_fn(d["contacts"], d["attempts"]),
+        }
+        for slot, d in data.items()
+    }
+
+def _fmt_ts_agents(agents: dict, safe_pct_fn) -> dict:
+    ranked = sorted(
+        agents.items(),
+        key=lambda x: -sum(x[1][s]["attempts"] for s in SLOTS),
+    )
+    result = {s: [] for s in SLOTS}
+    for agent, slotdata in ranked:
+        for slot in SLOTS:
+            d = slotdata[slot]
+            result[slot].append({
+                "agent": agent,
+                "attempts": d["attempts"],
+                "bookings": d["bookings"],
+                "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+            })
+    for slot in SLOTS:
+        result[slot].sort(key=lambda x: -x["attempts"])
+    return result
+
+def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> dict:
+    region_key = region or ""
+    ftype = ftype or "all"
+    fval = fval or ""
+    cache_key = (_timeslot_source_signature(), region_key, ftype, fval)
+    with _TIMESLOT_CACHE_LOCK:
+        cached = _TIMESLOT_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+    _, _, to_int_fn, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
+    channel_data = {s: {} for s in SLOTS}
+    by_slot = {s: {} for s in SLOTS}
+    by_day = {d: {} for d in DAYS}
+    attempts = {s: {"attempts": 0, "contacts": 0, "bookings": 0} for s in SLOTS}
+    agents = {
+        name: {s: {"attempts": 0, "bookings": 0} for s in SLOTS}
+        for name in _VOICE_AGENTS
+    }
+
+    for job in iter_jobs_fn():
+        if job.get("is_forecast", "0") != "0":
+            continue
+        if region and job.get("region_code") != region:
+            continue
+
+        requested = _parse_ts_date(job.get("requested_date", ""))
+        if not _ts_filter_date(requested, ftype, fval):
+            continue
+
+        job_ref = job.get("job_ref", "")
+        slot = _job_time_slot(job_ref)
+        booked = bool(job.get("booked_date"))
+
+        channel = job.get("primary_channel") or "Unknown"
+        channel_bucket = channel_data[slot].setdefault(channel, {"attempts": 0, "bookings": 0})
+        channel_bucket["attempts"] += 1
+        if booked:
+            channel_bucket["bookings"] += 1
+
+        btype = _job_biz_category(job_ref)
+        complete = job.get("status") == "Completed"
+        dow = requested.strftime("%a") if requested else None
+        for store, key in ((by_slot, slot), (by_day, dow)):
+            if key not in store:
+                continue
+            bucket = store[key].setdefault(btype, {"attempts": 0, "bookings": 0, "completions": 0})
+            bucket["attempts"] += 1
+            if booked:
+                bucket["bookings"] += 1
+            if complete:
+                bucket["completions"] += 1
+
+        contacts = to_int_fn(job.get("contacts_count"))
+        attempts[slot]["attempts"] += 1
+        attempts[slot]["contacts"] += contacts
+        if booked:
+            attempts[slot]["bookings"] += 1
+
+        agent = _job_voice_agent(job_ref)
+        agents[agent][slot]["attempts"] += 1
+        if booked:
+            agents[agent][slot]["bookings"] += 1
+
+    result = {
+        "channel_booking": _fmt_ts_channel(channel_data, safe_pct_fn),
+        "business_type": {
+            "by_slot": _fmt_ts_business(by_slot, safe_pct_fn),
+            "by_day": _fmt_ts_business(by_day, safe_pct_fn),
+        },
+        "attempts_overview": _fmt_ts_attempts(attempts, safe_pct_fn),
+        "agent_view": _fmt_ts_agents(agents, safe_pct_fn),
+    }
+
+    with _TIMESLOT_CACHE_LOCK:
+        if len(_TIMESLOT_CACHE) >= _TIMESLOT_CACHE_MAX:
+            _TIMESLOT_CACHE.clear()
+        _TIMESLOT_CACHE[cache_key] = result
+    return result
+
+@app.route("/api/timeslot/dashboard")
+def ts_dashboard():
+    """Combined time-slot dashboard payload computed in one CSV pass."""
+    try:
+        region = request.args.get("region")
+        ftype = request.args.get("filter_type", "all")
+        fval = request.args.get("filter_value", "")
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/timeslot/channel-booking")
 def ts_channel_booking():
     """Channel level booking attempts and conversion by time slot."""
     try:
-        _, _, _, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
         region  = request.args.get("region")
         ftype   = request.args.get("filter_type", "all")
         fval    = request.args.get("filter_value", "")
-
-        data = {s: {} for s in SLOTS}
-
-        for job in iter_jobs_fn():
-            if job.get("is_forecast", "0") != "0": continue
-            rd = job.get("requested_date", "")
-            if not _ts_filter(rd, ftype, fval): continue
-            if region and job.get("region_code") != region: continue
-
-            slot    = _job_time_slot(job.get("job_ref", ""))
-            channel = job.get("primary_channel") or "Unknown"
-            booked  = bool(job.get("booked_date"))
-
-            bucket = data[slot].setdefault(channel, {"attempts": 0, "bookings": 0})
-            bucket["attempts"] += 1
-            if booked:
-                bucket["bookings"] += 1
-
-        result = {}
-        for slot, channels in data.items():
-            result[slot] = []
-            for ch, d in sorted(channels.items(), key=lambda x: -x[1]["attempts"]):
-                result[slot].append({
-                    "channel": ch,
-                    "attempts": d["attempts"],
-                    "bookings": d["bookings"],
-                    "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
-                })
-        return jsonify(result)
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval)["channel_booking"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1219,56 +1376,10 @@ def ts_channel_booking():
 def ts_business_type():
     """Job-type booking and success rates by time slot and by weekday."""
     try:
-        _, _, _, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
         region = request.args.get("region")
         ftype  = request.args.get("filter_type", "all")
         fval   = request.args.get("filter_value", "")
-
-        # slot → type → {attempts, bookings, completions}
-        by_slot = {s: {} for s in SLOTS}
-        # day → type → {attempts, bookings, completions}
-        by_day  = {d: {} for d in DAYS}
-
-        for job in iter_jobs_fn():
-            if job.get("is_forecast", "0") != "0": continue
-            rd = job.get("requested_date", "")
-            if not _ts_filter(rd, ftype, fval): continue
-            if region and job.get("region_code") != region: continue
-
-            slot     = _job_time_slot(job.get("job_ref", ""))
-            btype    = _job_biz_category(job.get("job_ref", ""))
-            booked   = bool(job.get("booked_date"))
-            complete = job.get("status") == "Completed"
-
-            try:
-                dow = datetime.strptime(rd, "%Y-%m-%d").strftime("%a")
-            except Exception:
-                dow = None
-
-            for store, key in ((by_slot, slot), (by_day, dow)):
-                if key not in store: continue
-                b = store[key].setdefault(btype, {"attempts": 0, "bookings": 0, "completions": 0})
-                b["attempts"]    += 1
-                if booked:    b["bookings"]    += 1
-                if complete:  b["completions"] += 1
-
-        def _fmt(store):
-            out = {}
-            for key, types in store.items():
-                rows = []
-                for bt, d in sorted(types.items(), key=lambda x: -x[1]["attempts"]):
-                    rows.append({
-                        "type": bt,
-                        "attempts": d["attempts"],
-                        "bookings": d["bookings"],
-                        "completions": d["completions"],
-                        "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
-                        "success_rate": safe_pct_fn(d["completions"], d["bookings"]),
-                    })
-                out[key] = rows
-            return out
-
-        return jsonify({"by_slot": _fmt(by_slot), "by_day": _fmt(by_day)})
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval)["business_type"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1277,37 +1388,10 @@ def ts_business_type():
 def ts_attempts_overview():
     """Total contact attempts vs bookings by time slot."""
     try:
-        _, _, to_int_fn, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
         region = request.args.get("region")
         ftype  = request.args.get("filter_type", "all")
         fval   = request.args.get("filter_value", "")
-
-        data = {s: {"attempts": 0, "contacts": 0, "bookings": 0} for s in SLOTS}
-
-        for job in iter_jobs_fn():
-            if job.get("is_forecast", "0") != "0": continue
-            rd = job.get("requested_date", "")
-            if not _ts_filter(rd, ftype, fval): continue
-            if region and job.get("region_code") != region: continue
-
-            slot   = _job_time_slot(job.get("job_ref", ""))
-            booked = bool(job.get("booked_date"))
-            contacts = to_int_fn(job.get("contacts_count"))
-
-            data[slot]["attempts"]  += 1
-            data[slot]["contacts"]  += contacts
-            if booked: data[slot]["bookings"] += 1
-
-        result = {}
-        for slot, d in data.items():
-            result[slot] = {
-                "attempts":     d["attempts"],
-                "contacts":     d["contacts"],
-                "bookings":     d["bookings"],
-                "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
-                "contact_rate": safe_pct_fn(d["contacts"], d["attempts"]),
-            }
-        return jsonify(result)
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval)["attempts_overview"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1316,49 +1400,10 @@ def ts_attempts_overview():
 def ts_agent_view():
     """Individual voice agent (30 agents) attempts vs bookings by time slot."""
     try:
-        _, _, _, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
         region = request.args.get("region")
         ftype  = request.args.get("filter_type", "all")
         fval   = request.args.get("filter_value", "")
-
-        # Pre-seed all 30 agents so every agent always appears
-        agents: dict = {name: {s: {"attempts": 0, "bookings": 0} for s in SLOTS}
-                        for name in _VOICE_AGENTS}
-
-        for job in iter_jobs_fn():
-            if job.get("is_forecast", "0") != "0": continue
-            rd = job.get("requested_date", "")
-            if not _ts_filter(rd, ftype, fval): continue
-            if region and job.get("region_code") != region: continue
-
-            slot   = _job_time_slot(job.get("job_ref", ""))
-            agent  = _job_voice_agent(job.get("job_ref", ""))
-            booked = bool(job.get("booked_date"))
-
-            agents[agent][slot]["attempts"] += 1
-            if booked: agents[agent][slot]["bookings"] += 1
-
-        # Rank by total attempts across all slots
-        ranked = sorted(
-            agents.items(),
-            key=lambda x: -sum(x[1][s]["attempts"] for s in SLOTS)
-        )
-
-        result = {s: [] for s in SLOTS}
-        for agent, slotdata in ranked:
-            for slot in SLOTS:
-                d = slotdata[slot]
-                result[slot].append({
-                    "agent":        agent,
-                    "attempts":     d["attempts"],
-                    "bookings":     d["bookings"],
-                    "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
-                })
-            # Sort each slot by attempts desc
-        for slot in SLOTS:
-            result[slot].sort(key=lambda x: -x["attempts"])
-
-        return jsonify(result)
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval)["agent_view"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1894,8 +1939,6 @@ def field_engineers_api():
 # ─── Startup: automatic rolling-window data check ───────────────────────────
 
 _DATA_READY_ANCHOR = None
-
-import threading
 _generation_lock = threading.Lock()
 
 def _acquire_generation_lock() -> bool:
@@ -2024,6 +2067,7 @@ def _ensure_data() -> None:
             from engine.forecasting_engine import clear_forecast_cache
             clear_data_caches()
             clear_forecast_cache()
+            _clear_timeslot_cache()
         except Exception:
             pass
 

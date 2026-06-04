@@ -61,6 +61,15 @@ class AppSmokeTests(unittest.TestCase):
             with self.subTest(endpoint=endpoint):
                 self.assert_json_response(endpoint)
 
+    def test_timeslot_dashboard_endpoint(self):
+        payload = self.assert_json_response("/api/timeslot/dashboard?filter_type=all&filter_value=")
+
+        self.assertIn("channel_booking", payload)
+        self.assertIn("business_type", payload)
+        self.assertIn("attempts_overview", payload)
+        self.assertIn("agent_view", payload)
+        self.assertIn("Morning", payload["attempts_overview"])
+
 
 if __name__ == "__main__":
     unittest.main()
