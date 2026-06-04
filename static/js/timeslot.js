@@ -24,6 +24,20 @@ const TS_MONTHS = [
 
 const TS_RATE_COL = v => v >= 80 ? '#10b981' : v >= 60 ? '#f59e0b' : '#ef4444';
 
+// Returns [bgColor, textColor] — discrete 6-tier palette matching UK map tier colours
+function heatColor(pct) {
+  const tiers = [
+    { bg: 'rgba(183, 28,  28, 0.45)', col: '#7f0000' },  // tier6 — dark red   (worst)
+    { bg: 'rgba(229,115, 115, 0.45)', col: '#7f0000' },  // tier5 — light red
+    { bg: 'rgba(200,150,  12, 0.45)', col: '#7f4000' },  // tier4 — amber
+    { bg: 'rgba(253,216,  53, 0.50)', col: '#6b5000' },  // tier3 — yellow
+    { bg: 'rgba( 82,190, 128, 0.45)', col: '#0a3d1f' },  // tier2 — medium green
+    { bg: 'rgba( 27, 94,  53, 0.45)', col: '#0a2e18' },  // tier1 — dark green  (best)
+  ];
+  const idx = Math.min(5, Math.floor(pct * 6));
+  return [tiers[idx].bg, tiers[idx].col];
+}
+
 function tsFormatMonth(value) {
   const d = new Date(`${value}-01T00:00:00`);
   if (Number.isNaN(d.getTime())) return value;
@@ -278,10 +292,10 @@ function renderTsBizWrap(data) {
 
   const allRatesSlot = allTypes.flatMap(type => TS_SLOTS.map(slot => {
       const row = (bySlot[slot] || []).find(r => r.type === type);
-      return row ? row.booking_rate : 0;
-  }));
-  const maxSlotRate = Math.max(...allRatesSlot, 1);
-  const minSlotRate = Math.min(...allRatesSlot, 0);
+      return row ? row.booking_rate : null;
+  })).filter(v => v !== null);
+  const maxSlotRate = allRatesSlot.length ? Math.max(...allRatesSlot) : 1;
+  const minSlotRate = allRatesSlot.length ? Math.min(...allRatesSlot) : 0;
 
   const slotRows = allTypes.map(type => {
     const cells = TS_SLOTS.map(slot => {
@@ -290,10 +304,8 @@ function renderTsBizWrap(data) {
       const bk   = row ? row.bookings : 0;
       
       const pct  = maxSlotRate > minSlotRate ? (rate - minSlotRate) / (maxSlotRate - minSlotRate) : 0;
-      const hue  = 120 * pct; // 0=red, 60=yellow, 120=green
-      const bg   = `hsla(${hue}, 80%, 50%, 0.2)`;
-      const col  = `hsl(${hue}, 90%, 65%)`;
-      
+      const [bg, col] = heatColor(pct);
+
       return `<td class="ts-biz-td">${fmt(bk)}</td><td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${rate}%</td>`;
     }).join('');
     return `<tr><td class="ts-biz-td ts-biz-td--type">${type}</td>${cells}</tr>`;
@@ -306,10 +318,10 @@ function renderTsBizWrap(data) {
 
   const allRatesDay = allTypes.flatMap(type => TS_DAYS.map(day => {
       const row = (byDay[day] || []).find(r => r.type === type);
-      return row ? row.success_rate : 0;
-  }));
-  const maxDayRate = Math.max(...allRatesDay, 1);
-  const minDayRate = Math.min(...allRatesDay, 0);
+      return row ? row.success_rate : null;
+  })).filter(v => v !== null);
+  const maxDayRate = allRatesDay.length ? Math.max(...allRatesDay) : 1;
+  const minDayRate = allRatesDay.length ? Math.min(...allRatesDay) : 0;
 
   const dayRows = allTypes.map(type => {
     const cells = TS_DAYS.map(day => {
@@ -317,10 +329,8 @@ function renderTsBizWrap(data) {
       const rate = row ? row.success_rate : 0;
       
       const pct  = maxDayRate > minDayRate ? (rate - minDayRate) / (maxDayRate - minDayRate) : 0;
-      const hue  = 120 * pct;
-      const bg   = `hsla(${hue}, 80%, 50%, 0.2)`;
-      const col  = `hsl(${hue}, 90%, 65%)`;
-      
+      const [bg, col] = heatColor(pct);
+
       return `<td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${rate}%</td>`;
     }).join('');
     return `<tr><td class="ts-biz-td ts-biz-td--type">${type}</td>${cells}</tr>`;

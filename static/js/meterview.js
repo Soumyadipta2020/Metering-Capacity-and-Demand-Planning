@@ -190,14 +190,17 @@ function mvOutcomeClass(s) {
   if (!s) return '';
   const l = s.toLowerCase();
   if (l === 'completed') return 'mv-ok';
-  if (l === 'cancelled' || l === 'scheduled') return 'mv-warn';
+  if (l === 'scheduled' || l === 'booked') return 'mv-neutral';
+  if (l === 'cancelled') return 'mv-warn';
   if (l.includes('abort') || l === 'pending') return 'mv-crit';
   return '';
 }
 
 function mvDcClass(s) {
   if (!s) return '';
-  return s === 'Read Captured' ? 'mv-ok' : 'mv-warn';
+  if (s === 'Read Captured') return 'mv-ok';
+  if (s.includes('No Answer')) return 'mv-warn';
+  return 'mv-crit';
 }
 
 // ── Enter-key shortcut ────────────────────────────────────────────────────────

@@ -11,15 +11,15 @@ from pathlib import Path
 BASE_DIR   = Path(__file__).resolve().parent.parent
 INPUTS_DIR = BASE_DIR / "data" / "inputs"
 
-# ─── Module-level caches (populated on first access) ──────────────────────────
-_JOBS_CACHE              = None
-_CHANNEL_CACHE           = None
-_JOURNEY_CACHE           = None
-_ENGINEERS_CACHE         = None
-_AVAILABILITY_CACHE      = None
-_FINANCIAL_CACHE         = None
-_CAPACITY_CACHE          = None
-_FORECAST_BASELINE_CACHE = None
+# ─── Module-level caches (data + file signature) ─────────────────────────────
+_JOBS_CACHE              = None;  _JOBS_SIG              = None
+_CHANNEL_CACHE           = None;  _CHANNEL_SIG           = None
+_JOURNEY_CACHE           = None;  _JOURNEY_SIG           = None
+_ENGINEERS_CACHE         = None;  _ENGINEERS_SIG         = None
+_AVAILABILITY_CACHE      = None;  _AVAILABILITY_SIG      = None
+_FINANCIAL_CACHE         = None;  _FINANCIAL_SIG         = None
+_CAPACITY_CACHE          = None;  _CAPACITY_SIG          = None
+_FORECAST_BASELINE_CACHE = None;  _FORECAST_BASELINE_SIG = None
 
 DATASET_FILES = [
     "master_operations.csv",
@@ -38,6 +38,16 @@ _DATA_HEALTH_CACHE = {}
 def _cache_large_datasets() -> bool:
     """Keep large CSVs uncached by default on constrained hosts like Render."""
     return os.getenv("IMSERV_CACHE_LARGE_DATASETS", "").lower() == "true"
+
+
+def _file_sig(filename: str) -> tuple:
+    """Return (mtime_ns, size) for a file so caches auto-invalidate on change."""
+    path = INPUTS_DIR / filename
+    try:
+        s = path.stat()
+        return (s.st_mtime_ns, s.st_size)
+    except OSError:
+        return (0, 0)
 
 
 def _load_csv(filename: str) -> list:
@@ -234,9 +244,11 @@ def iter_jobs_filtered(
 
 
 def get_channel_volume(force_reload: bool = False) -> list:
-    global _CHANNEL_CACHE
-    if _CHANNEL_CACHE is None or force_reload:
+    global _CHANNEL_CACHE, _CHANNEL_SIG
+    sig = _file_sig("channel_volume.csv")
+    if _CHANNEL_CACHE is None or force_reload or sig != _CHANNEL_SIG:
         _CHANNEL_CACHE = _load_table("channel_volume.csv")
+        _CHANNEL_SIG = sig
     return _CHANNEL_CACHE
 
 
@@ -246,25 +258,31 @@ def iter_channel_volume():
 
 
 def get_booking_journey(force_reload: bool = False) -> list:
-    global _JOURNEY_CACHE
-    if _JOURNEY_CACHE is None or force_reload:
+    global _JOURNEY_CACHE, _JOURNEY_SIG
+    sig = _file_sig("booking_journey.csv")
+    if _JOURNEY_CACHE is None or force_reload or sig != _JOURNEY_SIG:
         _JOURNEY_CACHE = _load_table("booking_journey.csv")
+        _JOURNEY_SIG = sig
     return _JOURNEY_CACHE
 
 
 def get_engineers(force_reload: bool = False) -> list:
-    global _ENGINEERS_CACHE
-    if _ENGINEERS_CACHE is None or force_reload:
+    global _ENGINEERS_CACHE, _ENGINEERS_SIG
+    sig = _file_sig("engineers.csv")
+    if _ENGINEERS_CACHE is None or force_reload or sig != _ENGINEERS_SIG:
         _ENGINEERS_CACHE = _load_table("engineers.csv")
+        _ENGINEERS_SIG = sig
     return _ENGINEERS_CACHE
 
 
 def get_engineer_availability(force_reload: bool = False) -> list:
-    global _AVAILABILITY_CACHE
+    global _AVAILABILITY_CACHE, _AVAILABILITY_SIG
     if not _cache_large_datasets():
         return _load_table("engineer_availability.csv")
-    if _AVAILABILITY_CACHE is None or force_reload:
+    sig = _file_sig("engineer_availability.csv")
+    if _AVAILABILITY_CACHE is None or force_reload or sig != _AVAILABILITY_SIG:
         _AVAILABILITY_CACHE = _load_table("engineer_availability.csv")
+        _AVAILABILITY_SIG = sig
     return _AVAILABILITY_CACHE
 
 
@@ -323,23 +341,29 @@ def iter_engineer_availability_filtered(
 
 
 def get_financial_data(force_reload: bool = False) -> list:
-    global _FINANCIAL_CACHE
-    if _FINANCIAL_CACHE is None or force_reload:
+    global _FINANCIAL_CACHE, _FINANCIAL_SIG
+    sig = _file_sig("financial_data.csv")
+    if _FINANCIAL_CACHE is None or force_reload or sig != _FINANCIAL_SIG:
         _FINANCIAL_CACHE = _load_table("financial_data.csv")
+        _FINANCIAL_SIG = sig
     return _FINANCIAL_CACHE
 
 
 def get_capacity_demand(force_reload: bool = False) -> list:
-    global _CAPACITY_CACHE
-    if _CAPACITY_CACHE is None or force_reload:
+    global _CAPACITY_CACHE, _CAPACITY_SIG
+    sig = _file_sig("capacity_demand.csv")
+    if _CAPACITY_CACHE is None or force_reload or sig != _CAPACITY_SIG:
         _CAPACITY_CACHE = _load_table("capacity_demand.csv")
+        _CAPACITY_SIG = sig
     return _CAPACITY_CACHE
 
 
 def get_forecast_baseline_2025(force_reload: bool = False) -> list:
-    global _FORECAST_BASELINE_CACHE
-    if _FORECAST_BASELINE_CACHE is None or force_reload:
+    global _FORECAST_BASELINE_CACHE, _FORECAST_BASELINE_SIG
+    sig = _file_sig("forecast_baseline_2025.csv")
+    if _FORECAST_BASELINE_CACHE is None or force_reload or sig != _FORECAST_BASELINE_SIG:
         _FORECAST_BASELINE_CACHE = _load_table("forecast_baseline_2025.csv")
+        _FORECAST_BASELINE_SIG = sig
     return _FORECAST_BASELINE_CACHE
 
 

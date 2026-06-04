@@ -2218,13 +2218,38 @@ _MV_BILL_FREQS = ["Monthly", "Quarterly", "Quarterly", "Annual"]
 _MV_PAY_TYPES  = ["Direct Debit", "Direct Debit", "Prepayment", "PAYM", "Online Banking"]
 _MV_FLOWS_IN   = ["D0004", "D0010", "D0019", "D0052", "D0268"]
 _MV_FLOWS_OUT  = ["D0095", "D0268", "D0004", "None"]
-_MV_FLOW_OUTS  = ["Success", "Access Denied", "No Read", "VNR", "Pending"]
 _MV_JOB_LABELS = {
     "EXCHANGE":    "Meter Exchange",
     "NEW_INSTALL": "New Installation",
     "REMOVAL":     "Meter Removal",
     "REPAIR":      "Meter Repair",
 }
+_MV_CHANNELS   = ["Phone", "SMS", "Email", "Web Portal", "Field Visit"]
+
+_MV_INDEX_CACHE:     dict | None = None
+_MV_INDEX_CACHE_SIG: tuple | None = None
+_MV_INDEX_LOCK = threading.Lock()
+
+
+def _mv_get_index() -> dict:
+    """Build once and cache a gid→[jobs] lookup dict from master_operations.csv.
+    Subsequent lookups are O(1) dict access instead of a full 374k-row scan."""
+    global _MV_INDEX_CACHE, _MV_INDEX_CACHE_SIG
+    sig = _input_file_signature("master_operations.csv")
+    with _MV_INDEX_LOCK:
+        if _MV_INDEX_CACHE is not None and _MV_INDEX_CACHE_SIG == sig:
+            return _MV_INDEX_CACHE
+        _, _, _, _, _, iter_jobs_fn = _get_ingestion()
+        index: dict[int, list] = {}
+        for j in iter_jobs_fn():
+            if j.get("is_forecast", "0") != "0":
+                continue
+            gid = _mv_job_to_group(j.get("job_ref", ""))
+            if gid >= 0:
+                index.setdefault(gid, []).append(j)
+        _MV_INDEX_CACHE = index
+        _MV_INDEX_CACHE_SIG = sig
+        return index
 
 
 def _mv_job_to_group(job_ref: str) -> int:
@@ -2283,16 +2308,11 @@ def meter_view_api():
         return jsonify({"error": "Invalid meter point number"}), 404
 
     try:
-        _, _, _, _, _, iter_jobs_fn = _get_ingestion()
+        index = _mv_get_index()
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
-    jobs = [
-        j for j in iter_jobs_fn()
-        if j.get("is_forecast", "0") == "0"
-        and _mv_job_to_group(j.get("job_ref", "")) == gid
-    ]
-
+    jobs = index.get(gid, [])
     if not jobs:
         return jsonify({"error": "No records found for this meter point number"}), 404
 
@@ -2320,44 +2340,56 @@ def meter_view_api():
     no_physical_damage = rng.random() > 0.07
     no_wiring_issue    = rng.random() > 0.10
 
-    visits = [j for j in jobs_sorted if j.get("booked_date")][:3]
-    visit_summary = _mv_visit_summary(visits)
+    # Last 3 visits: any booked/active job, not just ones with booked_date populated
+    visit_pool = [j for j in jobs_sorted if j.get("status") not in ("Forecast", "Unbooked")]
+    if not visit_pool:
+        visit_pool = jobs_sorted  # fallback: show whatever is available
+    visit_summary = _mv_visit_summary(visit_pool[:3])
 
     # ── MOP Details ──────────────────────────────────────────────────────────
-    mop_j        = most_recent
-    mop_type     = _MV_JOB_LABELS.get(mop_j.get("job_type", ""), mop_j.get("job_type", "—"))
-    mop_status   = {"Completed": "Completed", "Cancelled": "Cancelled",
-                    "Aborted": "Aborted On Day", "Booked": "Scheduled",
-                    "Unbooked": "Pending"}.get(mop_j.get("status", ""), mop_j.get("status", "—"))
+    # Use first non-Unbooked job for MOP details; fall back to most recent
+    mop_j      = next((j for j in jobs_sorted if j.get("status") != "Unbooked"), most_recent)
+    mop_type   = _MV_JOB_LABELS.get(mop_j.get("job_type", ""), mop_j.get("job_type", "—")) or "Meter Exchange"
+    mop_status = {"Completed": "Completed", "Cancelled": "Cancelled",
+                  "Aborted": "Aborted On Day", "Booked": "Scheduled",
+                  "Unbooked": "Pending"}.get(mop_j.get("status", ""), mop_j.get("status", "—"))
     mop_reason   = (mop_j.get("cancellation_reason") or mop_j.get("abort_reason") or "—").strip() or "—"
     flows_in     = rng.choice(_MV_FLOWS_IN)
-    flow_outcome = "Success" if mop_j.get("status") == "Completed" else rng.choice(_MV_FLOW_OUTS[1:])
+    flow_outcome = "Success" if mop_j.get("status") == "Completed" else rng.choice(["Access Denied", "No Read", "VNR"])
     out_flows    = rng.choice(_MV_FLOWS_OUT)
     mop_date     = mop_j.get("completed_date") or mop_j.get("booked_date") or mop_j.get("contact_date") or "—"
 
     # ── DC Details ───────────────────────────────────────────────────────────
-    dc_j          = visits[0] if visits else most_recent
-    dc_date       = dc_j.get("completed_date") or dc_j.get("booked_date") or dc_j.get("contact_date") or "—"
-    dc_read_ok    = dc_j.get("status") == "Completed"
-    dc_read_cap   = str(last_read) if dc_read_ok else "—"
-    dc_channel    = dc_j.get("primary_channel", "—")
+    dc_j        = visit_pool[0] if visit_pool else most_recent
+    dc_date     = dc_j.get("completed_date") or dc_j.get("booked_date") or dc_j.get("contact_date") or "—"
+    dc_read_ok  = dc_j.get("status") == "Completed"
+    dc_read_cap = str(last_read) if dc_read_ok else "—"
+    # primary_channel can be empty — fall back through the job list then a default
+    dc_channel  = next(
+        (j.get("primary_channel") for j in jobs_sorted if j.get("primary_channel")),
+        rng.choice(_MV_CHANNELS)
+    )
 
     # ── Last 3 Contacts ──────────────────────────────────────────────────────
+    # Only show contacts where something actually happened (exclude bare Unbooked)
+    contact_pool = [j for j in jobs_sorted if j.get("status") not in ("Forecast", "Unbooked")]
+    if not contact_pool:
+        contact_pool = jobs_sorted[:5]
+
+    _mop_map = {"Completed": "Completed", "Cancelled": "Cancelled",
+                "Aborted": "Aborted On Day", "Booked": "Scheduled"}
     last3_contacts = []
-    for j in jobs_sorted[:5]:   # take up to 5, dedupe to 3 meaningful
-        stat = j.get("status", "—")
-        if stat == "Forecast":
-            continue
-        dc_stat = "Read Captured" if stat == "Completed" else rng.choice(["VNR - Access Denied", "VNR - No Answer", "Pending"])
+    for j in contact_pool[:5]:
+        stat    = j.get("status", "—")
+        ch      = j.get("primary_channel") or rng.choice(_MV_CHANNELS)
+        dc_stat = "Read Captured" if stat == "Completed" else rng.choice(["VNR - Access Denied", "VNR - No Answer"])
         last3_contacts.append({
-            "date":       j.get("contact_date", "—"),
-            "channel":    j.get("primary_channel", "—"),
+            "date":       j.get("contact_date") or j.get("booked_date") or "—",
+            "channel":    ch,
             "contacts":   int(j.get("contacts_count", 1) or 1),
             "abandoned":  int(j.get("abandoned_contacts", 0) or 0),
             "outcome":    stat,
-            "mop_status": {"Completed": "Completed", "Cancelled": "Cancelled",
-                           "Aborted": "Aborted", "Booked": "Scheduled",
-                           "Unbooked": "Pending"}.get(stat, stat),
+            "mop_status": _mop_map.get(stat, stat),
             "dc_status":  dc_stat,
         })
         if len(last3_contacts) == 3:
@@ -2365,19 +2397,18 @@ def meter_view_api():
 
     # ── Last 3 Visits ────────────────────────────────────────────────────────
     last3_visits = []
-    visit_pool = [j for j in jobs_sorted if j.get("booked_date") and j.get("status") not in ("Forecast", "Unbooked")]
     for j in visit_pool[:3]:
         stat   = j.get("status", "—")
-        dc_out = "Read Captured" if stat == "Completed" else rng.choice(["VNR - Access Denied", "VNR - No Answer", "Pending"])
+        eng    = j.get("engineer_id") or f"ENG-{rng.randint(100, 999)}"
+        dc_out = "Read Captured" if stat == "Completed" else rng.choice(["VNR - Access Denied", "VNR - No Answer"])
         last3_visits.append({
-            "date":       j.get("completed_date") or j.get("booked_date") or "—",
-            "engineer":   j.get("engineer_id", "—"),
-            "job_type":   _MV_JOB_LABELS.get(j.get("job_type", ""), j.get("job_type", "—")),
-            "status":     stat,
-            "reason":     (j.get("cancellation_reason") or j.get("abort_reason") or "—").strip() or "—",
-            "mop_outcome": {"Completed": "Completed", "Cancelled": "Cancelled",
-                            "Aborted": "Aborted", "Booked": "Scheduled"}.get(stat, stat),
-            "dc_outcome": dc_out,
+            "date":        j.get("completed_date") or j.get("booked_date") or j.get("contact_date") or "—",
+            "engineer":    eng,
+            "job_type":    _MV_JOB_LABELS.get(j.get("job_type", ""), j.get("job_type", "")) or "Meter Exchange",
+            "status":      stat,
+            "reason":      (j.get("cancellation_reason") or j.get("abort_reason") or "—").strip() or "—",
+            "mop_outcome": _mop_map.get(stat, stat),
+            "dc_outcome":  dc_out,
         })
 
     return jsonify({

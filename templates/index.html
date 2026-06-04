@@ -129,14 +129,14 @@
 
         <!-- KPI Cards -->
         <div class="kpi-grid" id="journey-kpis">
-          <div class="kpi-card info"><div class="kpi-label">Customer Data Loaded Into Dialler</div><div class="kpi-value" id="kpi-customers">—</div><div class="kpi-icon">👤</div></div>
-          <div class="kpi-card info"><div class="kpi-label">Contact Attempts</div><div class="kpi-value" id="kpi-contacts">—</div><div class="kpi-icon">📞</div></div>
-          <div class="kpi-card info"><div class="kpi-label">Appointments Booked</div><div class="kpi-value" id="kpi-appointments-booked">—</div><div class="kpi-icon">📋</div></div>
-          <div class="kpi-card warn"><div class="kpi-label">Appointments Cancelled (D-1)</div><div class="kpi-value" id="kpi-cancellations">—</div><div class="kpi-icon">⚠️</div></div>
-          <div class="kpi-card warn"><div class="kpi-label">Appointments Aborted On The Day Of Visit</div><div class="kpi-value" id="kpi-aborts">—</div><div class="kpi-icon">🚫</div></div>
-          <div class="kpi-card ok"><div class="kpi-label">Executed Successfully</div><div class="kpi-value" id="kpi-completions">—</div><div class="kpi-icon">✅</div></div>
-          <div class="kpi-card ok" id="kpi-success-rate-card"><div class="kpi-label">Success Rate</div><div class="kpi-value" id="kpi-completion-rate">—</div><div class="kpi-icon">📈</div></div>
-          <div class="kpi-card"><div class="kpi-label">Average Contacts Per Customer</div><div class="kpi-value" id="kpi-avg-contacts">—</div><div class="kpi-icon">👤</div></div>
+          <div class="kpi-card info"><div class="kpi-label">Total Customer Job Requests</div><div class="kpi-value" id="kpi-total-requests">—</div><div class="kpi-fallout"></div><div class="kpi-icon">📋</div></div>
+          <div class="kpi-card info"><div class="kpi-label">Customer Data Loaded Into Dialler</div><div class="kpi-value" id="kpi-customers">—</div><div class="kpi-fallout" id="kpi-customers-fallout"></div><div class="kpi-icon">👤</div></div>
+          <div class="kpi-card info"><div class="kpi-label">Customers Successfully Contacted</div><div class="kpi-value" id="kpi-contacts">—</div><div class="kpi-fallout" id="kpi-contacts-fallout"></div><div class="kpi-icon">📞</div></div>
+          <div class="kpi-card info"><div class="kpi-label">Appointments Booked</div><div class="kpi-value" id="kpi-appointments-booked">—</div><div class="kpi-fallout" id="kpi-appointments-booked-fallout"></div><div class="kpi-icon">📋</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">Appointments Cancelled (D-1)</div><div class="kpi-value" id="kpi-cancellations">—</div><div class="kpi-fallout" id="kpi-cancellations-fallout"></div><div class="kpi-icon">⚠️</div></div>
+          <div class="kpi-card warn"><div class="kpi-label">Appointments Aborted On The Day Of Visit</div><div class="kpi-value" id="kpi-aborts">—</div><div class="kpi-fallout" id="kpi-aborts-fallout"></div><div class="kpi-icon">🚫</div></div>
+          <div class="kpi-card ok"><div class="kpi-label">Executed Successfully</div><div class="kpi-value" id="kpi-completions">—</div><div class="kpi-fallout" id="kpi-completions-fallout"></div><div class="kpi-icon">✅</div></div>
+          <div class="kpi-card"><div class="kpi-label">Average Contacts Per Customer</div><div class="kpi-value" id="kpi-avg-contacts">—</div><div class="kpi-fallout"></div><div class="kpi-icon">👤</div></div>
         </div>
 
         <div class="grid-5-7">
@@ -592,15 +592,15 @@
           <div class="mv-hero-card">
             <div class="mv-hero-sub">Enter a Meter Point Number (MPXN) to retrieve the complete meter history before calling the customer</div>
             <div class="mv-hero-row">
-              <input type="text" id="mv-mpxn-input" class="mv-input" placeholder="e.g. 3110000010000" maxlength="16" autocomplete="off">
+              <input type="text" id="mv-mpxn-input" class="mv-input" placeholder="e.g. 3110000000700" maxlength="16" autocomplete="off">
               <button class="mv-search-btn" onclick="mvSearch()">Search Meter</button>
             </div>
             <div class="mv-error" id="mv-search-error" style="display:none"></div>
             <div class="mv-examples">
               Try:
-              <span class="mv-chip" onclick="mvTryExample('3110000010000')">3110000010000</span>
-              <span class="mv-chip" onclick="mvTryExample('3110000025000')">3110000025000</span>
-              <span class="mv-chip" onclick="mvTryExample('3110000040000')">3110000040000</span>
+              <span class="mv-chip" onclick="mvTryExample('3110000000700')">3110000000700</span>
+              <span class="mv-chip" onclick="mvTryExample('3110000006331')">3110000006331</span>
+              <span class="mv-chip" onclick="mvTryExample('3110000023863')">3110000023863</span>
             </div>
           </div>
         </div>

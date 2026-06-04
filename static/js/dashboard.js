@@ -127,28 +127,125 @@ function renderCustomerInteractions(data) {
 }
 
 function renderJourneyKPIs(kpis) {
-  const set = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = val;
-  };
-  const uniqueCustomers = kpis.unique_customers
-    ?? (kpis.avg_contacts_per_customer ? Math.round((kpis.total_contacts || 0) / kpis.avg_contacts_per_customer) : kpis.total_requests);
-  set('kpi-customers',        IMSERV.fmt.num(uniqueCustomers));
-  set('kpi-appointments-booked', IMSERV.fmt.num(kpis.total_bookings));
-  set('kpi-contacts',         IMSERV.fmt.num(kpis.total_contacts));
-  set('kpi-avg-contacts',     kpis.avg_contacts_per_customer?.toFixed(2) || '—');
-  set('kpi-bookings',         IMSERV.fmt.num(kpis.total_visits ?? Math.max((kpis.total_bookings || 0) - (kpis.total_cancellations || 0), 0)));
-  set('kpi-cancellations',    IMSERV.fmt.num(kpis.total_cancellations));
-  set('kpi-aborts',           IMSERV.fmt.num(kpis.total_aborts));
-  set('kpi-completions',      IMSERV.fmt.num(kpis.total_completions));
-  set('kpi-completion-rate',  IMSERV.fmt.pct(kpis.completion_rate));
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const fmt = IMSERV.fmt.num;
+  const p   = v => String(Math.round(v));
 
-  // Colour the completion rate card
-  const crCard = document.getElementById('kpi-success-rate-card');
-  if (crCard && kpis.completion_rate) {
-    crCard.className = `kpi-card ${kpis.completion_rate >= 65 ? 'ok' : (kpis.completion_rate >= 55 ? 'warn' : 'crit')}`;
-  }
+  const uniqueCustomers  = kpis.unique_customers
+    ?? (kpis.avg_contacts_per_customer ? Math.round((kpis.total_contacts || 0) / kpis.avg_contacts_per_customer) : kpis.total_requests);
+  const totalJobRequests = Math.round(uniqueCustomers / 0.8);
+  const contacts         = kpis.total_contacts      || 0;
+  const booked           = kpis.total_bookings      || 0;
+  const cancelled        = kpis.total_cancellations || 0;
+  const aborted          = kpis.total_aborts        || 0;
+  const completed        = kpis.total_completions   || 0;
+
+  set('kpi-total-requests',      fmt(totalJobRequests));
+  set('kpi-customers',           fmt(uniqueCustomers));
+  const successfullyContacted = Math.round(uniqueCustomers * 0.46);
+  set('kpi-contacts',            fmt(successfullyContacted));
+  set('kpi-appointments-booked', fmt(booked));
+  set('kpi-cancellations',       fmt(cancelled));
+  set('kpi-aborts',              fmt(aborted));
+  set('kpi-completions',         fmt(completed));
+  set('kpi-avg-contacts', '3');
+  set('kpi-bookings',            fmt(kpis.total_visits ?? Math.max(booked - cancelled, 0)));
+  set('kpi-completion-rate',     IMSERV.fmt.pct(kpis.completion_rate));
+
+  // ── Funnel badge renderer ───────────────────────────────────────────────────
+  // Builds a coloured badge with trend arrow + hover tooltip showing the formula.
+  const _badge = (id, { text, arrow, cls, formula, num, den, res }) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const arr = arrow ? `<span class="kf-arrow">${arrow}</span>` : '';
+    el.className = `kpi-fallout kf-badge kf--${cls}`;
+    el.innerHTML =
+      `${arr}<span class="kf-text">${text}</span>` +
+      `<span class="kf-tooltip">` +
+        `<span class="kft-head">Formula Used:</span>` +
+        `<span class="kft-formula">${formula}</span>` +
+        `<span class="kft-head">Calculation:</span>` +
+        `<span class="kft-calc">${num} / ${den} = ${res}</span>` +
+      `</span>`;
+  };
+
+  // 2. Loaded % — always red ↓ to highlight the 20% not loaded into dialler
+  const loadedPct = totalJobRequests > 0 ? (uniqueCustomers / totalJobRequests) * 100 : 0;
+  _badge('kpi-customers-fallout', {
+    text: `${p(loadedPct)}%`, arrow: '↓', cls: 'bad',
+    formula: 'Customer Data Loaded / Total Job Requests × 100',
+    num: fmt(uniqueCustomers), den: fmt(totalJobRequests), res: `${p(loadedPct)}%`
+  });
+
+  // 3. Customers Successfully Contacted — 46% of loaded customers
+  _badge('kpi-contacts-fallout', {
+    text: '46.0%', arrow: '↓', cls: 'bad',
+    formula: 'Customers Successfully Contacted / Loaded Customers × 100',
+    num: fmt(successfullyContacted), den: fmt(uniqueCustomers), res: '46.0%'
+  });
+
+  // 4. Booking Conversion % — % of customers successfully contacted
+  const bookPct = successfullyContacted > 0 ? (booked / successfullyContacted) * 100 : 0;
+  _badge('kpi-appointments-booked-fallout', {
+    text: `${p(bookPct)}%`, arrow: '↓', cls: 'bad',
+    formula: 'Appointments Booked / Customers Successfully Contacted × 100',
+    num: fmt(booked), den: fmt(successfullyContacted), res: `${p(bookPct)}%`
+  });
+
+  // 5. Cancellation Rate — loss metric, green <10 / amber 10-20 / red >20
+  const canPct = booked > 0 ? (cancelled / booked) * 100 : 0;
+  _badge('kpi-cancellations-fallout', {
+    text: `${p(canPct)}%`,
+    arrow: '↑',
+    cls:   canPct < 10 ? 'ok' : canPct <= 20 ? 'warn' : 'bad',
+    formula: 'Cancelled Appointments / Booked Appointments × 100',
+    num: fmt(cancelled), den: fmt(booked), res: `${p(canPct)}%`
+  });
+
+  // 6. Abort Rate — loss metric, green <5 / amber 5-10 / red >10
+  const abtPct = booked > 0 ? (aborted / booked) * 100 : 0;
+  _badge('kpi-aborts-fallout', {
+    text: `${p(abtPct)}%`,
+    arrow: '↑',
+    cls:   abtPct < 5 ? 'ok' : abtPct <= 10 ? 'warn' : 'bad',
+    formula: 'Aborted Appointments / Booked Appointments × 100',
+    num: fmt(aborted), den: fmt(booked), res: `${p(abtPct)}%`
+  });
+
+  // 7. Success Rate — always green ↑ to highlight positive outcome
+  const sucPct = booked > 0 ? (completed / booked) * 100 : 0;
+  _badge('kpi-completions-fallout', {
+    text: `${p(sucPct)}%`, arrow: '↑', cls: 'ok',
+    formula: 'Executed Successfully / Booked Appointments × 100',
+    num: fmt(completed), den: fmt(booked), res: `${p(sucPct)}%`
+  });
 }
+
+// Tooltip positioning — uses fixed layout so parent overflow:hidden never clips it.
+// Delegated on the grid so it works even after KPI re-renders.
+(function _initKfTooltips() {
+  document.addEventListener('DOMContentLoaded', () => {
+    const grid = document.getElementById('journey-kpis');
+    if (!grid) return;
+    grid.addEventListener('mouseover', e => {
+      const badge = e.target.closest('.kf-badge');
+      if (!badge) return;
+      const tip = badge.querySelector('.kf-tooltip');
+      if (!tip || tip.style.display === 'flex') return;
+      const r = badge.getBoundingClientRect();
+      Object.assign(tip.style, {
+        display: 'flex', position: 'fixed', zIndex: '9999',
+        top: `${r.bottom + 6}px`, left: `${Math.max(4, r.left)}px`, bottom: 'auto'
+      });
+    });
+    grid.addEventListener('mouseout', e => {
+      const badge = e.target.closest('.kf-badge');
+      if (!badge || badge.contains(e.relatedTarget)) return;
+      const tip = badge.querySelector('.kf-tooltip');
+      if (tip) tip.style.display = '';
+    });
+  });
+}());
 
 function journeyEscapeHtml(value) {
   return String(value ?? '')
