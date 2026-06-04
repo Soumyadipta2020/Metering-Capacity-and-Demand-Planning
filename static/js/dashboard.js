@@ -626,7 +626,7 @@ async function renderRegionalHeatmap(data) {
       if (scaled >= 0.16) return 'tier5';
       return 'tier6';
     };
-    const fmtBp = v => v.toFixed(1) + '%';
+    const fmtBp = v => Math.round(v) + '%';
     const bp1 = minSelectedRate + 0.83 * selectedRateRange;
     const bp2 = minSelectedRate + 0.66 * selectedRateRange;
     const bp3 = minSelectedRate + 0.50 * selectedRateRange;
@@ -694,7 +694,7 @@ async function renderRegionalHeatmap(data) {
       return `
         <g class="uk-region-label">
           <text x="${x.toFixed(1)}" y="${(y - 7).toFixed(1)}">${code}</text>
-          <text class="uk-region-rate" x="${x.toFixed(1)}" y="${(y + 9).toFixed(1)}">${IMSERV.fmt.pct(region.selected_success_rate)}</text>
+          <text class="uk-region-rate" x="${x.toFixed(1)}" y="${(y + 9).toFixed(1)}">${Math.round(region.selected_success_rate)}%</text>
         </g>
       `;
     }).join('');
@@ -714,8 +714,8 @@ async function renderRegionalHeatmap(data) {
               ${labels}
             </svg>
             <div class="uk-network-card">
-              <span>Network average</span>
-              <strong>${IMSERV.fmt.pct(averageCompletion)}</strong>
+              <span>National Average</span>
+              <strong>${Math.round(averageCompletion)}%</strong>
               <em>${IMSERV.fmt.num(totalCompletions)} completed / ${IMSERV.fmt.num(totalDenominator)} ${metric === 'booked' ? 'booked' : 'requested'}</em>
             </div>
             <div class="uk-map-tooltip" hidden></div>
@@ -763,13 +763,13 @@ async function renderRegionalHeatmap(data) {
       tooltip.innerHTML = `
         <div class="umt-header">
           <span class="umt-region">${name}</span>
-          <span class="umt-badge ${toneClass}">${rate.toFixed(1)}%</span>
+          <span class="umt-badge ${toneClass}">${Math.round(rate)}%</span>
         </div>
         <div class="umt-divider"></div>
         <div class="umt-rows">
           <div class="umt-row"><span class="umt-label">Completed</span><strong class="umt-val umt-val--completed">${IMSERV.fmt.num(completed)}</strong></div>
           <div class="umt-row"><span class="umt-label">${denomLabel}</span><strong class="umt-val">${IMSERV.fmt.num(denominator)}</strong></div>
-          <div class="umt-row umt-row--rate"><span class="umt-label">Success Rate</span><strong class="umt-val umt-val--rate">${rate.toFixed(1)}%</strong></div>
+          <div class="umt-row umt-row--rate"><span class="umt-label">Success Rate</span><strong class="umt-val umt-val--rate">${Math.round(rate)}%</strong></div>
         </div>
       `;
       tooltip.hidden = false;
@@ -933,149 +933,150 @@ function renderDecompositionTree(data, container) {
   container.innerHTML = '';
 
   const fmt = IMSERV.fmt.num;
-  const pct = (v, d) => d > 0 ? ((v / d) * 100).toFixed(1) + '%' : '—';
+  const pct = (v, d) => d > 0 ? Math.round(v / d * 100) + '%' : '—';
 
-  const totalVisited   = data.channels.reduce((s, c) => s + (c.visited || 0), 0);
-  const totalExecuted  = data.channels.reduce((s, c) => s + (c.executed_successfully || 0), 0);
-  const totalCancelled = data.channels.reduce((s, c) => s + (c.cancelled || 0), 0);
-  const totalAborted   = data.channels.reduce((s, c) => s + (c.aborted || 0), 0);
+  // Funnel values — mirror the KPI cards exactly
+  const loaded             = data.total_loaded || 0;
+  const totalRequests      = Math.round(loaded / 0.8);
+  const notLoaded          = totalRequests - loaded;
+  const contacted          = Math.round(loaded * 0.46);
+  const notContacted       = loaded - contacted;
+  const booked             = data.booked || 0;
+  const notBooked          = Math.max(contacted - booked, 0);
+  const totalCancelled     = (data.channels || []).reduce((s, c) => s + (c.cancelled || 0), 0);
+  const totalAborted       = (data.channels || []).reduce((s, c) => s + (c.aborted || 0), 0);
+  const totalExecuted      = (data.channels || []).reduce((s, c) => s + (c.executed_successfully || 0), 0);
 
-  function makeNode(id, title, value, maxVal, colorClass, subPct, children, extra, parentId) {
-    subPct    = subPct    || '';
-    children  = children  || [];
-    extra     = extra     || '';
-    const p          = maxVal > 0 ? Math.min((value / maxVal) * 100, 100) : 0;
+  function makeNode(id, title, value, maxVal, colorClass, subPct, children, parentId) {
+    children = children || [];
+    const barW       = maxVal > 0 ? Math.min((value / maxVal) * 100, 100) : 0;
     const childAttr  = children.length ? `data-children="${children.join(',')}"` : '';
     const parentAttr = parentId ? `data-parent="${parentId}"` : '';
     const hidden     = id === 'node-total' ? '' : 'style="display:none;"';
     const clickable  = children.length ? 'clickable-node' : '';
     const pctBadge   = subPct ? `<span class="dnode-pct dnode-pct--${colorClass}">${subPct}</span>` : '';
-    const extraHtml  = extra  ? `<div class="dnode-extra">${extra}</div>` : '';
     return `<div class="decomp-node type-${colorClass} ${clickable}" id="${id}" data-color="${colorClass}" ${childAttr} ${parentAttr} ${hidden} onclick="toggleDecompNode('${id}')">
       <div class="dnode-top"><span class="dnode-dot dnode-dot--${colorClass}"></span><span class="dnode-header">${title}</span></div>
       <div class="dnode-value-row"><strong class="dnode-value">${fmt(value)}</strong>${pctBadge}</div>
-      ${extraHtml}
-      <div class="decomp-bar-container"><div class="decomp-bar ${colorClass}" style="width:${p.toFixed(1)}%"></div></div>
+      <div class="decomp-bar-container"><div class="decomp-bar ${colorClass}" style="width:${barW.toFixed(1)}%"></div></div>
     </div>`;
   }
 
-  // Region nodes are the children of node-booked
-  const regionNodes = (data.regions || []).map((_, i) => `node-reg-${i}`);
+  // Col 3 — Regions (children of Loaded)
+  const regNodeIds = (data.regions || []).map((_, i) => `node-reg-${i}`);
+  let col3 = '';
+  (data.regions || []).forEach((reg, i) => {
+    const regContacted    = Math.round((reg.loaded || 0) * 0.46);
+    const regNotContacted = Math.max((reg.loaded || 0) - regContacted, 0);
+    col3 += makeNode(`node-reg-${i}`, reg.region_code, reg.loaded || 0, loaded, 'blue',
+      pct(reg.loaded || 0, loaded),
+      [`node-reg-${i}-contacted`, `node-reg-${i}-not-contacted`],
+      'node-loaded');
+  });
 
-  // Build columns: col3=Regions, col4=Channels(per region), col5=Visit Outcome, col6=Visit Result, col7=Execution
-  let col3 = '', col4 = '', col5 = '', col6 = '', col7 = '';
+  // Col 4 — Contact Outcome per Region (children of each Region)
+  let col4 = '';
+  (data.regions || []).forEach((reg, i) => {
+    const regLoaded       = reg.loaded || 0;
+    const regContacted    = Math.round(regLoaded * 0.46);
+    const regNotContacted = Math.max(regLoaded - regContacted, 0);
+    const regChIds        = (reg.channels || []).map((_, j) => `node-reg-${i}-ch-${j}`);
+    col4 += makeNode(`node-reg-${i}-contacted`,     'Successfully Contacted', regContacted,    regLoaded, 'blue', pct(regContacted,    regLoaded), regChIds, `node-reg-${i}`);
+    col4 += makeNode(`node-reg-${i}-not-contacted`, 'Not Contacted',          regNotContacted, regLoaded, 'red',  pct(regNotContacted, regLoaded), [],       `node-reg-${i}`);
+  });
 
-  (data.regions || []).forEach((reg, ridx) => {
-    const regId  = `reg-${ridx}`;
-    const regChNodes = (reg.channels || []).map((_, cidx) => `node-${regId}-ch-${cidx}`);
-
-    col3 += makeNode(
-      `node-${regId}`,
-      reg.region_code,
-      reg.booked, data.booked, 'blue',
-      pct(reg.booked, data.booked),
-      regChNodes,
-      `E2E: ${pct(reg.executed_successfully, reg.booked)}`,
-      'node-booked'
-    );
-
-    (reg.channels || []).forEach((ch, cidx) => {
-      const chId = `${regId}-ch-${cidx}`;
-      col4 += makeNode(`node-${chId}`, ch.channel, ch.booked, reg.booked, 'blue',
-        pct(ch.booked, reg.booked), [`node-${chId}-visited`, `node-${chId}-cancel`],
-        `E2E: ${pct(ch.executed_successfully, ch.booked)}`, `node-${regId}`);
-      col5 += makeNode(`node-${chId}-visited`, 'Visited', ch.visited, ch.booked, 'blue',
-        pct(ch.visited, ch.booked), [`node-${chId}-success`, `node-${chId}-abort`],
-        '', `node-${chId}`);
-      col5 += makeNode(`node-${chId}-cancel`, 'Cancelled (D-1)', ch.cancelled, ch.booked, 'red',
-        pct(ch.cancelled, ch.booked), [], '', `node-${chId}`);
-      col6 += makeNode(`node-${chId}-success`, 'Successful Visit', ch.successful_visit, ch.visited, 'green',
-        pct(ch.successful_visit, ch.visited), [`node-${chId}-executed`, `node-${chId}-unresolved`],
-        '', `node-${chId}-visited`);
-      col6 += makeNode(`node-${chId}-abort`, 'Aborted', ch.aborted, ch.visited, 'red',
-        pct(ch.aborted, ch.visited), [], '', `node-${chId}-visited`);
-      col7 += makeNode(`node-${chId}-executed`, 'Executed Successfully', ch.executed_successfully, ch.successful_visit, 'green',
-        pct(ch.executed_successfully, ch.successful_visit), [], '', `node-${chId}-success`);
-      col7 += makeNode(`node-${chId}-unresolved`, 'Unresolved', ch.unresolved, ch.successful_visit, 'amber',
-        pct(ch.unresolved, ch.successful_visit), [], '', `node-${chId}-success`);
+  // Col 5 — Channels per Region (children of each Region's Contacted node)
+  let col5 = '';
+  (data.regions || []).forEach((reg, i) => {
+    const regContacted = Math.round((reg.loaded || 0) * 0.46);
+    (reg.channels || []).forEach((ch, j) => {
+      col5 += makeNode(`node-reg-${i}-ch-${j}`, ch.channel, ch.booked, regContacted, 'blue',
+        pct(ch.booked, regContacted),
+        [`node-reg-${i}-ch-${j}-booked`],
+        `node-reg-${i}-contacted`);
     });
   });
 
-  container.innerHTML = `
+  // Col 6 — Appointments Booked per Channel per Region
+  let col6 = '';
+  (data.regions || []).forEach((reg, i) => {
+    (reg.channels || []).forEach((ch, j) => {
+      col6 += makeNode(`node-reg-${i}-ch-${j}-booked`, 'Appointments Booked', ch.booked, ch.booked, 'blue',
+        '100%',
+        [`node-reg-${i}-ch-${j}-exec`, `node-reg-${i}-ch-${j}-cancel`, `node-reg-${i}-ch-${j}-abort`],
+        `node-reg-${i}-ch-${j}`);
+    });
+  });
+
+  // Col 7 — Outcomes per Channel per Region
+  let col7 = '';
+  (data.regions || []).forEach((reg, i) => {
+    (reg.channels || []).forEach((ch, j) => {
+      col7 += makeNode(`node-reg-${i}-ch-${j}-exec`,   'Executed Successfully', ch.executed_successfully, ch.booked, 'green', pct(ch.executed_successfully, ch.booked), [], `node-reg-${i}-ch-${j}-booked`);
+      col7 += makeNode(`node-reg-${i}-ch-${j}-cancel`, 'Cancelled (D-1)',       ch.cancelled,             ch.booked, 'red',   pct(ch.cancelled,             ch.booked), [], `node-reg-${i}-ch-${j}-booked`);
+      col7 += makeNode(`node-reg-${i}-ch-${j}-abort`,  'Aborted on Day',        ch.aborted,               ch.booked, 'amber', pct(ch.aborted,               ch.booked), [], `node-reg-${i}-ch-${j}-booked`);
+    });
+  });
+
+  // Summary bar — mirrors KPI card funnel
+  const summaryHtml = `
     <div class="decomp-summary">
-      <div class="dsum-step">
-        <span class="dsum-label">Data Loaded</span>
-        <strong class="dsum-val">${fmt(data.total_loaded)}</strong>
-      </div>
+      <div class="dsum-step"><span class="dsum-label">Job Requests</span><strong class="dsum-val">${fmt(totalRequests)}</strong></div>
       <span class="dsum-arrow">→</span>
-      <div class="dsum-step">
-        <span class="dsum-label">Booked</span>
-        <strong class="dsum-val">${fmt(data.booked)}</strong>
-        <span class="dsum-rate dsum-rate--blue">${pct(data.booked, data.total_loaded)}</span>
-      </div>
+      <div class="dsum-step"><span class="dsum-label">Loaded</span><strong class="dsum-val">${fmt(loaded)}</strong><span class="dsum-rate dsum-rate--blue">${pct(loaded, totalRequests)}</span></div>
       <span class="dsum-arrow">→</span>
-      <div class="dsum-step">
-        <span class="dsum-label">Visited</span>
-        <strong class="dsum-val">${fmt(totalVisited)}</strong>
-        <span class="dsum-rate dsum-rate--blue">${pct(totalVisited, data.booked)}</span>
-      </div>
+      <div class="dsum-step"><span class="dsum-label">Contacted</span><strong class="dsum-val">${fmt(contacted)}</strong><span class="dsum-rate dsum-rate--blue">${pct(contacted, loaded)}</span></div>
       <span class="dsum-arrow">→</span>
-      <div class="dsum-step">
-        <span class="dsum-label">Executed</span>
-        <strong class="dsum-val">${fmt(totalExecuted)}</strong>
-        <span class="dsum-rate dsum-rate--green">${pct(totalExecuted, data.booked)}</span>
-      </div>
+      <div class="dsum-step"><span class="dsum-label">Booked</span><strong class="dsum-val">${fmt(booked)}</strong><span class="dsum-rate dsum-rate--blue">${pct(booked, contacted)}</span></div>
+      <span class="dsum-arrow">→</span>
+      <div class="dsum-step"><span class="dsum-label">Executed</span><strong class="dsum-val">${fmt(totalExecuted)}</strong><span class="dsum-rate dsum-rate--green">${pct(totalExecuted, booked)}</span></div>
       <div class="dsum-sep"></div>
-      <div class="dsum-e2e">
-        <span class="dsum-label">End-to-End Rate</span>
-        <strong class="dsum-e2e-val">${pct(totalExecuted, data.total_loaded)}</strong>
-        <span class="dsum-label">Loaded → Executed</span>
-      </div>
+      <div class="dsum-step"><span class="dsum-label">Cancelled</span><strong class="dsum-val dsum-val--red">${fmt(totalCancelled)}</strong><span class="dsum-rate dsum-rate--red">${pct(totalCancelled, booked)}</span></div>
+      <div class="dsum-step"><span class="dsum-label">Aborted</span><strong class="dsum-val dsum-val--red">${fmt(totalAborted)}</strong><span class="dsum-rate dsum-rate--red">${pct(totalAborted, booked)}</span></div>
       <div class="dsum-sep"></div>
-      <div class="dsum-step">
-        <span class="dsum-label">D-1 Cancellations</span>
-        <strong class="dsum-val dsum-val--red">${fmt(totalCancelled)}</strong>
-        <span class="dsum-rate dsum-rate--red">${pct(totalCancelled, data.booked)}</span>
-      </div>
-      <div class="dsum-step">
-        <span class="dsum-label">Same-Day Aborts</span>
-        <strong class="dsum-val dsum-val--red">${fmt(totalAborted)}</strong>
-        <span class="dsum-rate dsum-rate--red">${pct(totalAborted, totalVisited)}</span>
-      </div>
-    </div>
+      <div class="dsum-e2e"><span class="dsum-label">End-to-End</span><strong class="dsum-e2e-val">${pct(totalExecuted, totalRequests)}</strong><span class="dsum-label">Requests → Executed</span></div>
+    </div>`;
+
+  container.innerHTML = summaryHtml + `
     <div class="decomp-cols-area" id="decomp-cols-area">
       <svg class="decomp-svg-layer" id="decomp-lines"></svg>
+
       <div class="decomp-col" id="col-1">
-        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Dialler Load</div>
-        ${makeNode('node-total', 'Customer Data Loaded', data.total_loaded, data.total_loaded, 'blue', '100%', ['node-booked', 'node-notbooked'])}
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Job Requests</div>
+        ${makeNode('node-total', 'Total Job Requests', totalRequests, totalRequests, 'blue', '100%', ['node-loaded', 'node-not-loaded'])}
       </div>
+
       <div class="decomp-col" id="col-2">
-        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Booking Outcome</div>
-        ${makeNode('node-booked', 'Appointments Booked', data.booked, data.total_loaded, 'blue', pct(data.booked, data.total_loaded), regionNodes, '', 'node-total')}
-        ${makeNode('node-notbooked', 'Not Booked', data.not_booked, data.total_loaded, 'red', pct(data.not_booked, data.total_loaded), [], '', 'node-total')}
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Dialler Load</div>
+        ${makeNode('node-loaded',     'Loaded Into Dialler', loaded,    totalRequests, 'blue', pct(loaded,    totalRequests), regNodeIds, 'node-total')}
+        ${makeNode('node-not-loaded', 'Not Loaded',          notLoaded, totalRequests, 'red',  pct(notLoaded, totalRequests), [],         'node-total')}
       </div>
+
       <div class="decomp-col" id="col-3">
-        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Region Split</div>
+        <div class="decomp-stage-hdr decomp-stage-hdr--green">Region Split</div>
         ${col3}
       </div>
+
       <div class="decomp-col" id="col-4">
-        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Channel Split</div>
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Contact Outcome</div>
         ${col4}
       </div>
+
       <div class="decomp-col" id="col-5">
-        <div class="decomp-stage-hdr decomp-stage-hdr--mixed">Visit Outcome</div>
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Channel Split</div>
         ${col5}
       </div>
+
       <div class="decomp-col" id="col-6">
-        <div class="decomp-stage-hdr decomp-stage-hdr--mixed">Visit Result</div>
+        <div class="decomp-stage-hdr decomp-stage-hdr--blue">Appointments Booked</div>
         ${col6}
       </div>
+
       <div class="decomp-col" id="col-7">
-        <div class="decomp-stage-hdr decomp-stage-hdr--green">Execution</div>
+        <div class="decomp-stage-hdr decomp-stage-hdr--mixed">Outcomes</div>
         ${col7}
       </div>
-    </div>
-  `;
+    </div>`;
 
   const colsArea = document.getElementById('decomp-cols-area');
   if (colsArea) colsArea.addEventListener('scroll', drawDecompLines, { passive: true });

@@ -6768,6 +6768,12 @@ body {
 .decomp-stage-hdr--blue  { border-left-color: #3b82f6; color: #1e40af; }
 .decomp-stage-hdr--green { border-left-color: #10b981; color: #065f46; }
 .decomp-stage-hdr--mixed { border-left-color: var(--border); }
+.decomp-col-sep {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted);
+  text-align: center; padding: 6px 0 2px;
+  border-top: 1px dashed var(--border); margin-top: 4px;
+}
 [data-theme="dark"] .decomp-stage-hdr--blue  { color: rgba(147,197,253,0.90); }
 [data-theme="dark"] .decomp-stage-hdr--green { color: rgba(110,231,183,0.90); }
 
