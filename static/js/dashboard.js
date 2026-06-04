@@ -5,7 +5,7 @@ let _regionalSuccessView = 'requests';
 let _lastRegionalHeatmapData = null;
 let _ukBoundaryGeoJsonPromise = null;
 
-async function loadJourneyDashboard() {
+async function loadJourneyDashboard(force = false) {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
   const qs     = `?region=${region}&year=${year}`;
@@ -20,21 +20,25 @@ async function loadJourneyDashboard() {
 
   try {
     // Keep the first paint light; AI recommendations load after the main dashboard.
-    const [kpis, heatmap, trend, suppliers] = await Promise.all([
-      IMSERV.apiFetch('/api/journey/kpis' + qs),
-      IMSERV.apiFetch('/api/journey/regional-heatmap' + qs),
-      IMSERV.apiFetch('/api/journey/weekly-trend' + qs),
-      IMSERV.apiFetch('/api/journey/suppliers' + qs + '&top_n=25'),
-    ]);
+    const dashboard = await IMSERV.apiFetch('/api/journey/dashboard' + qs + '&top_n=25', { force });
+    const kpis = dashboard?.kpis;
+    const heatmap = dashboard?.regional_heatmap;
+    const trend = dashboard?.weekly_trend;
+    const suppliers = dashboard?.suppliers;
+    const decomposition = dashboard?.decomposition_tree;
 
-    if (kpis)    renderJourneyKPIs(kpis);
+    if (kpis) {
+      renderJourneyKPIs(kpis);
+      renderFunnel(kpis);
+    }
     if (heatmap) renderRegionalHeatmap(heatmap);
 
     if (trend) renderJourneyTrend(trend);
 
     if (suppliers) renderSupplierBehaviour(suppliers);
 
-    await loadDecompositionTree();
+    const treeContainer = document.getElementById('decomposition-tree-container');
+    if (decomposition && treeContainer) renderDecompositionTree(decomposition, treeContainer);
   } finally {
     IMSERV.setLoading(loadingTargets, false);
   }

@@ -1,20 +1,18 @@
 /* IMSERV - Module 3: Appointment Fallout */
 
-async function loadCancellationsDashboard() {
+async function loadCancellationsDashboard(force = false) {
   const region = IMSERV.getRegion();
   const year = IMSERV.getYear();
   const qs = `?region=${region}&year=${year}`;
-  const riskQs = region ? `?region=${region}` : '';
   const loadingTargets = ['pareto-chart', 'category-chart', 'recovery-constellation-stage', 'cancel-trend-chart', 'cancel-risk-panel'];
   IMSERV.setLoading(loadingTargets, true);
 
   try {
-    const [kpis, rootCauses, rebook, cancelTrends] = await Promise.all([
-      IMSERV.apiFetch('/api/cancellations/kpis' + qs),
-      IMSERV.apiFetch('/api/cancellations/root-causes' + qs),
-      IMSERV.apiFetch('/api/cancellations/rebooking' + qs),
-      IMSERV.apiFetch('/api/cancellations/trends' + riskQs),
-    ]);
+    const dashboard = await IMSERV.apiFetch('/api/cancellations/dashboard' + qs, { force });
+    const kpis = dashboard?.kpis;
+    const rootCauses = dashboard?.root_causes;
+    const rebook = dashboard?.rebooking;
+    const cancelTrends = dashboard?.trends;
 
     if (kpis) renderCancelKPIs(kpis);
     if (rootCauses) renderParetoChart(rootCauses);
@@ -24,7 +22,7 @@ async function loadCancellationsDashboard() {
       renderSupplierRebooking(rebook);
     }
     if (cancelTrends) renderCancelTrend(cancelTrends);
-    await loadCancellationRisk(false);
+    await loadCancellationRisk(false, dashboard?.prediction);
     loadFieldScorecard();
   } finally {
     IMSERV.setLoading(loadingTargets, false);
@@ -238,10 +236,10 @@ function renderCancelRegional(data) {
   container.innerHTML = `<div class="regional-risk-grid">${cells}</div>`;
 }
 
-async function loadCancellationRisk(showLoading = true) {
+async function loadCancellationRisk(showLoading = true, providedData = null) {
   const region = IMSERV.getRegion();
   if (showLoading) IMSERV.setLoading('cancel-risk-panel', true);
-  const data = await IMSERV.apiFetch('/api/cancellations/predict' + (region ? `?region=${region}` : ''));
+  const data = providedData || await IMSERV.apiFetch('/api/cancellations/predict' + (region ? `?region=${region}` : ''));
   const panel = document.getElementById('cancel-risk-panel');
   if (!panel || !data) {
     if (showLoading) IMSERV.setLoading('cancel-risk-panel', false);

@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from engine.ingestion import (
-    get_engineers, iter_engineer_availability, get_capacity_demand,
+    get_engineers, iter_engineer_availability, iter_engineer_availability_filtered, get_capacity_demand,
     to_int, to_float, safe_pct
 )
 
@@ -134,12 +134,7 @@ def get_field_ops_kpis(region_code: str = None, year: int = 2025) -> dict:
     util_values = []
     year_str = str(year)
 
-    for a in iter_engineer_availability():
-        if region_code and a.get("region_code") != region_code:
-            continue
-        if a.get("year") != year_str:
-            continue
-
+    for a in iter_engineer_availability_filtered(region_code=region_code, year=year_str):
         total_availability_days += 1
         status = a.get("status")
         if status == "Available":
@@ -280,12 +275,11 @@ def get_engineer_performance(region_code: str = None, year: int = 2025, top_n: i
     """
     by_engineer: dict = defaultdict(lambda: defaultdict(float))
     year_str = str(year)
-    for a in iter_engineer_availability():
-        if region_code and a.get("region_code") != region_code:
-            continue
-        if a.get("year") != year_str or a.get("status") != "Available":
-            continue
-
+    for a in iter_engineer_availability_filtered(
+        region_code=region_code,
+        year=year_str,
+        status="Available",
+    ):
         eng = a["engineer_id"]
         by_engineer[eng]["days"]           += 1
         by_engineer[eng]["jobs_completed"] += to_float(a["jobs_completed"])
@@ -425,15 +419,11 @@ def get_capacity_forecast_2026(
     fallback_absence_by_weekday = defaultdict(list)
     base_fte_by_year_region = defaultdict(set)
     _WEEKENDS = {"Saturday", "Sunday"}
-    for row in iter_engineer_availability():
+    for row in iter_engineer_availability_filtered(region_code=region_code, years=(2025, 2026)):
         if row.get("day_of_week") in _WEEKENDS:
             continue
         row_region = row.get("region_code")
-        if region_code and row_region != region_code:
-            continue
         year = to_int(row.get("year"))
-        if year not in (2025, 2026):
-            continue
         week = to_int(row.get("week"))
         weekday = _weekday_index(row)
         if weekday < 0 or weekday >= 5:

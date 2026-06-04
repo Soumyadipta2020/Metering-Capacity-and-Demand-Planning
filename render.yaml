@@ -2,7 +2,7 @@ services:
   - type: web
     name: imserv-platform
     env: python
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "pip install -r requirements.txt && python scripts/build_sqlite_store.py"
     startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120 --max-requests 150 --max-requests-jitter 30 app:app"
     envVars:
       - key: FLASK_ENV
@@ -29,6 +29,8 @@ services:
         value: "0.35"
       - key: IMSERV_CACHE_LARGE_DATASETS
         value: "false"
+      - key: IMSERV_SQLITE_ENABLED
+        value: "true"
       - key: IMSERV_AUTO_GENERATE_DATA
         value: "false"
       - key: MALLOC_ARENA_MAX

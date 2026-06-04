@@ -30,6 +30,7 @@ DATASET_FILES = [
     "engineer_availability.csv",
     "financial_data.csv",
     "capacity_demand.csv",
+    "field_engineers.csv",
     "forecast_baseline_2025.csv",
 ]
 _DATA_HEALTH_CACHE = {}
@@ -92,6 +93,77 @@ def _count_csv_rows(filename: str) -> int:
     return count
 
 
+def _record_health(filename: str, rows: int | None = None) -> None:
+    path = INPUTS_DIR / filename
+    if filename == "master_operations.csv" and not path.exists():
+        fallback = INPUTS_DIR / "smart_meter_jobs.csv"
+        if fallback.exists():
+            path = fallback
+    _DATA_HEALTH_CACHE[filename] = {
+        "exists": path.exists(),
+        "rows": rows,
+        "size_bytes": path.stat().st_size if path.exists() else 0,
+    }
+
+
+def _sqlite_load_rows(filename: str):
+    try:
+        from engine.sqlite_store import load_rows
+        rows = load_rows(filename)
+    except Exception as exc:
+        print(f"IMSERV: SQLite load unavailable for {filename}; using CSV ({exc})")
+        return None
+    if rows is not None:
+        _record_health(filename, len(rows))
+    return rows
+
+
+def _sqlite_iter_rows(filename: str, where_sql: str = "", params=(), columns=None):
+    try:
+        from engine.sqlite_store import iter_rows
+        return iter_rows(filename, where_sql, params, columns)
+    except Exception as exc:
+        print(f"IMSERV: SQLite stream unavailable for {filename}; using CSV ({exc})")
+        return None
+
+
+def _sqlite_count_rows(filename: str):
+    try:
+        from engine.sqlite_store import count_rows
+        count = count_rows(filename)
+    except Exception:
+        return None
+    if count is not None:
+        _record_health(filename, count)
+    return count
+
+
+def _load_table(filename: str) -> list:
+    rows = _sqlite_load_rows(filename)
+    if rows is not None:
+        return rows
+    return _load_csv(filename)
+
+
+def _iter_table(filename: str):
+    rows = _sqlite_iter_rows(filename)
+    if rows is not None:
+        count = 0
+        for row in rows:
+            count += 1
+            yield row
+        _record_health(filename, count)
+        return
+    yield from iter_csv(filename)
+
+
+def _count_rows(filename: str) -> int:
+    count = _sqlite_count_rows(filename)
+    if count is not None:
+        return count
+    return _count_csv_rows(filename)
+
+
 # ─── Public Accessors ─────────────────────────────────────────────────────────
 
 def get_jobs(force_reload: bool = False) -> list:
@@ -99,9 +171,9 @@ def get_jobs(force_reload: bool = False) -> list:
     master_path = INPUTS_DIR / "master_operations.csv"
     filename = "master_operations.csv" if master_path.exists() else "smart_meter_jobs.csv"
     if not _cache_large_datasets():
-        return _load_csv(filename)
+        return _load_table(filename)
     if _JOBS_CACHE is None or force_reload:
-        _JOBS_CACHE = _load_csv(filename)
+        _JOBS_CACHE = _load_table(filename)
     return _JOBS_CACHE
 
 
@@ -109,67 +181,165 @@ def iter_jobs():
     """Stream the job ledger row-by-row for memory-constrained routes."""
     master_path = INPUTS_DIR / "master_operations.csv"
     filename = "master_operations.csv" if master_path.exists() else "smart_meter_jobs.csv"
-    yield from iter_csv(filename)
+    yield from _iter_table(filename)
+
+
+def iter_jobs_filtered(
+    region_code: str = None,
+    actual_only: bool = None,
+    start: str = None,
+    end: str = None,
+    columns: list[str] | tuple[str, ...] | None = None,
+):
+    """Stream job rows using SQLite indexes when available, with CSV fallback."""
+    master_path = INPUTS_DIR / "master_operations.csv"
+    filename = "master_operations.csv" if master_path.exists() else "smart_meter_jobs.csv"
+    where = []
+    params = []
+    if actual_only:
+        where.append("is_forecast = ?")
+        params.append("0")
+    if region_code:
+        where.append("region_code = ?")
+        params.append(region_code)
+    if start:
+        where.append("requested_date >= ?")
+        params.append(start)
+    if end:
+        where.append("requested_date <= ?")
+        params.append(end)
+
+    rows = _sqlite_iter_rows(filename, " AND ".join(where), params, columns)
+    if rows is not None:
+        count = 0
+        for row in rows:
+            count += 1
+            yield row
+        _record_health(filename, count)
+        return
+
+    for row in iter_csv(filename):
+        if actual_only and row.get("is_forecast", "0") != "0":
+            continue
+        if region_code and row.get("region_code") != region_code:
+            continue
+        if start and row.get("requested_date", "")[:10] < start:
+            continue
+        if end and row.get("requested_date", "")[:10] > end:
+            continue
+        if columns:
+            yield {column: row.get(column, "") for column in columns}
+        else:
+            yield row
 
 
 def get_channel_volume(force_reload: bool = False) -> list:
     global _CHANNEL_CACHE
     if _CHANNEL_CACHE is None or force_reload:
-        _CHANNEL_CACHE = _load_csv("channel_volume.csv")
+        _CHANNEL_CACHE = _load_table("channel_volume.csv")
     return _CHANNEL_CACHE
 
 
 def iter_channel_volume():
     """Stream channel volume rows for lightweight first-page routes."""
-    yield from iter_csv("channel_volume.csv")
+    yield from _iter_table("channel_volume.csv")
 
 
 def get_booking_journey(force_reload: bool = False) -> list:
     global _JOURNEY_CACHE
     if _JOURNEY_CACHE is None or force_reload:
-        _JOURNEY_CACHE = _load_csv("booking_journey.csv")
+        _JOURNEY_CACHE = _load_table("booking_journey.csv")
     return _JOURNEY_CACHE
 
 
 def get_engineers(force_reload: bool = False) -> list:
     global _ENGINEERS_CACHE
     if _ENGINEERS_CACHE is None or force_reload:
-        _ENGINEERS_CACHE = _load_csv("engineers.csv")
+        _ENGINEERS_CACHE = _load_table("engineers.csv")
     return _ENGINEERS_CACHE
 
 
 def get_engineer_availability(force_reload: bool = False) -> list:
     global _AVAILABILITY_CACHE
     if not _cache_large_datasets():
-        return _load_csv("engineer_availability.csv")
+        return _load_table("engineer_availability.csv")
     if _AVAILABILITY_CACHE is None or force_reload:
-        _AVAILABILITY_CACHE = _load_csv("engineer_availability.csv")
+        _AVAILABILITY_CACHE = _load_table("engineer_availability.csv")
     return _AVAILABILITY_CACHE
 
 
 def iter_engineer_availability():
     """Stream engineer availability without creating a large list of dicts."""
-    yield from iter_csv("engineer_availability.csv")
+    yield from _iter_table("engineer_availability.csv")
+
+
+def iter_engineer_availability_filtered(
+    region_code: str = None,
+    year: int | str = None,
+    years: list[int] | tuple[int, ...] | None = None,
+    status: str = None,
+    columns: list[str] | tuple[str, ...] | None = None,
+):
+    """Stream availability rows with indexed year/region/status filters."""
+    where = []
+    params = []
+    if year is not None:
+        where.append("year = ?")
+        params.append(str(year))
+    elif years:
+        placeholders = ", ".join("?" for _ in years)
+        where.append(f"year IN ({placeholders})")
+        params.extend(str(y) for y in years)
+    if region_code:
+        where.append("region_code = ?")
+        params.append(region_code)
+    if status:
+        where.append("status = ?")
+        params.append(status)
+
+    rows = _sqlite_iter_rows("engineer_availability.csv", " AND ".join(where), params, columns)
+    if rows is not None:
+        count = 0
+        for row in rows:
+            count += 1
+            yield row
+        _record_health("engineer_availability.csv", count)
+        return
+
+    allowed_years = {str(y) for y in years} if years else None
+    for row in iter_csv("engineer_availability.csv"):
+        if year is not None and row.get("year") != str(year):
+            continue
+        if allowed_years and row.get("year") not in allowed_years:
+            continue
+        if region_code and row.get("region_code") != region_code:
+            continue
+        if status and row.get("status") != status:
+            continue
+        if columns:
+            yield {column: row.get(column, "") for column in columns}
+        else:
+            yield row
 
 
 def get_financial_data(force_reload: bool = False) -> list:
     global _FINANCIAL_CACHE
     if _FINANCIAL_CACHE is None or force_reload:
-        _FINANCIAL_CACHE = _load_csv("financial_data.csv")
+        _FINANCIAL_CACHE = _load_table("financial_data.csv")
     return _FINANCIAL_CACHE
 
 
 def get_capacity_demand(force_reload: bool = False) -> list:
     global _CAPACITY_CACHE
     if _CAPACITY_CACHE is None or force_reload:
-        _CAPACITY_CACHE = _load_csv("capacity_demand.csv")
+        _CAPACITY_CACHE = _load_table("capacity_demand.csv")
     return _CAPACITY_CACHE
 
 
 def get_forecast_baseline_2025(force_reload: bool = False) -> list:
     global _FORECAST_BASELINE_CACHE
     if _FORECAST_BASELINE_CACHE is None or force_reload:
-        _FORECAST_BASELINE_CACHE = _load_csv("forecast_baseline_2025.csv")
+        _FORECAST_BASELINE_CACHE = _load_table("forecast_baseline_2025.csv")
     return _FORECAST_BASELINE_CACHE
 
 
@@ -178,8 +348,8 @@ def preload_all_data(force_reload: bool = False) -> dict:
     large_counts = {}
     if not _cache_large_datasets():
         large_counts = {
-            "master_operations.csv": _count_csv_rows("master_operations.csv"),
-            "engineer_availability.csv": _count_csv_rows("engineer_availability.csv"),
+            "master_operations.csv": _count_rows("master_operations.csv"),
+            "engineer_availability.csv": _count_rows("engineer_availability.csv"),
         }
     else:
         large_counts = {
@@ -213,6 +383,18 @@ def clear_data_caches() -> dict:
     _CAPACITY_CACHE = None
     _FORECAST_BASELINE_CACHE = None
     return data_health()
+
+
+def build_sqlite_store(force: bool = True) -> bool:
+    """Build or rebuild the local SQLite cache from CSV source files."""
+    from engine.sqlite_store import build_sqlite_store as _build
+    return _build(force=force)
+
+
+def sqlite_store_status() -> dict:
+    """Return SQLite cache status for diagnostics."""
+    from engine.sqlite_store import status as _status
+    return _status()
 
 
 # ─── Filter Helpers ───────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ import json
 import threading
 import urllib.error
 import urllib.request
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from datetime import date, datetime, timedelta
 
@@ -296,6 +296,443 @@ def index():
     return render_template("index.html")
 
 
+def _input_file_signature(filename: str) -> tuple:
+    path = BASE_DIR / "data" / "inputs" / filename
+    if filename == "master_operations.csv" and not path.exists():
+        fallback = BASE_DIR / "data" / "inputs" / "smart_meter_jobs.csv"
+        if fallback.exists():
+            path = fallback
+    try:
+        stat = path.stat()
+        return (path.name, stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return (path.name, 0, 0)
+
+
+_JOURNEY_CACHE = {}
+_JOURNEY_CACHE_LOCK = threading.RLock()
+_JOURNEY_CACHE_MAX = 24
+
+
+def _journey_source_signature() -> tuple:
+    return (
+        _input_file_signature("master_operations.csv"),
+        _input_file_signature("booking_journey.csv"),
+    )
+
+
+def _clear_journey_cache() -> None:
+    with _JOURNEY_CACHE_LOCK:
+        _JOURNEY_CACHE.clear()
+
+
+def _journey_region_rows(rows: list[dict], region: str | None) -> list[dict]:
+    actual = [r for r in rows if r.get("is_forecast", "0") == "0"]
+    return [r for r in actual if r.get("region_code") == region] if region else actual
+
+
+def _build_journey_kpis(rows: list[dict], booked_reasons: Counter, to_int_fn, safe_pct_fn) -> dict:
+    total_requests = sum(to_int_fn(r["total_requests"]) for r in rows)
+    total_contacts = sum(to_int_fn(r["total_contacts"]) for r in rows)
+    total_bookings = sum(to_int_fn(r["total_bookings"]) for r in rows)
+    total_cancellations = sum(to_int_fn(r["total_cancellations"]) for r in rows)
+    total_aborts = sum(to_int_fn(r["total_aborts"]) for r in rows)
+    total_completions = sum(to_int_fn(r["total_completions"]) for r in rows)
+    total_visits = max(total_bookings - total_cancellations, 0)
+    total_after_aborts = max(total_visits - total_aborts, 0)
+    total_not_completed = max(total_after_aborts - total_completions, 0)
+    avg_contacts = round(total_contacts / max(total_requests, 1), 2)
+    reason_labels = {
+        "EXCHANGE": "Exchange still booked",
+        "NEW_INSTALL": "Install still booked",
+        "REPAIR": "Repair follow-up booked",
+        "REMOVAL": "Removal still booked",
+    }
+    reason_breakdown = [
+        {
+            "reason": reason_labels.get(reason, reason.replace("_", " ").title()),
+            "count": count,
+            "pct": safe_pct_fn(count, total_not_completed),
+        }
+        for reason, count in booked_reasons.most_common()
+    ]
+    reason_total = sum(item["count"] for item in reason_breakdown)
+    if total_not_completed > reason_total:
+        reason_breakdown.append({
+            "reason": "Other still booked",
+            "count": total_not_completed - reason_total,
+            "pct": safe_pct_fn(total_not_completed - reason_total, total_not_completed),
+        })
+
+    return {
+        "unique_customers": total_requests,
+        "total_requests": total_requests,
+        "total_contacts": total_contacts,
+        "avg_contacts_per_customer": avg_contacts,
+        "total_bookings": total_bookings,
+        "total_visits": total_visits,
+        "total_cancellations": total_cancellations,
+        "total_aborts": total_aborts,
+        "total_post_abort_visits": total_after_aborts,
+        "total_not_completed_after_successful_visit": total_not_completed,
+        "total_completions": total_completions,
+        "not_completed_reasons": reason_breakdown,
+        "completion_rate": safe_pct_fn(total_completions, total_requests),
+        "booking_rate": safe_pct_fn(total_bookings, total_requests),
+        "visit_rate": safe_pct_fn(total_visits, total_requests),
+        "post_abort_rate": safe_pct_fn(total_after_aborts, total_requests),
+        "visit_success_rate": safe_pct_fn(total_completions, total_visits),
+        "cancellation_rate": safe_pct_fn(total_cancellations, total_bookings),
+        "abort_rate": safe_pct_fn(total_aborts, total_bookings - total_cancellations),
+    }
+
+
+def _build_journey_weekly_trend(rows: list[dict], to_int_fn) -> dict:
+    weekly = {}
+    for r in rows:
+        wk = r.get("week_start", "")[:10]
+        if wk not in weekly:
+            weekly[wk] = {"requests": 0, "bookings": 0, "visits": 0, "completions": 0, "cancellations": 0, "aborts": 0}
+        bookings = to_int_fn(r["total_bookings"])
+        cancellations = to_int_fn(r["total_cancellations"])
+        weekly[wk]["requests"] += to_int_fn(r["total_requests"])
+        weekly[wk]["bookings"] += bookings
+        weekly[wk]["visits"] += max(bookings - cancellations, 0)
+        weekly[wk]["completions"] += to_int_fn(r["total_completions"])
+        weekly[wk]["cancellations"] += cancellations
+        weekly[wk]["aborts"] += to_int_fn(r["total_aborts"])
+
+    labels, requests, bookings, visits, completions, cancellations, aborts = [], [], [], [], [], [], []
+    for wk in sorted(weekly.keys()):
+        d = weekly[wk]
+        labels.append(wk)
+        requests.append(d["requests"])
+        bookings.append(d["bookings"])
+        visits.append(d["visits"])
+        completions.append(d["completions"])
+        cancellations.append(d["cancellations"])
+        aborts.append(d["aborts"])
+
+    return {
+        "labels": labels,
+        "requests": requests,
+        "bookings": bookings,
+        "visits": visits,
+        "completions": completions,
+        "cancellations": cancellations,
+        "aborts": aborts,
+    }
+
+
+def _build_journey_heatmap(rows: list[dict], to_int_fn, safe_pct_fn) -> list[dict]:
+    by_region = {}
+    for r in rows:
+        rc = r["region_code"]
+        if rc not in by_region:
+            by_region[rc] = {"requests": 0, "bookings": 0, "completions": 0, "cancellations": 0, "aborts": 0, "region_name": r.get("region_name", rc)}
+        by_region[rc]["requests"] += to_int_fn(r["total_requests"])
+        by_region[rc]["bookings"] += to_int_fn(r["total_bookings"])
+        by_region[rc]["completions"] += to_int_fn(r["total_completions"])
+        by_region[rc]["cancellations"] += to_int_fn(r["total_cancellations"])
+        by_region[rc]["aborts"] += to_int_fn(r["total_aborts"])
+
+    result = []
+    for rc, d in by_region.items():
+        cr = safe_pct_fn(d["completions"], d["requests"])
+        result.append({
+            "region_code": rc,
+            "region_name": d["region_name"],
+            "requests": d["requests"],
+            "bookings": d["bookings"],
+            "completions": d["completions"],
+            "cancellations": d["cancellations"],
+            "aborts": d["aborts"],
+            "completion_rate": cr,
+            "rag": "Green" if cr >= 65 else ("Amber" if cr >= 55 else "Red"),
+        })
+    result.sort(key=lambda x: -x["completion_rate"])
+    return result
+
+
+def _build_decomposition_tree(reg_ch: dict, reg_loaded: dict, reg_not_booked: dict) -> dict:
+    def _build_channel(ch, d):
+        visits = max(d["bookings"] - d["cancellations"], 0)
+        successful = max(visits - d["aborts"], 0)
+        completions = d["completions"]
+        return {
+            "channel": ch,
+            "booked": d["bookings"],
+            "visited": visits,
+            "cancelled": d["cancellations"],
+            "successful_visit": successful,
+            "aborted": d["aborts"],
+            "executed_successfully": completions,
+            "unresolved": max(successful - completions, 0),
+        }
+
+    region_list = []
+    channel_totals = defaultdict(lambda: {"bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0})
+    for reg in sorted(reg_loaded):
+        reg_channels = []
+        for ch, d in reg_ch[reg].items():
+            reg_channels.append(_build_channel(ch, d))
+            for key in ("bookings", "cancellations", "aborts", "completions"):
+                channel_totals[ch][key] += d[key]
+        reg_channels.sort(key=lambda x: -x["booked"])
+        region_list.append({
+            "region_code": reg,
+            "loaded": reg_loaded[reg],
+            "booked": sum(c["booked"] for c in reg_channels),
+            "not_booked": reg_not_booked[reg],
+            "visited": sum(c["visited"] for c in reg_channels),
+            "cancelled": sum(c["cancelled"] for c in reg_channels),
+            "successful_visit": sum(c["successful_visit"] for c in reg_channels),
+            "aborted": sum(c["aborted"] for c in reg_channels),
+            "executed_successfully": sum(c["executed_successfully"] for c in reg_channels),
+            "unresolved": sum(c["unresolved"] for c in reg_channels),
+            "channels": reg_channels,
+        })
+    region_list.sort(key=lambda x: -x["booked"])
+    channel_list = [_build_channel(ch, d) for ch, d in channel_totals.items()]
+    channel_list.sort(key=lambda x: -x["booked"])
+    return {
+        "total_loaded": sum(reg_loaded.values()),
+        "booked": sum(r["booked"] for r in region_list),
+        "not_booked": sum(r["not_booked"] for r in region_list),
+        "channels": channel_list,
+        "regions": region_list,
+    }
+
+
+def _journey_supplier_payload(base: dict, top_n: int, safe_pct_fn) -> dict:
+    suppliers = base["suppliers"]
+    totals = base["totals"]
+    top_limit = max(top_n, 1)
+    top_suppliers = [dict(s) for s in suppliers[:top_limit]]
+    tail_suppliers = suppliers[top_limit:]
+    if tail_suppliers:
+        others = {
+            "supplier_name": "Others",
+            "requests": sum(s["requests"] for s in tail_suppliers),
+            "contacts": sum(s["contacts"] for s in tail_suppliers),
+            "bookings": sum(s["bookings"] for s in tail_suppliers),
+            "visits": sum(s["visits"] for s in tail_suppliers),
+            "completions": sum(s["completions"] for s in tail_suppliers),
+            "cancellations": sum(s["cancellations"] for s in tail_suppliers),
+            "aborts": sum(s["aborts"] for s in tail_suppliers),
+            "unbooked": sum(s["unbooked"] for s in tail_suppliers),
+            "unresolved": sum(s["unresolved"] for s in tail_suppliers),
+        }
+        fallout = others["cancellations"] + others["aborts"] + others["unresolved"]
+        others["booking_rate"] = safe_pct_fn(others["bookings"], others["requests"])
+        others["visit_success_rate"] = safe_pct_fn(others["completions"], others["visits"])
+        others["fallout_rate"] = safe_pct_fn(fallout, others["bookings"])
+        others["contribution_pct"] = round(others["requests"] / max(totals["requests"], 1) * 100, 2)
+        others["behaviour_score"] = round(
+            (others["booking_rate"] * 0.25) + (others["visit_success_rate"] * 0.55) - (others["fallout_rate"] * 0.20),
+            1,
+        )
+        top_suppliers.append(others)
+    total_fallout = totals["cancellations"] + totals["aborts"] + totals["unresolved"]
+    return {
+        "suppliers": top_suppliers,
+        "leaderboard": base["leaders"],
+        "watchlist": base["watchlist"],
+        "totals": {
+            **totals,
+            "fallout": total_fallout,
+            "booking_rate": safe_pct_fn(totals["bookings"], totals["requests"]),
+            "visit_success_rate": safe_pct_fn(totals["completions"], totals["visits"]),
+            "fallout_rate": safe_pct_fn(total_fallout, totals["bookings"]),
+            "behaviour_score": round(
+                (safe_pct_fn(totals["bookings"], totals["requests"]) * 0.25) +
+                (safe_pct_fn(totals["completions"], totals["visits"]) * 0.55) -
+                (safe_pct_fn(total_fallout, totals["bookings"]) * 0.20),
+                1,
+            ),
+        },
+        "supplier_count": len(suppliers),
+    }
+
+
+def _get_journey_dashboard_data(region: str | None, year: int, top_n: int = 25) -> dict:
+    region_key = region or ""
+    cache_key = (_journey_source_signature(), region_key, year)
+    with _JOURNEY_CACHE_LOCK:
+        cached = _JOURNEY_CACHE.get(cache_key)
+        if cached is not None:
+            base = cached
+            return {**base, "suppliers": _journey_supplier_payload(base["_supplier_base"], top_n, base["_safe_pct_fn"])}
+
+    get_journey, _, to_int_fn, _, safe_pct_fn, _ = _get_ingestion()
+    from engine.ingestion import iter_jobs_filtered
+
+    all_rows = _journey_region_rows(get_journey(), None)
+    rows = _journey_region_rows(all_rows, region)
+    booked_reasons = Counter()
+    by_supplier = {}
+    supplier_totals = {k: 0 for k in ("requests", "contacts", "bookings", "visits", "completions", "cancellations", "aborts", "unbooked", "unresolved")}
+    reg_ch = defaultdict(lambda: defaultdict(lambda: {"bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0}))
+    reg_loaded = defaultdict(int)
+    reg_not_booked = defaultdict(int)
+
+    def apply_job_group(job: dict, count: int, contacts: int) -> None:
+        status = job.get("status")
+        booked = bool(int(job.get("booked") or 0)) if "booked" in job else bool(job.get("booked_date"))
+        reg = job.get("region_code") or "Unknown"
+        if status == "Booked":
+            booked_reasons[job.get("job_type") or "Other"] += count
+
+        supplier = (job.get("supplier_name") or "Unassigned Supplier").strip()
+        bucket = by_supplier.setdefault(supplier, {
+            "supplier_name": supplier,
+            "requests": 0, "contacts": 0, "bookings": 0, "visits": 0,
+            "completions": 0, "cancellations": 0, "aborts": 0,
+            "unbooked": 0, "unresolved": 0, "channels": Counter(), "job_types": Counter(),
+        })
+        cancelled = status == "Cancelled"
+        aborted = status == "Aborted"
+        completed = status == "Completed"
+        unresolved = status == "Booked"
+        unbooked = not booked and status == "Unbooked"
+        visits = count if booked and not cancelled else 0
+        increments = {
+            "requests": count,
+            "contacts": contacts,
+            "bookings": count if booked else 0,
+            "visits": visits,
+            "completions": count if completed else 0,
+            "cancellations": count if cancelled else 0,
+            "aborts": count if aborted else 0,
+            "unbooked": count if unbooked else 0,
+            "unresolved": count if unresolved else 0,
+        }
+        for key, value in increments.items():
+            bucket[key] += value
+            supplier_totals[key] += value
+        bucket["channels"][job.get("primary_channel") or "Unknown"] += count
+        bucket["job_types"][job.get("job_type") or "Other"] += count
+
+        reg_loaded[reg] += count
+        if booked:
+            ch = job.get("primary_channel") or "Unknown"
+            reg_ch[reg][ch]["bookings"] += count
+            if cancelled:
+                reg_ch[reg][ch]["cancellations"] += count
+            elif aborted:
+                reg_ch[reg][ch]["aborts"] += count
+            elif completed:
+                reg_ch[reg][ch]["completions"] += count
+        else:
+            reg_not_booked[reg] += count
+
+    grouped_rows = None
+    try:
+        from engine.sqlite_store import query_rows
+        where_sql = "WHERE is_forecast = '0'"
+        params = []
+        if region:
+            where_sql += " AND region_code = ?"
+            params.append(region)
+        grouped_rows = query_rows(f"""
+            SELECT region_code, supplier_name, status,
+                   CASE WHEN booked_date <> '' THEN 1 ELSE 0 END AS booked,
+                   primary_channel, job_type,
+                   COUNT(*) AS requests,
+                   SUM(CAST(COALESCE(NULLIF(contacts_count,''),'0') AS INTEGER)) AS contacts
+            FROM master_operations
+            {where_sql}
+            GROUP BY region_code, supplier_name, status, booked, primary_channel, job_type
+        """, params)
+    except Exception:
+        grouped_rows = None
+
+    if grouped_rows is not None:
+        for group in grouped_rows:
+            apply_job_group(group, to_int_fn(group.get("requests")), to_int_fn(group.get("contacts")))
+    else:
+        job_columns = (
+            "job_ref", "region_code", "is_forecast", "requested_date", "supplier_name",
+            "status", "booked_date", "job_type", "primary_channel", "contacts_count",
+        )
+        for job in iter_jobs_filtered(region_code=region, actual_only=True, columns=job_columns):
+            apply_job_group(job, 1, to_int_fn(job.get("contacts_count")))
+
+    suppliers = []
+    for item in by_supplier.values():
+        fallout = item["cancellations"] + item["aborts"] + item["unresolved"]
+        booking_rate = safe_pct_fn(item["bookings"], item["requests"])
+        visit_success_rate = safe_pct_fn(item["completions"], item["visits"])
+        fallout_rate = safe_pct_fn(fallout, item["bookings"])
+        contribution_pct = round(item["requests"] / max(supplier_totals["requests"], 1) * 100, 2)
+        behaviour_score = round((booking_rate * 0.25) + (visit_success_rate * 0.55) - (fallout_rate * 0.20), 1)
+        suppliers.append({
+            "supplier_name": item["supplier_name"],
+            "requests": item["requests"],
+            "contacts": item["contacts"],
+            "bookings": item["bookings"],
+            "visits": item["visits"],
+            "completions": item["completions"],
+            "cancellations": item["cancellations"],
+            "aborts": item["aborts"],
+            "unbooked": item["unbooked"],
+            "unresolved": item["unresolved"],
+            "contribution_pct": contribution_pct,
+            "booking_rate": booking_rate,
+            "visit_success_rate": visit_success_rate,
+            "fallout_rate": fallout_rate,
+            "behaviour_score": behaviour_score,
+            "dominant_channel": item["channels"].most_common(1)[0][0] if item["channels"] else "Unknown",
+            "dominant_job_type": item["job_types"].most_common(1)[0][0] if item["job_types"] else "Other",
+            "segment": "",
+        })
+    if suppliers:
+        avg_score = sum(s["behaviour_score"] for s in suppliers) / len(suppliers)
+        sorted_requests = sorted(s["requests"] for s in suppliers)
+        median_requests = sorted_requests[len(sorted_requests) // 2]
+        for supplier in suppliers:
+            high_contribution = supplier["requests"] >= median_requests
+            strong_behaviour = supplier["behaviour_score"] >= avg_score
+            supplier["segment"] = (
+                "Scale and stable" if high_contribution and strong_behaviour else
+                "High-volume watch" if high_contribution else
+                "Efficient niche" if strong_behaviour else
+                "Needs attention"
+            )
+    suppliers.sort(key=lambda r: (r["requests"], r["behaviour_score"]), reverse=True)
+    supplier_base = {
+        "suppliers": suppliers,
+        "leaders": sorted(suppliers, key=lambda r: r["visit_success_rate"], reverse=True)[:5],
+        "watchlist": sorted(suppliers, key=lambda r: (r["fallout_rate"], r["requests"]), reverse=True)[:5],
+        "totals": supplier_totals,
+    }
+    base = {
+        "kpis": _build_journey_kpis(rows, booked_reasons, to_int_fn, safe_pct_fn),
+        "weekly_trend": _build_journey_weekly_trend(rows, to_int_fn),
+        "regional_heatmap": _build_journey_heatmap(all_rows, to_int_fn, safe_pct_fn),
+        "decomposition_tree": _build_decomposition_tree(reg_ch, reg_loaded, reg_not_booked),
+        "_supplier_base": supplier_base,
+        "_safe_pct_fn": safe_pct_fn,
+    }
+    with _JOURNEY_CACHE_LOCK:
+        if len(_JOURNEY_CACHE) >= _JOURNEY_CACHE_MAX:
+            _JOURNEY_CACHE.clear()
+        _JOURNEY_CACHE[cache_key] = base
+    return {**base, "suppliers": _journey_supplier_payload(supplier_base, top_n, safe_pct_fn)}
+
+
+@app.route("/api/journey/dashboard")
+def journey_dashboard():
+    region = request.args.get("region")
+    year = _request_year()
+    top_n = int(request.args.get("top_n", 25))
+    try:
+        data = _get_journey_dashboard_data(region, year, top_n)
+        return jsonify({k: v for k, v in data.items() if not k.startswith("_")})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MODULE 1 — BOOKINGS TO COMPLETIONS JOURNEY
 # ─────────────────────────────────────────────────────────────────────────────
@@ -306,75 +743,7 @@ def journey_kpis():
     region = request.args.get("region")
     year   = _request_year()
     try:
-        get_journey, _, to_int_fn, to_float_fn, safe_pct_fn, iter_jobs_fn = _get_ingestion()
-        rows = get_journey()
-        if region:
-            rows = [r for r in rows if r["region_code"] == region]
-        rows = [r for r in rows if r.get("is_forecast", "0") == "0"]
-
-        total_requests      = sum(to_int_fn(r["total_requests"])      for r in rows)
-        total_contacts      = sum(to_int_fn(r["total_contacts"])       for r in rows)
-        total_bookings      = sum(to_int_fn(r["total_bookings"])       for r in rows)
-        total_cancellations = sum(to_int_fn(r["total_cancellations"])  for r in rows)
-        total_aborts        = sum(to_int_fn(r["total_aborts"])         for r in rows)
-        total_completions   = sum(to_int_fn(r["total_completions"])    for r in rows)
-        total_visits        = max(total_bookings - total_cancellations, 0)
-        total_after_aborts  = max(total_visits - total_aborts, 0)
-        total_not_completed = max(total_after_aborts - total_completions, 0)
-        avg_contacts        = round(total_contacts / max(total_requests, 1), 2)
-        completion_rate     = safe_pct_fn(total_completions, total_requests)
-        reason_labels = {
-            "EXCHANGE": "Exchange still booked",
-            "NEW_INSTALL": "Install still booked",
-            "REPAIR": "Repair follow-up booked",
-            "REMOVAL": "Removal still booked",
-        }
-        not_completed_reasons = Counter()
-        for job in iter_jobs_fn():
-            if region and job.get("region_code") != region:
-                continue
-            if job.get("is_forecast", "0") != "0":
-                continue
-            if job.get("status") == "Booked":
-                not_completed_reasons[job.get("job_type") or "Other"] += 1
-
-        reason_breakdown = [
-            {
-                "reason": reason_labels.get(reason, reason.replace("_", " ").title()),
-                "count": count,
-                "pct": safe_pct_fn(count, total_not_completed),
-            }
-            for reason, count in not_completed_reasons.most_common()
-        ]
-        reason_total = sum(item["count"] for item in reason_breakdown)
-        if total_not_completed > reason_total:
-            reason_breakdown.append({
-                "reason": "Other still booked",
-                "count": total_not_completed - reason_total,
-                "pct": safe_pct_fn(total_not_completed - reason_total, total_not_completed),
-            })
-
-        return jsonify({
-            "unique_customers":       total_requests,
-            "total_requests":        total_requests,
-            "total_contacts":        total_contacts,
-            "avg_contacts_per_customer": avg_contacts,
-            "total_bookings":        total_bookings,
-            "total_visits":          total_visits,
-            "total_cancellations":   total_cancellations,
-            "total_aborts":          total_aborts,
-            "total_post_abort_visits": total_after_aborts,
-            "total_not_completed_after_successful_visit": total_not_completed,
-            "total_completions":     total_completions,
-            "not_completed_reasons": reason_breakdown,
-            "completion_rate":       completion_rate,
-            "booking_rate":          safe_pct_fn(total_bookings, total_requests),
-            "visit_rate":            safe_pct_fn(total_visits, total_requests),
-            "post_abort_rate":       safe_pct_fn(total_after_aborts, total_requests),
-            "visit_success_rate":    safe_pct_fn(total_completions, total_visits),
-            "cancellation_rate":     safe_pct_fn(total_cancellations, total_bookings),
-            "abort_rate":            safe_pct_fn(total_aborts, total_bookings - total_cancellations),
-        })
+        return jsonify(_get_journey_dashboard_data(region, year)["kpis"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -385,47 +754,7 @@ def journey_weekly_trend():
     region = request.args.get("region")
     year   = _request_year()
     try:
-        get_journey, _, to_int_fn, to_float_fn, _, _ = _get_ingestion()
-        rows = get_journey()
-        if region:
-            rows = [r for r in rows if r["region_code"] == region]
-        rows = [r for r in rows if r.get("is_forecast", "0") == "0"]
-        rows = sorted(rows, key=lambda x: x.get("week_start", ""))
-
-        weekly = {}
-        for r in rows:
-            wk = r.get("week_start", "")[:10]
-            if wk not in weekly:
-                weekly[wk] = {"requests": 0, "bookings": 0, "visits": 0, "completions": 0, "cancellations": 0, "aborts": 0}
-            bookings = to_int_fn(r["total_bookings"])
-            cancellations = to_int_fn(r["total_cancellations"])
-            weekly[wk]["requests"]     += to_int_fn(r["total_requests"])
-            weekly[wk]["bookings"]     += bookings
-            weekly[wk]["visits"]       += max(bookings - cancellations, 0)
-            weekly[wk]["completions"]  += to_int_fn(r["total_completions"])
-            weekly[wk]["cancellations"]+= cancellations
-            weekly[wk]["aborts"]       += to_int_fn(r["total_aborts"])
-
-        labels, requests, bookings, visits, completions, cancellations, aborts = [], [], [], [], [], [], []
-        for wk in sorted(weekly.keys()):
-            d = weekly[wk]
-            labels.append(wk)
-            requests.append(d["requests"])
-            bookings.append(d["bookings"])
-            visits.append(d["visits"])
-            completions.append(d["completions"])
-            cancellations.append(d["cancellations"])
-            aborts.append(d["aborts"])
-
-        return jsonify({
-            "labels":        labels,
-            "requests":      requests,
-            "bookings":      bookings,
-            "visits":        visits,
-            "completions":   completions,
-            "cancellations": cancellations,
-            "aborts":        aborts,
-        })
+        return jsonify(_get_journey_dashboard_data(region, year)["weekly_trend"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -437,174 +766,7 @@ def journey_suppliers():
     year = _request_year()
     top_n = int(request.args.get("top_n", 18))
     try:
-        _, _, to_int_fn, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
-        by_supplier = {}
-        totals = {
-            "requests": 0,
-            "contacts": 0,
-            "bookings": 0,
-            "visits": 0,
-            "completions": 0,
-            "cancellations": 0,
-            "aborts": 0,
-            "unbooked": 0,
-            "unresolved": 0,
-        }
-
-        for job in iter_jobs_fn():
-            if region and job.get("region_code") != region:
-                continue
-            if job.get("is_forecast", "0") != "0":
-                continue
-
-            supplier = (job.get("supplier_name") or "Unassigned Supplier").strip()
-            bucket = by_supplier.setdefault(supplier, {
-                "supplier_name": supplier,
-                "requests": 0,
-                "contacts": 0,
-                "bookings": 0,
-                "visits": 0,
-                "completions": 0,
-                "cancellations": 0,
-                "aborts": 0,
-                "unbooked": 0,
-                "unresolved": 0,
-                "channels": Counter(),
-                "job_types": Counter(),
-            })
-
-            status = job.get("status")
-            booked = bool(job.get("booked_date"))
-            cancelled = status == "Cancelled"
-            aborted = status == "Aborted"
-            completed = status == "Completed"
-            unresolved = status == "Booked"
-            unbooked = not booked and status == "Unbooked"
-            visits = 1 if booked and not cancelled else 0
-            contacts = to_int_fn(job.get("contacts_count"))
-
-            bucket["requests"] += 1
-            bucket["contacts"] += contacts
-            bucket["bookings"] += 1 if booked else 0
-            bucket["visits"] += visits
-            bucket["completions"] += 1 if completed else 0
-            bucket["cancellations"] += 1 if cancelled else 0
-            bucket["aborts"] += 1 if aborted else 0
-            bucket["unbooked"] += 1 if unbooked else 0
-            bucket["unresolved"] += 1 if unresolved else 0
-            bucket["channels"][job.get("primary_channel") or "Unknown"] += 1
-            bucket["job_types"][job.get("job_type") or "Other"] += 1
-
-            totals["requests"] += 1
-            totals["contacts"] += contacts
-            totals["bookings"] += 1 if booked else 0
-            totals["visits"] += visits
-            totals["completions"] += 1 if completed else 0
-            totals["cancellations"] += 1 if cancelled else 0
-            totals["aborts"] += 1 if aborted else 0
-            totals["unbooked"] += 1 if unbooked else 0
-            totals["unresolved"] += 1 if unresolved else 0
-
-        suppliers = []
-        for item in by_supplier.values():
-            fallout = item["cancellations"] + item["aborts"] + item["unresolved"]
-            booking_rate = safe_pct_fn(item["bookings"], item["requests"])
-            visit_success_rate = safe_pct_fn(item["completions"], item["visits"])
-            fallout_rate = safe_pct_fn(fallout, item["bookings"])
-            contribution_pct = round(item["requests"] / max(totals["requests"], 1) * 100, 2)
-            behaviour_score = round(
-                (booking_rate * 0.25) + (visit_success_rate * 0.55) - (fallout_rate * 0.20),
-                1,
-            )
-
-            suppliers.append({
-                "supplier_name": item["supplier_name"],
-                "requests": item["requests"],
-                "contacts": item["contacts"],
-                "bookings": item["bookings"],
-                "visits": item["visits"],
-                "completions": item["completions"],
-                "cancellations": item["cancellations"],
-                "aborts": item["aborts"],
-                "unbooked": item["unbooked"],
-                "unresolved": item["unresolved"],
-                "contribution_pct": contribution_pct,
-                "booking_rate": booking_rate,
-                "visit_success_rate": visit_success_rate,
-                "fallout_rate": fallout_rate,
-                "behaviour_score": behaviour_score,
-                "dominant_channel": item["channels"].most_common(1)[0][0] if item["channels"] else "Unknown",
-                "dominant_job_type": item["job_types"].most_common(1)[0][0] if item["job_types"] else "Other",
-                "segment": "",
-            })
-
-        if suppliers:
-            avg_score = sum(s["behaviour_score"] for s in suppliers) / len(suppliers)
-            sorted_requests = sorted(s["requests"] for s in suppliers)
-            median_requests = sorted_requests[len(sorted_requests) // 2]
-            for supplier in suppliers:
-                high_contribution = supplier["requests"] >= median_requests
-                strong_behaviour = supplier["behaviour_score"] >= avg_score
-                if high_contribution and strong_behaviour:
-                    supplier["segment"] = "Scale and stable"
-                elif high_contribution:
-                    supplier["segment"] = "High-volume watch"
-                elif strong_behaviour:
-                    supplier["segment"] = "Efficient niche"
-                else:
-                    supplier["segment"] = "Needs attention"
-
-        suppliers.sort(key=lambda r: (r["requests"], r["behaviour_score"]), reverse=True)
-        leaders = sorted(suppliers, key=lambda r: r["visit_success_rate"], reverse=True)[:5]
-        watchlist = sorted(suppliers, key=lambda r: (r["fallout_rate"], r["requests"]), reverse=True)[:5]
-        total_fallout = totals["cancellations"] + totals["aborts"] + totals["unresolved"]
-
-        top_limit = max(top_n, 1)
-        top_suppliers = suppliers[:top_limit]
-        tail_suppliers = suppliers[top_limit:]
-
-        if tail_suppliers:
-            others = {
-                "supplier_name": "Others",
-                "requests": sum(s["requests"] for s in tail_suppliers),
-                "contacts": sum(s["contacts"] for s in tail_suppliers),
-                "bookings": sum(s["bookings"] for s in tail_suppliers),
-                "visits": sum(s["visits"] for s in tail_suppliers),
-                "completions": sum(s["completions"] for s in tail_suppliers),
-                "cancellations": sum(s["cancellations"] for s in tail_suppliers),
-                "aborts": sum(s["aborts"] for s in tail_suppliers),
-                "unbooked": sum(s["unbooked"] for s in tail_suppliers),
-                "unresolved": sum(s["unresolved"] for s in tail_suppliers),
-            }
-            fallout = others["cancellations"] + others["aborts"] + others["unresolved"]
-            others["booking_rate"] = safe_pct_fn(others["bookings"], others["requests"])
-            others["visit_success_rate"] = safe_pct_fn(others["completions"], others["visits"])
-            others["fallout_rate"] = safe_pct_fn(fallout, others["bookings"])
-            others["contribution_pct"] = round(others["requests"] / max(totals["requests"], 1) * 100, 2)
-            others["behaviour_score"] = round(
-                (others["booking_rate"] * 0.25) + (others["visit_success_rate"] * 0.55) - (others["fallout_rate"] * 0.20), 1
-            )
-            top_suppliers.append(others)
-
-        return jsonify({
-            "suppliers": top_suppliers,
-            "leaderboard": leaders,
-            "watchlist": watchlist,
-            "totals": {
-                **totals,
-                "fallout": total_fallout,
-                "booking_rate": safe_pct_fn(totals["bookings"], totals["requests"]),
-                "visit_success_rate": safe_pct_fn(totals["completions"], totals["visits"]),
-                "fallout_rate": safe_pct_fn(total_fallout, totals["bookings"]),
-                "behaviour_score": round(
-                    (safe_pct_fn(totals["bookings"], totals["requests"]) * 0.25) +
-                    (safe_pct_fn(totals["completions"], totals["visits"]) * 0.55) -
-                    (safe_pct_fn(total_fallout, totals["bookings"]) * 0.20),
-                    1
-                )
-            },
-            "supplier_count": len(suppliers)
-        })
+        return jsonify(_get_journey_dashboard_data(region, year, top_n)["suppliers"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -614,38 +776,7 @@ def journey_regional_heatmap():
     """Regional completion rate heatmap data."""
     year = _request_year()
     try:
-        get_journey, _, to_int_fn, to_float_fn, safe_pct_fn, _ = _get_ingestion()
-        rows = get_journey()
-        rows = [r for r in rows if r.get("is_forecast", "0") == "0"]
-
-        by_region = {}
-        for r in rows:
-            rc = r["region_code"]
-            if rc not in by_region:
-                by_region[rc] = {"requests": 0, "bookings": 0, "completions": 0, "cancellations": 0, "aborts": 0, "region_name": r.get("region_name", rc)}
-            by_region[rc]["requests"]     += to_int_fn(r["total_requests"])
-            by_region[rc]["bookings"]     += to_int_fn(r["total_bookings"])
-            by_region[rc]["completions"]  += to_int_fn(r["total_completions"])
-            by_region[rc]["cancellations"]+= to_int_fn(r["total_cancellations"])
-            by_region[rc]["aborts"]       += to_int_fn(r["total_aborts"])
-
-        result = []
-        for rc, d in by_region.items():
-            cr = safe_pct_fn(d["completions"], d["requests"])
-            rag = "Green" if cr >= 65 else ("Amber" if cr >= 55 else "Red")
-            result.append({
-                "region_code":    rc,
-                "region_name":    d["region_name"],
-                "requests":       d["requests"],
-                "bookings":       d["bookings"],
-                "completions":    d["completions"],
-                "cancellations":  d["cancellations"],
-                "aborts":         d["aborts"],
-                "completion_rate":cr,
-                "rag":            rag,
-            })
-        result.sort(key=lambda x: -x["completion_rate"])
-        return jsonify(result)
+        return jsonify(_get_journey_dashboard_data(None, year)["regional_heatmap"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -668,8 +799,7 @@ def journey_decomposition_tree():
     region = request.args.get("region")
     year = _request_year()
     try:
-        from engine.forecasting_engine import get_decomposition_tree
-        return jsonify(get_decomposition_tree(region, year))
+        return jsonify(_get_journey_dashboard_data(region, year)["decomposition_tree"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -728,13 +858,332 @@ def forecasting_planning_target_kpis():
 # MODULE 3 — APPOINTMENT FALLOUT
 # ─────────────────────────────────────────────────────────────────────────────
 
+_CANCELLATION_CACHE = {}
+_CANCELLATION_CACHE_LOCK = threading.RLock()
+_CANCELLATION_CACHE_MAX = 24
+
+
+def _cancellation_source_signature() -> tuple:
+    return (
+        _input_file_signature("master_operations.csv"),
+        _input_file_signature("booking_journey.csv"),
+    )
+
+
+def _clear_cancellation_cache() -> None:
+    with _CANCELLATION_CACHE_LOCK:
+        _CANCELLATION_CACHE.clear()
+
+
+def _get_cancellation_dashboard_data(region: str | None, year: int, include_aborts: bool = True) -> dict:
+    region_key = region or ""
+    cache_key = (_cancellation_source_signature(), region_key, year, include_aborts)
+    with _CANCELLATION_CACHE_LOCK:
+        cached = _CANCELLATION_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+    from engine.ingestion import iter_jobs_filtered, safe_pct
+    from engine.cancellation_engine import CANCEL_CATEGORIES, _resolve_abort_reason, get_cancellation_trends
+
+    total = cancelled = aborted = completed = 0
+    reason_counter = Counter()
+    cancellation_counter = Counter()
+    abort_counter = Counter()
+    category_counter = Counter()
+    reason_supplier_cancellation = defaultdict(Counter)
+    reason_supplier_abort = defaultdict(Counter)
+    cancellations_by_region = Counter()
+    supplier_cancels = Counter()
+
+    def apply_status_count(row_region: str, status: str, count: int) -> None:
+        nonlocal total, cancelled, aborted, completed
+        selected = not region or row_region == region
+        if status == "Cancelled":
+            cancellations_by_region[row_region] += count
+        if not selected:
+            return
+        total += count
+        if status == "Cancelled":
+            cancelled += count
+        elif status == "Aborted":
+            aborted += count
+        elif status == "Completed":
+            completed += count
+
+    def apply_cancellation_reason(row: dict, count: int) -> None:
+        reason = row.get("cancellation_reason")
+        if not reason:
+            return
+        supplier = row.get("supplier_name", "Unknown").strip() or "Unknown"
+        supplier_cancels[supplier] += count
+        reason_counter[reason] += count
+        cancellation_counter[reason] += count
+        category_counter[CANCEL_CATEGORIES.get(reason, "Other")] += count
+        reason_supplier_cancellation[reason][supplier] += count
+
+    def apply_abort_reason(row: dict, count: int = 1) -> None:
+        if not include_aborts or not row.get("abort_reason"):
+            return
+        supplier = row.get("supplier_name", "Unknown").strip() or "Unknown"
+        reason = _resolve_abort_reason(row.get("job_ref", ""), row["abort_reason"])
+        reason_counter[reason] += count
+        abort_counter[reason] += count
+        category_counter[CANCEL_CATEGORIES.get(reason, "Other")] += count
+        reason_supplier_abort[reason][supplier] += count
+
+    used_sqlite = False
+    try:
+        from engine.sqlite_store import query_rows
+        status_rows = query_rows("""
+            SELECT region_code, status, COUNT(*) AS n
+            FROM master_operations
+            WHERE is_forecast = '0'
+            GROUP BY region_code, status
+        """)
+        reason_where = "WHERE is_forecast = '0' AND status = 'Cancelled'"
+        reason_params = []
+        if region:
+            reason_where += " AND region_code = ?"
+            reason_params.append(region)
+        cancellation_rows = query_rows(f"""
+            SELECT region_code, supplier_name, cancellation_reason, COUNT(*) AS n
+            FROM master_operations
+            {reason_where}
+            GROUP BY region_code, supplier_name, cancellation_reason
+        """, reason_params)
+        abort_where = "WHERE is_forecast = '0' AND status = 'Aborted'"
+        abort_params = []
+        if region:
+            abort_where += " AND region_code = ?"
+            abort_params.append(region)
+        abort_rows = query_rows(f"""
+            SELECT job_ref, region_code, supplier_name, abort_reason
+            FROM master_operations
+            {abort_where}
+        """, abort_params)
+        used_sqlite = status_rows is not None and cancellation_rows is not None and abort_rows is not None
+    except Exception:
+        used_sqlite = False
+
+    if used_sqlite:
+        for row in status_rows:
+            apply_status_count(row.get("region_code") or "Unknown", row.get("status"), int(row.get("n") or 0))
+        for row in cancellation_rows:
+            apply_cancellation_reason(row, int(row.get("n") or 0))
+        for row in abort_rows:
+            apply_abort_reason(row)
+    else:
+        job_columns = (
+            "job_ref", "region_code", "is_forecast", "requested_date", "status",
+            "cancellation_reason", "abort_reason", "supplier_name",
+        )
+        for row in iter_jobs_filtered(actual_only=True, columns=job_columns):
+            row_region = row.get("region_code") or "Unknown"
+            status = row.get("status")
+            apply_status_count(row_region, status, 1)
+            selected = not region or row_region == region
+            if not selected:
+                continue
+            if status == "Cancelled":
+                apply_cancellation_reason(row, 1)
+            elif status == "Aborted":
+                apply_abort_reason(row, 1)
+
+    cancel_rate = safe_pct(cancelled, total)
+    abort_rate = safe_pct(aborted, total - cancelled)
+    kpis = {
+        "total_jobs": total,
+        "cancellations": cancelled,
+        "aborts": aborted,
+        "completions": completed,
+        "cancel_rate_pct": cancel_rate,
+        "abort_rate_pct": abort_rate,
+        "combined_loss_pct": round(cancel_rate + abort_rate, 1),
+    }
+
+    def reason_rows(counter: Counter, supplier_dict: dict, total_count: int) -> list:
+        rows = []
+        for reason, count in sorted(counter.items(), key=lambda x: -x[1]):
+            sorted_suppliers = sorted(supplier_dict.get(reason, {}).items(), key=lambda x: -x[1])
+            top_15 = sorted_suppliers[:15]
+            others_count = sum(x[1] for x in sorted_suppliers[15:])
+            suppliers = [{"name": name, "count": sc} for name, sc in top_15]
+            if others_count > 0:
+                suppliers.append({"name": "Others", "count": others_count})
+            rows.append({
+                "reason": reason,
+                "category": CANCEL_CATEGORIES.get(reason, "Other"),
+                "count": count,
+                "pct": safe_pct(count, total_count),
+                "suppliers": suppliers,
+            })
+        return rows
+
+    total_reasons = sum(reason_counter.values())
+    total_cancellations = sum(cancellation_counter.values())
+    total_aborts = sum(abort_counter.values())
+    category_data = [
+        {"category": cat, "count": count, "pct": safe_pct(count, total_reasons)}
+        for cat, count in sorted(category_counter.items(), key=lambda x: -x[1])
+    ]
+    cumulative = 0
+    pareto = []
+    for reason, count in sorted(reason_counter.items(), key=lambda x: -x[1]):
+        pct = safe_pct(count, total_reasons)
+        cumulative += pct
+        pareto.append({
+            "reason": reason,
+            "category": CANCEL_CATEGORIES.get(reason, "Other"),
+            "count": count,
+            "pct": round(pct, 1),
+            "cumulative_pct": round(cumulative, 1),
+        })
+    root_causes = {
+        "total_events": total_reasons,
+        "total_cancellations": total_cancellations,
+        "total_aborts": total_aborts,
+        "total_reasons": total_reasons,
+        "cancellation_reasons": reason_rows(cancellation_counter, reason_supplier_cancellation, total_cancellations),
+        "abort_reasons": reason_rows(abort_counter, reason_supplier_abort, total_aborts),
+        "pareto": pareto,
+        "categories": category_data,
+        "top_reason": pareto[0]["reason"] if pareto else None,
+        "top_category": category_data[0]["category"] if category_data else None,
+    }
+
+    import random as rng
+    rng.seed(42)
+    regions = ["NW", "NE", "MID", "SE", "SW", "WAL", "SCO", "YRK"] if not region else [region]
+    rebook_data = []
+    for rc in regions:
+        rebook_rate = round(rng.uniform(0.35, 0.65), 3)
+        avg_lag_days = round(rng.uniform(8, 21), 1)
+        success_pct = round(rebook_rate * rng.uniform(0.75, 0.92) * 100, 1)
+        total_cancels = cancellations_by_region.get(rc, 0)
+        rebooked_count = round(total_cancels * rebook_rate)
+        completed_rebooks = round(rebooked_count * (success_pct / 100))
+        fast_pct = round(rng.uniform(28, 52), 1)
+        rebook_data.append({
+            "region_code": rc,
+            "rebook_rate_pct": round(rebook_rate * 100, 1),
+            "avg_rebook_lag_days": avg_lag_days,
+            "rebook_success_pct": success_pct,
+            "total_cancellations": total_cancels,
+            "rebooked_count": rebooked_count,
+            "completed_rebooks": completed_rebooks,
+            "failed_rebooks": rebooked_count - completed_rebooks,
+            "not_rebooked": total_cancels - rebooked_count,
+            "fast_rebook_pct": fast_pct,
+        })
+
+    sorted_suppliers = sorted(supplier_cancels.items(), key=lambda x: -x[1])
+    supplier_list = [{"name": name, "count": sc} for name, sc in sorted_suppliers[:15]]
+    others_count = sum(x[1] for x in sorted_suppliers[15:])
+    if others_count > 0:
+        supplier_list.append({"name": "Others", "count": others_count})
+    supplier_rebook_data = []
+    for supplier in supplier_list:
+        name = supplier["name"]
+        total_cancels = supplier["count"]
+        supplier_rng = __import__("random").Random(hash(name))
+        rebook_rate = round(supplier_rng.uniform(0.20, 0.70), 3)
+        avg_lag_days = round(supplier_rng.uniform(5, 25), 1)
+        success_pct = round(rebook_rate * supplier_rng.uniform(0.60, 0.95) * 100, 1)
+        rebooked_count = round(total_cancels * rebook_rate)
+        completed_rebooks = round(rebooked_count * (success_pct / 100))
+        fast_pct = round(supplier_rng.uniform(20, 60), 1)
+        supplier_rebook_data.append({
+            "supplier_name": name,
+            "total_cancellations": total_cancels,
+            "rebook_rate_pct": round(rebook_rate * 100, 1),
+            "avg_rebook_lag_days": avg_lag_days,
+            "rebook_success_pct": success_pct,
+            "rebooked_count": rebooked_count,
+            "completed_rebooks": completed_rebooks,
+            "failed_rebooks": rebooked_count - completed_rebooks,
+            "not_rebooked": total_cancels - rebooked_count,
+            "fast_rebook_pct": fast_pct,
+        })
+
+    rebooking = {
+        "rebook_data": rebook_data,
+        "supplier_rebook_data": supplier_rebook_data,
+        "overall_rebook_rate": round(sum(d["rebook_rate_pct"] for d in rebook_data) / max(len(rebook_data), 1), 1),
+        "avg_rebook_lag_days": round(sum(d["avg_rebook_lag_days"] for d in rebook_data) / max(len(rebook_data), 1), 1),
+        "total_cancellations": sum(d["total_cancellations"] for d in rebook_data),
+        "total_rebooked": sum(d["rebooked_count"] for d in rebook_data),
+        "total_completed": sum(d["completed_rebooks"] for d in rebook_data),
+    }
+
+    trends = get_cancellation_trends(region)
+    risk_score = min(100, cancel_rate * 3.5 + abort_rate * 2.5)
+    risk_level = "Critical" if risk_score > 75 else ("High" if risk_score > 50 else ("Medium" if risk_score > 25 else "Low"))
+    trend = trends.get("monthly_trend", [])
+    if len(trend) >= 6:
+        recent_rates = [t["cancel_rate"] for t in trend[-6:]]
+        trend_dir = "Rising" if (recent_rates[-1] - recent_rates[0]) / 6 > 0 else "Falling"
+    elif len(trend) >= 3:
+        recent_rates = [t["cancel_rate"] for t in trend[-3:]]
+        trend_dir = "Rising" if recent_rates[-1] > recent_rates[0] else "Falling"
+    else:
+        trend_dir = "Stable"
+    drivers = []
+    if cancel_rate > 15:
+        drivers.append({"driver": "High cancellation rate", "impact": "High", "value": f"{cancel_rate}%"})
+    if abort_rate > 10:
+        drivers.append({"driver": "High abort rate", "impact": "Medium", "value": f"{abort_rate}%"})
+    if trend_dir == "Rising":
+        drivers.append({"driver": "Worsening trend", "impact": "Medium", "value": "Rising"})
+    recommendations = []
+    if cancel_rate > 15:
+        recommendations.append("Implement pre-visit customer confirmation calls 48hrs before appointment")
+    if abort_rate > 10:
+        recommendations.append("Increase engineer pre-job checks and meter access verification")
+    if risk_score > 50:
+        scope = f"{region} region" if region else "all regions"
+        recommendations.append(f"Deploy targeted retention intervention for {scope}")
+    prediction = {
+        "region_code": region or "ALL",
+        "risk_score": round(risk_score, 1),
+        "risk_level": risk_level,
+        "trend_direction": trend_dir,
+        "cancel_rate": cancel_rate,
+        "abort_rate": abort_rate,
+        "drivers": drivers,
+        "recommendations": recommendations,
+    }
+
+    result = {
+        "kpis": kpis,
+        "root_causes": root_causes,
+        "rebooking": rebooking,
+        "trends": trends,
+        "prediction": prediction,
+    }
+    with _CANCELLATION_CACHE_LOCK:
+        if len(_CANCELLATION_CACHE) >= _CANCELLATION_CACHE_MAX:
+            _CANCELLATION_CACHE.clear()
+        _CANCELLATION_CACHE[cache_key] = result
+    return result
+
+
+@app.route("/api/cancellations/dashboard")
+def cancellations_dashboard():
+    region = request.args.get("region")
+    year = _request_year()
+    include_aborts = request.args.get("include_aborts", "true").lower() == "true"
+    try:
+        return jsonify(_get_cancellation_dashboard_data(region, year, include_aborts))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/cancellations/kpis")
 def cancellations_kpis():
     region = request.args.get("region")
     year   = _request_year()
     try:
-        get_kpis, *_ = _get_cancellation_engine()
-        return jsonify(get_kpis(region, year))
+        return jsonify(_get_cancellation_dashboard_data(region, year)["kpis"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -745,8 +1194,7 @@ def cancellations_root_causes():
     year          = _request_year()
     include_aborts= request.args.get("include_aborts", "true").lower() == "true"
     try:
-        _, get_rc, *_ = _get_cancellation_engine()
-        return jsonify(get_rc(region, year, include_aborts))
+        return jsonify(_get_cancellation_dashboard_data(region, year, include_aborts)["root_causes"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -755,8 +1203,7 @@ def cancellations_root_causes():
 def cancellations_trends():
     region = request.args.get("region")
     try:
-        _, _, get_trends, *_ = _get_cancellation_engine()
-        return jsonify(get_trends(region))
+        return jsonify(_get_cancellation_dashboard_data(region, _request_year())["trends"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -775,8 +1222,7 @@ def cancellations_heatmap():
 def cancellations_predict():
     region = request.args.get("region") or None
     try:
-        _, _, _, _, predict, _ = _get_cancellation_engine()
-        return jsonify(predict(region))
+        return jsonify(_get_cancellation_dashboard_data(region, _request_year())["prediction"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -786,8 +1232,7 @@ def cancellations_rebooking():
     region = request.args.get("region")
     year   = _request_year()
     try:
-        *_, get_rebook = _get_cancellation_engine()
-        return jsonify(get_rebook(region, year))
+        return jsonify(_get_cancellation_dashboard_data(region, year)["rebooking"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1070,12 +1515,27 @@ def health():
 @app.route("/api/data/reload")
 def data_reload():
     """Clear in-memory data caches so the next request reloads only what it needs."""
-    from engine.ingestion import clear_data_caches
+    from engine.ingestion import clear_data_caches, build_sqlite_store
     from engine.forecasting_engine import clear_forecast_cache
     health_info = clear_data_caches()
     clear_forecast_cache()
     _clear_timeslot_cache()
-    return jsonify({"status": "ok", "message": "Data caches cleared", "data_health": health_info})
+    _clear_journey_cache()
+    _clear_cancellation_cache()
+    sqlite_ready = build_sqlite_store(force=True)
+    return jsonify({
+        "status": "ok",
+        "message": "Data caches cleared",
+        "data_health": health_info,
+        "sqlite_store_ready": sqlite_ready,
+    })
+
+
+@app.route("/api/data/store-status")
+def data_store_status():
+    """Return local SQLite data-store status."""
+    from engine.ingestion import sqlite_store_status
+    return jsonify(sqlite_store_status())
 
 
 @app.route("/api/data/generate")
@@ -1088,13 +1548,21 @@ def data_generate():
                 "hint": "Set IMSERV_ENABLE_DATA_GENERATE=true only for a one-off maintenance run.",
             }), 403
         from engine.data_generator import generate_all
-        from engine.ingestion import clear_data_caches
+        from engine.ingestion import clear_data_caches, build_sqlite_store
         from engine.forecasting_engine import clear_forecast_cache
         generate_all()
         health_info = clear_data_caches()
         clear_forecast_cache()
         _clear_timeslot_cache()
-        return jsonify({"status": "ok", "message": "Datasets regenerated successfully", "data_health": health_info})
+        _clear_journey_cache()
+        _clear_cancellation_cache()
+        sqlite_ready = build_sqlite_store(force=True)
+        return jsonify({
+            "status": "ok",
+            "message": "Datasets regenerated successfully",
+            "data_health": health_info,
+            "sqlite_store_ready": sqlite_ready,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1209,6 +1677,24 @@ def _ts_filter_date(requested_date, ftype: str, fval: str) -> bool:
         return True
     return True
 
+def _ts_filter_bounds(ftype: str, fval: str) -> tuple[str | None, str | None]:
+    """Return ISO start/end bounds when the UI filter maps to a date range."""
+    try:
+        if ftype == "month" and fval and "-" in str(fval):
+            year, month = str(fval).split("-", 1)
+            start = date(int(year), int(month), 1)
+            end = date(start.year + (start.month // 12), (start.month % 12) + 1, 1) - timedelta(days=1)
+            return str(start), str(end)
+        if ftype == "week" and fval and "-" in str(fval):
+            start = date.fromisoformat(str(fval)[:10])
+            return str(start), str(start + timedelta(days=6))
+        if ftype == "day" and fval:
+            day = date.fromisoformat(str(fval)[:10])
+            return str(day), str(day)
+    except Exception:
+        return None, None
+    return None, None
+
 def _fmt_ts_channel(data: dict, safe_pct_fn) -> dict:
     result = {}
     for slot, channels in data.items():
@@ -1279,7 +1765,20 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> d
         if cached is not None:
             return cached
 
-    _, _, to_int_fn, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
+    _, _, to_int_fn, _, safe_pct_fn, _ = _get_ingestion()
+    from engine.ingestion import iter_jobs_filtered
+
+    start, end = _ts_filter_bounds(ftype, fval)
+    job_columns = (
+        "job_ref",
+        "is_forecast",
+        "region_code",
+        "requested_date",
+        "primary_channel",
+        "booked_date",
+        "status",
+        "contacts_count",
+    )
     channel_data = {s: {} for s in SLOTS}
     by_slot = {s: {} for s in SLOTS}
     by_day = {d: {} for d in DAYS}
@@ -1289,7 +1788,13 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> d
         for name in _VOICE_AGENTS
     }
 
-    for job in iter_jobs_fn():
+    for job in iter_jobs_filtered(
+        region_code=region,
+        actual_only=True,
+        start=start,
+        end=end,
+        columns=job_columns,
+    ):
         if job.get("is_forecast", "0") != "0":
             continue
         if region and job.get("region_code") != region:
@@ -1939,6 +2444,7 @@ def field_engineers_api():
 # ─── Startup: automatic rolling-window data check ───────────────────────────
 
 _DATA_READY_ANCHOR = None
+_DATA_READY_SIGNATURE = None
 _generation_lock = threading.Lock()
 
 def _acquire_generation_lock() -> bool:
@@ -2023,15 +2529,24 @@ def _data_window_state(current_anchor: str) -> tuple[bool, bool]:
     return False, False
 
 def _ensure_data() -> None:
+    global _DATA_READY_ANCHOR, _DATA_READY_SIGNATURE
     from engine.date_windows import rolling_generation_profile
     profile = rolling_generation_profile()
     current_anchor = profile["anchor_month"]
+    current_signature = (
+        _input_file_signature("master_operations.csv"),
+        _input_file_signature("booking_journey.csv"),
+    )
 
+    if _DATA_READY_ANCHOR == current_anchor and _DATA_READY_SIGNATURE == current_signature:
+        return
 
     print(f"IMSERV: Rolling-window check | anchor={current_anchor} | actuals={profile['actual_period']} | forecast={profile['forecast_period']}")
     missing, stale = _data_window_state(current_anchor)
 
     if not missing and not stale:
+        _DATA_READY_ANCHOR = current_anchor
+        _DATA_READY_SIGNATURE = current_signature
         print("IMSERV: All CSVs are aligned to the current rolling window. Ready.")
         return
 
@@ -2055,8 +2570,11 @@ def _ensure_data() -> None:
         missing2, stale2 = _data_window_state(current_anchor)
         if not missing2 and not stale2:
             print("IMSERV: Another worker already finished regeneration. Ready.")
-            _DATA_READY        = True
             _DATA_READY_ANCHOR = current_anchor
+            _DATA_READY_SIGNATURE = (
+                _input_file_signature("master_operations.csv"),
+                _input_file_signature("booking_journey.csv"),
+            )
             return
 
         from engine.date_roller import roll_existing_data_dates
@@ -2064,16 +2582,25 @@ def _ensure_data() -> None:
 
         try:
             from engine.ingestion import clear_data_caches
+            from engine.ingestion import build_sqlite_store
             from engine.forecasting_engine import clear_forecast_cache
             clear_data_caches()
             clear_forecast_cache()
             _clear_timeslot_cache()
+            _clear_journey_cache()
+            _clear_cancellation_cache()
+            build_sqlite_store(force=True)
         except Exception:
             pass
 
         print(
             "IMSERV: Existing CSV dates rolled successfully "
             f"for anchor {current_anchor} (month_delta={roll_result['month_delta']})."
+        )
+        _DATA_READY_ANCHOR = current_anchor
+        _DATA_READY_SIGNATURE = (
+            _input_file_signature("master_operations.csv"),
+            _input_file_signature("booking_journey.csv"),
         )
     except Exception as exc:
         print(f"IMSERV: CSV date roll failed: {exc}")
