@@ -276,13 +276,24 @@ function renderTsBizWrap(data) {
   const slotSubheader = `<th></th>` +
     TS_SLOTS.map(() => `<th class="ts-biz-sub">Bookings</th><th class="ts-biz-sub">Rate</th>`).join('');
 
+  const allRatesSlot = allTypes.flatMap(type => TS_SLOTS.map(slot => {
+      const row = (bySlot[slot] || []).find(r => r.type === type);
+      return row ? row.booking_rate : 0;
+  }));
+  const maxSlotRate = Math.max(...allRatesSlot, 1);
+  const minSlotRate = Math.min(...allRatesSlot, 0);
+
   const slotRows = allTypes.map(type => {
     const cells = TS_SLOTS.map(slot => {
       const row = (bySlot[slot] || []).find(r => r.type === type);
       const rate = row ? row.booking_rate : 0;
       const bk   = row ? row.bookings : 0;
-      const bg   = rate >= 80 ? 'rgba(16,185,129,0.18)' : rate >= 60 ? 'rgba(245,158,11,0.18)' : 'rgba(239,68,68,0.18)';
-      const col  = TS_RATE_COL(rate);
+      
+      const pct  = maxSlotRate > minSlotRate ? (rate - minSlotRate) / (maxSlotRate - minSlotRate) : 0;
+      const hue  = 120 * pct; // 0=red, 60=yellow, 120=green
+      const bg   = `hsla(${hue}, 80%, 50%, 0.2)`;
+      const col  = `hsl(${hue}, 90%, 65%)`;
+      
       return `<td class="ts-biz-td">${fmt(bk)}</td><td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${rate}%</td>`;
     }).join('');
     return `<tr><td class="ts-biz-td ts-biz-td--type">${type}</td>${cells}</tr>`;
@@ -293,12 +304,23 @@ function renderTsBizWrap(data) {
   const dayHeader = `<th class="ts-biz-th ts-biz-th--type">Business Category</th>` +
     TS_DAYS.map(d => `<th class="ts-biz-th">${d}</th>`).join('');
 
+  const allRatesDay = allTypes.flatMap(type => TS_DAYS.map(day => {
+      const row = (byDay[day] || []).find(r => r.type === type);
+      return row ? row.success_rate : 0;
+  }));
+  const maxDayRate = Math.max(...allRatesDay, 1);
+  const minDayRate = Math.min(...allRatesDay, 0);
+
   const dayRows = allTypes.map(type => {
     const cells = TS_DAYS.map(day => {
       const row  = (byDay[day] || []).find(r => r.type === type);
       const rate = row ? row.success_rate : 0;
-      const bg   = rate >= 80 ? 'rgba(16,185,129,0.18)' : rate >= 60 ? 'rgba(245,158,11,0.18)' : 'rgba(239,68,68,0.18)';
-      const col  = TS_RATE_COL(rate);
+      
+      const pct  = maxDayRate > minDayRate ? (rate - minDayRate) / (maxDayRate - minDayRate) : 0;
+      const hue  = 120 * pct;
+      const bg   = `hsla(${hue}, 80%, 50%, 0.2)`;
+      const col  = `hsl(${hue}, 90%, 65%)`;
+      
       return `<td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${rate}%</td>`;
     }).join('');
     return `<tr><td class="ts-biz-td ts-biz-td--type">${type}</td>${cells}</tr>`;

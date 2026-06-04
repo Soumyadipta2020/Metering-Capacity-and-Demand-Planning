@@ -134,7 +134,6 @@
           <div class="kpi-card info"><div class="kpi-label">Appointments Booked</div><div class="kpi-value" id="kpi-appointments-booked">—</div><div class="kpi-icon">📋</div></div>
           <div class="kpi-card warn"><div class="kpi-label">Appointments Cancelled (D-1)</div><div class="kpi-value" id="kpi-cancellations">—</div><div class="kpi-icon">⚠️</div></div>
           <div class="kpi-card warn"><div class="kpi-label">Appointments Aborted On The Day Of Visit</div><div class="kpi-value" id="kpi-aborts">—</div><div class="kpi-icon">🚫</div></div>
-          <div class="kpi-card info"><div class="kpi-label">Total Visits</div><div class="kpi-value" id="kpi-bookings">—</div><div class="kpi-icon">📅</div></div>
           <div class="kpi-card ok"><div class="kpi-label">Executed Successfully</div><div class="kpi-value" id="kpi-completions">—</div><div class="kpi-icon">✅</div></div>
           <div class="kpi-card ok" id="kpi-success-rate-card"><div class="kpi-label">Success Rate</div><div class="kpi-value" id="kpi-completion-rate">—</div><div class="kpi-icon">📈</div></div>
           <div class="kpi-card"><div class="kpi-label">Average Contacts Per Customer</div><div class="kpi-value" id="kpi-avg-contacts">—</div><div class="kpi-icon">👤</div></div>
@@ -147,7 +146,7 @@
             <div class="card-header">
               <div>
                 <div class="card-title">📊 Smart Meter Appointment Journey Funnel</div>
-                <div class="card-subtitle">Shows customer data loaded into dialler, contact attempts, appointments booked, D-1 cancellations, total visits, same-day aborts and successful execution</div>
+                <div class="card-subtitle">Shows customer data loaded into dialler, contact attempts, appointments booked, D-1 cancellations, same-day aborts and successful execution</div>
               </div>
             </div>
             <div class="card-body">
@@ -332,7 +331,7 @@
           <!-- Header -->
           <div class="fe-header">
             <div class="fe-header-left">
-              <div class="fe-section-title">Field Engineer Scorecard — 2025</div>
+              <div class="fe-section-title">Field Engineer Scorecard — Past 12 Months</div>
               <div class="fe-section-sub">Monthly performance across 50 field engineers — bookings, success rate and productivity</div>
             </div>
             <div class="fe-header-right">
@@ -344,20 +343,8 @@
           </div>
 
           <!-- Month filter chips -->
-          <div class="fe-month-bar">
-            <button class="fe-month-chip active" data-m="0"  onclick="feSetMonth(0)">All Year</button>
-            <button class="fe-month-chip"        data-m="1"  onclick="feSetMonth(1)">Jan</button>
-            <button class="fe-month-chip"        data-m="2"  onclick="feSetMonth(2)">Feb</button>
-            <button class="fe-month-chip"        data-m="3"  onclick="feSetMonth(3)">Mar</button>
-            <button class="fe-month-chip"        data-m="4"  onclick="feSetMonth(4)">Apr</button>
-            <button class="fe-month-chip"        data-m="5"  onclick="feSetMonth(5)">May</button>
-            <button class="fe-month-chip"        data-m="6"  onclick="feSetMonth(6)">Jun</button>
-            <button class="fe-month-chip"        data-m="7"  onclick="feSetMonth(7)">Jul</button>
-            <button class="fe-month-chip"        data-m="8"  onclick="feSetMonth(8)">Aug</button>
-            <button class="fe-month-chip"        data-m="9"  onclick="feSetMonth(9)">Sep</button>
-            <button class="fe-month-chip"        data-m="10" onclick="feSetMonth(10)">Oct</button>
-            <button class="fe-month-chip"        data-m="11" onclick="feSetMonth(11)">Nov</button>
-            <button class="fe-month-chip"        data-m="12" onclick="feSetMonth(12)">Dec</button>
+          <div class="fe-month-bar" id="fe-month-bar">
+            <!-- Dynamically populated by JS -->
           </div>
 
           <!-- Summary KPIs -->

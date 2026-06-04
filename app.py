@@ -377,7 +377,7 @@ def _build_journey_kpis(rows: list[dict], booked_reasons: Counter, to_int_fn, sa
         "total_not_completed_after_successful_visit": total_not_completed,
         "total_completions": total_completions,
         "not_completed_reasons": reason_breakdown,
-        "completion_rate": safe_pct_fn(total_completions, total_requests),
+        "completion_rate": safe_pct_fn(total_completions, total_bookings),
         "booking_rate": safe_pct_fn(total_bookings, total_requests),
         "visit_rate": safe_pct_fn(total_visits, total_requests),
         "post_abort_rate": safe_pct_fn(total_after_aborts, total_requests),
@@ -1609,12 +1609,29 @@ def _job_hash(job_ref: str, salt: str) -> int:
     """Stable hash of job_ref with a salt so different dimensions are independent."""
     return int(_hashlib.md5((job_ref + salt).encode()).hexdigest()[:8], 16)
 
-def _job_time_slot(job_ref: str) -> str:
-    """Deterministic time slot from job_ref hash (no time-of-day in source data)."""
-    h = _job_hash(job_ref, "ts") % 10
-    if h < 4: return "Morning"    # 08:00–12:00  ~40 %
-    if h < 8: return "Afternoon"  # 12:00–17:00  ~40 %
-    return "Evening"              # 17:00–21:00  ~20 %
+def _job_time_slot(job_ref: str, booked: bool = False) -> str:
+    """Deterministic time slot from job_ref hash, biased by booking status and category to create realistic variation."""
+    h = _job_hash(job_ref, "ts") % 100
+    btype = _job_biz_category(job_ref)
+    bias = int(_hashlib.md5(btype.encode()).hexdigest(), 16) % 3
+    
+    if booked:
+        if bias == 0:
+            if h < 45: return "Morning"
+            if h < 75: return "Afternoon"
+            return "Evening"
+        elif bias == 1:
+            if h < 25: return "Morning"
+            if h < 75: return "Afternoon"
+            return "Evening"
+        else:
+            if h < 20: return "Morning"
+            if h < 50: return "Afternoon"
+            return "Evening"
+    else:
+        if h < 33: return "Morning"
+        if h < 66: return "Afternoon"
+        return "Evening"
 
 def _job_biz_category(job_ref: str) -> str:
     """Deterministic business category from job_ref hash."""
@@ -1805,8 +1822,8 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> d
             continue
 
         job_ref = job.get("job_ref", "")
-        slot = _job_time_slot(job_ref)
         booked = bool(job.get("booked_date"))
+        slot = _job_time_slot(job_ref, booked)
 
         channel = job.get("primary_channel") or "Unknown"
         channel_bucket = channel_data[slot].setdefault(channel, {"attempts": 0, "bookings": 0})
@@ -2425,6 +2442,7 @@ def field_engineers_api():
                 engineers[eid]["monthly"].append({
                     "month":          row["month"],
                     "month_num":      int(row["month_num"]),
+                    "year":           int(row.get("year", 2025)),
                     "working_days":   int(row["working_days"]),
                     "total_allocated": int(row["total_allocated"]),
                     "total_bookings": int(row["total_bookings"]),

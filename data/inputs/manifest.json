@@ -1,15 +1,17 @@
 {
-  "generated_at": "2026-06-04T13:53:08.154433Z",
+  "generated_at": "2026-06-04T15:46:29.554703Z",
   "source_of_truth": "master_operations.csv",
   "relationship_model": {
-    "master_operations.csv": "Job-level ledger keyed by job_ref with supplier, region, patch, channel, engineer, status, dates, revenue, and cost. Includes unbooked requests and unresolved booked appointments.",
+    "master_operations.csv": "Job-level ledger keyed by job_ref with supplier, region, patch, channel, engineer, status, dates, revenue, and cost.",
+    "suppliers.csv": "Supplier dimension assigned to every request in master_operations.csv by supplier_name.",
     "channel_volume.csv": "Daily region/channel aggregation derived from master_operations.csv.",
     "booking_journey.csv": "Weekly funnel aggregation derived from master_operations.csv.",
     "financial_data.csv": "Monthly region/job-type P&L aggregation derived from master_operations.csv.",
     "capacity_demand.csv": "Weekly patch demand from master_operations.csv joined to engineer_availability.csv capacity.",
     "engineer_availability.csv": "Engineer-day table whose completed jobs are assigned from master_operations.csv.",
     "engineers.csv": "Engineer dimension joined by engineer_id.",
-    "suppliers.csv": "Supplier dimension assigned to every request in master_operations.csv by supplier_name."
+    "field_engineers.csv": "50-engineer monthly scorecard for the rolling actuals window (past 12 months).",
+    "forecast_baseline_2025.csv": "Daily actual vs forecast volume for the rolling actuals window."
   },
   "files": [
     "master_operations.csv",
@@ -19,8 +21,13 @@
     "engineers.csv",
     "engineer_availability.csv",
     "financial_data.csv",
-    "capacity_demand.csv"
+    "capacity_demand.csv",
+    "field_engineers.csv",
+    "forecast_baseline_2025.csv"
   ],
+  "rolling_anchor_month": "2026-06",
+  "actual_period": "2025-06-01 to 2026-05-31",
+  "forecast_period": "2026-06-01 to 2027-05-31",
   "period": "2025-06-01 to 2027-05-31",
   "regions": [
     "NW",
@@ -31,9 +38,5 @@
     "WAL",
     "SCO",
     "YRK"
-  ],
-  "rolling_anchor_month": "2026-06",
-  "actual_period": "2025-06-01 to 2026-05-31",
-  "forecast_period": "2026-06-01 to 2027-05-31",
-  "date_refresh_mode": "date-only"
+  ]
 }

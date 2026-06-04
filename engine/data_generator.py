@@ -242,18 +242,34 @@ def _generate_master_operations(
                 job_type = random.choices(JOB_TYPES, JOB_TYPE_WEIGHTS)[0]
                 channel = random.choices(CHANNELS, CHANNEL_WEIGHTS)[0]
 
+                contacts_count = 0
+                abandoned_contacts = 0
                 if is_forecast:
                     status = "Forecast"
                 else:
-                    roll = random.random()
-                    if roll < 0.68:
-                        status = "Completed"
-                    elif roll < 0.82:
-                        status = "Cancelled"
-                    elif roll < 0.90:
-                        status = "Aborted"
-                    elif roll < 0.94:
-                        status = "Booked"
+                    roll_loaded = random.random()
+                    if roll_loaded < 0.80:
+                        roll_contacted = random.random()
+                        if roll_contacted < 0.46:
+                            contacts_count = random.randint(1, 5)
+                            abandoned_contacts = 0
+                            roll_booked = random.random()
+                            if roll_booked < 0.38:
+                                roll_outcome = random.random()
+                                if roll_outcome < 0.20:
+                                    status = "Cancelled"
+                                elif roll_outcome < 0.27:
+                                    status = "Aborted"
+                                elif roll_outcome < 0.38:
+                                    status = "Completed"
+                                else:
+                                    status = "Booked"
+                            else:
+                                status = "Unbooked"
+                        else:
+                            contacts_count = random.randint(1, 5)
+                            abandoned_contacts = contacts_count
+                            status = "Unbooked"
                     else:
                         status = "Unbooked"
 
@@ -284,8 +300,7 @@ def _generate_master_operations(
                 cancellation_reason = random.choice(CANCEL_REASONS) if status == "Cancelled" else ""
                 abort_reason = random.choice(ABORT_REASONS) if status == "Aborted" else ""
 
-                contacts_count = 0 if is_forecast else random.randint(1, 5)
-                abandoned_contacts = 0 if is_forecast else (1 if random.random() < 0.10 else 0)
+                # contacts_count and abandoned_contacts are set above in the funnel block
                 avg_handle_mins = round(random.uniform(4.5, 12.5), 2)
 
                 direct_cost = 0.0

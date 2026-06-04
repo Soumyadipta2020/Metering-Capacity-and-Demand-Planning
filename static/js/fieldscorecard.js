@@ -75,11 +75,27 @@ async function loadFieldScorecard(force) {
   try {
     const res = await fetch('/api/field-engineers');
     FE.data = await res.json();
+    feBuildMonthChips();
     feRender();
   } catch (e) {
     const tb = document.getElementById('fe-tbody');
     if (tb) tb.innerHTML = `<tr><td colspan="10" class="fe-err">Failed to load engineer data</td></tr>`;
   }
+}
+
+function feBuildMonthChips() {
+  const bar = document.querySelector('.fe-month-bar');
+  if (!bar || !FE.data || !FE.data.engineers || !FE.data.engineers[0]) return;
+  
+  const months = FE.data.engineers[0].monthly;
+  let html = `<button class="fe-month-chip ${FE.month === 0 ? 'active' : ''}" data-m="0" onclick="feSetMonth(0)">Past 12 Months</button>`;
+  
+  months.forEach(m => {
+    const isActive = FE.month === m.month_num ? 'active' : '';
+    html += `<button class="fe-month-chip ${isActive}" data-m="${m.month_num}" onclick="feSetMonth(${m.month_num})">${m.month} '${String(m.year).slice(-2)}</button>`;
+  });
+  
+  bar.innerHTML = html;
 }
 
 function feSetMonth(m) {
@@ -227,40 +243,25 @@ function feRenderTable(rows, isYear) {
 }
 
 function feMonthlyExpansion(r) {
-  const months = FE_MONTHS;
-  const byMonth = {};
-  r.monthly.forEach(m => { byMonth[m.month] = m; });
+  const monthsData = r.monthly;
 
-  const headerCells = months.map(m => `<th class="fe-exp-th">${m}</th>`).join('');
-  const allocRow    = months.map(m => {
-    const d = byMonth[m];
-    return `<td class="fe-exp-td">${d ? d.total_allocated : '—'}</td>`;
-  }).join('');
-  const bkRow = months.map(m => {
-    const d = byMonth[m];
-    return `<td class="fe-exp-td">${d ? d.total_bookings : '—'}</td>`;
-  }).join('');
-  const sucRow = months.map(m => {
-    const d = byMonth[m];
-    return `<td class="fe-exp-td">${d ? d.success_jobs : '—'}</td>`;
-  }).join('');
-  const srRow = months.map(m => {
-    const d = byMonth[m];
-    if (!d) return `<td class="fe-exp-td">—</td>`;
+  const headerCells = monthsData.map(d => `<th class="fe-exp-th">${d.month} '${String(d.year).slice(-2)}</th>`).join('');
+  const allocRow    = monthsData.map(d => `<td class="fe-exp-td">${d.total_allocated}</td>`).join('');
+  const bkRow       = monthsData.map(d => `<td class="fe-exp-td">${d.total_bookings}</td>`).join('');
+  const sucRow      = monthsData.map(d => `<td class="fe-exp-td">${d.success_jobs}</td>`).join('');
+  
+  const srRow = monthsData.map(d => {
     const c = feBarColor(d.success_rate);
     return `<td class="fe-exp-td" style="color:${c};font-weight:600">${d.success_rate}%</td>`;
   }).join('');
-  const lvRow = months.map(m => {
-    const d = byMonth[m];
-    if (!d) return `<td class="fe-exp-td">—</td>`;
+  
+  const lvRow = monthsData.map(d => {
     const c = feLeavesColor(d.leaves_taken, false);
     return `<td class="fe-exp-td" style="color:${c}">${d.leaves_taken}</td>`;
   }).join('');
 
   // Mini sparkline bars for success rate
-  const sparkRow = months.map(m => {
-    const d = byMonth[m];
-    if (!d) return `<td class="fe-exp-td"></td>`;
+  const sparkRow = monthsData.map(d => {
     const h = Math.round(d.success_rate * 0.32); // max ~31px at 100%
     const c = feBarColor(d.success_rate);
     return `<td class="fe-exp-td fe-exp-spark-td">
