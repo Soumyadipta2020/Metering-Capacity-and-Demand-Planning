@@ -60,6 +60,7 @@ ABORT_REASONS = [
     "Customer unavailable",
     "Health & safety concern",
     "Parts not available",
+    "Eng didn't reach",
 ]
 
 EMPLOYMENT_TYPES = ["Permanent", "Contract", "Agency"]

@@ -1,0 +1,437 @@
+/* ── Time-Slot Analysis Dashboard ─────────────────────────── */
+
+let _tsFilterType  = 'all';
+let _tsFilterValue = '';
+let _tsAgentData   = null;
+let _tsLoaded      = false;
+
+const TS_SLOTS = ['Morning', 'Afternoon', 'Evening'];
+const TS_DAYS  = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+
+const TS_SLOT_COLORS = {
+  Morning:   { bg: 'rgba(251,191,36,0.12)',  accent: '#f59e0b', text: '#d97706' },
+  Afternoon: { bg: 'rgba(59,130,246,0.12)',  accent: '#3b82f6', text: '#2563eb' },
+  Evening:   { bg: 'rgba(139,92,246,0.12)',  accent: '#8b5cf6', text: '#7c3aed' },
+};
+const TS_SLOT_ICONS = { Morning: '🌅', Afternoon: '☀️', Evening: '🌆' };
+
+const TS_MONTHS = [
+  ['1','January'],['2','February'],['3','March'],['4','April'],
+  ['5','May'],['6','June'],['7','July'],['8','August'],
+  ['9','September'],['10','October'],['11','November'],['12','December'],
+];
+
+const TS_RATE_COL = v => v >= 80 ? '#10b981' : v >= 60 ? '#f59e0b' : '#ef4444';
+
+function tsQs() {
+  const region = IMSERV.getRegion();
+  let qs = `filter_type=${_tsFilterType}&filter_value=${encodeURIComponent(_tsFilterValue)}`;
+  if (region) qs += `&region=${region}`;
+  return qs;
+}
+
+async function loadTimeslotDashboard(force = false) {
+  if (_tsLoaded && !force) return;
+  _tsLoaded = true;
+
+  tsSetLoading();
+  try {
+    const [chData, bizData, attData, agData] = await Promise.all([
+      IMSERV.apiFetch('/api/timeslot/channel-booking?' + tsQs()),
+      IMSERV.apiFetch('/api/timeslot/business-type?'   + tsQs()),
+      IMSERV.apiFetch('/api/timeslot/attempts-overview?' + tsQs()),
+      IMSERV.apiFetch('/api/timeslot/agent-view?'      + tsQs()),
+    ]);
+    if (chData)  renderTsChannelGrid(chData);
+    if (bizData) renderTsBizWrap(bizData);
+    if (attData) renderTsAttemptsGrid(attData);
+    if (agData)  { _tsAgentData = agData; renderTsAgentGrid(agData); }
+  } catch (e) {
+    console.error('Timeslot load error', e);
+  }
+}
+
+function tsSetLoading() {
+  ['ts-channel-grid','ts-biz-wrap','ts-attempts-grid','ts-agent-grid'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
+  });
+}
+
+/* ── Filter controls ───────────────────────────────────────── */
+
+window.tsSetFilter = function(ftype, fval) {
+  _tsFilterType  = ftype;
+  _tsFilterValue = fval;
+  _tsLoaded = false;
+
+  document.querySelectorAll('.ts-period-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.ftype === ftype);
+  });
+  const wrap = document.getElementById('ts-picker-wrap');
+  if (wrap) wrap.style.display = 'none';
+
+  const lbl = document.getElementById('ts-active-label');
+  if (lbl) lbl.textContent = 'Showing: All 2025';
+
+  loadTimeslotDashboard(true);
+};
+
+window.tsOpenPicker = function(ftype) {
+  _tsFilterType = ftype;
+  document.querySelectorAll('.ts-period-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.ftype === ftype);
+  });
+
+  const wrap   = document.getElementById('ts-picker-wrap');
+  const sel    = document.getElementById('ts-picker-select');
+  if (!wrap || !sel) return;
+
+  sel.innerHTML = '';
+  if (ftype === 'month') {
+    TS_MONTHS.forEach(([v, l]) => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l; sel.appendChild(o);
+    });
+  } else if (ftype === 'week') {
+    for (let w = 1; w <= 52; w++) {
+      const o = document.createElement('option');
+      o.value = w; o.textContent = `Week ${w}`; sel.appendChild(o);
+    }
+  } else if (ftype === 'day') {
+    const months = TS_MONTHS.map(([v]) => parseInt(v));
+    const days   = [31,28,31,30,31,30,31,31,30,31,30,31];
+    months.forEach(m => {
+      for (let d = 1; d <= days[m-1]; d++) {
+        const ds = `2025-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const o  = document.createElement('option');
+        o.value = ds; o.textContent = ds; sel.appendChild(o);
+      }
+    });
+  }
+  wrap.style.display = '';
+  tsApplyPicker();
+};
+
+window.tsApplyPicker = function() {
+  const sel = document.getElementById('ts-picker-select');
+  if (!sel) return;
+  _tsFilterValue = sel.value;
+  _tsLoaded = false;
+
+  const lbl = document.getElementById('ts-active-label');
+  if (lbl) {
+    const txt = _tsFilterType === 'month'
+      ? TS_MONTHS.find(([v]) => v === _tsFilterValue)?.[1] || _tsFilterValue
+      : _tsFilterType === 'week' ? `Week ${_tsFilterValue}` : _tsFilterValue;
+    lbl.textContent = `Showing: ${txt}`;
+  }
+  loadTimeslotDashboard(true);
+};
+
+
+/* ── 1. Channel Booking Grid ───────────────────────────────── */
+
+function renderTsChannelGrid(data) {
+  const container = document.getElementById('ts-channel-grid');
+  if (!container) return;
+
+  const fmt = IMSERV.fmt.num;
+  const allChannels = [...new Set(TS_SLOTS.flatMap(s => (data[s] || []).map(r => r.channel)))];
+
+  const html = TS_SLOTS.map(slot => {
+    const rows = data[slot] || [];
+    const col  = TS_SLOT_COLORS[slot];
+    const maxAtt = Math.max(...rows.map(r => r.attempts), 1);
+
+    const rowsHtml = rows.map(r => {
+      const barW = (r.attempts / maxAtt * 100).toFixed(1);
+      const bkW  = Math.min(r.booking_rate, 100);
+      return `
+        <div class="ts-ch-row">
+          <span class="ts-ch-name">${r.channel}</span>
+          <div class="ts-ch-bars">
+            <div class="ts-ch-bar-wrap" title="Attempts: ${fmt(r.attempts)}">
+              <div class="ts-ch-bar ts-ch-bar--att" style="width:${barW}%;background:${col.accent};opacity:0.35;"></div>
+              <div class="ts-ch-bar ts-ch-bar--bk"  style="width:${bkW * barW / 100}%;background:${col.accent};"></div>
+            </div>
+          </div>
+          <div class="ts-ch-meta">
+            <span class="ts-ch-num">${fmt(r.attempts)}</span>
+            <span class="ts-ch-rate" style="color:${TS_RATE_COL(r.booking_rate)};">${r.booking_rate}%</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    const total    = rows.reduce((s, r) => s + r.attempts, 0);
+    const totalBk  = rows.reduce((s, r) => s + r.bookings, 0);
+    const totalRate = total > 0 ? (totalBk / total * 100).toFixed(1) : '—';
+
+    return `
+      <div class="ts-slot-panel" style="--slot-accent:${col.accent};--slot-bg:${col.bg};">
+        <div class="ts-slot-hd">
+          <span class="ts-slot-icon">${TS_SLOT_ICONS[slot]}</span>
+          <span class="ts-slot-name">${slot}</span>
+          <span class="ts-slot-total">${fmt(total)} attempts · <strong style="color:${TS_RATE_COL(parseFloat(totalRate))};">${totalRate}% booked</strong></span>
+        </div>
+        <div class="ts-ch-legend">
+          <span class="ts-ch-leg-item"><span class="ts-ch-leg-dot" style="background:${col.accent};opacity:0.35;"></span>Attempts</span>
+          <span class="ts-ch-leg-item"><span class="ts-ch-leg-dot" style="background:${col.accent};"></span>Bookings</span>
+        </div>
+        <div class="ts-ch-rows">${rowsHtml}</div>
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `<div class="ts-slots-3">${html}</div>`;
+}
+
+/* ── 2. Business Type Grid ─────────────────────────────────── */
+
+function renderTsBizWrap(data) {
+  const container = document.getElementById('ts-biz-wrap');
+  if (!container) return;
+
+  const fmt = IMSERV.fmt.num;
+
+  // Left: by slot (heatmap table)
+  const bySlot = data.by_slot || {};
+  const allTypes = [...new Set(TS_SLOTS.flatMap(s => (bySlot[s] || []).map(r => r.type)))];
+
+  const slotHeader = `<th class="ts-biz-th ts-biz-th--type">Business Category</th>` +
+    TS_SLOTS.map(s => `<th class="ts-biz-th" colspan="2">${TS_SLOT_ICONS[s]} ${s}</th>`).join('');
+
+  const slotSubheader = `<th></th>` +
+    TS_SLOTS.map(() => `<th class="ts-biz-sub">Bookings</th><th class="ts-biz-sub">Rate</th>`).join('');
+
+  const slotRows = allTypes.map(type => {
+    const cells = TS_SLOTS.map(slot => {
+      const row = (bySlot[slot] || []).find(r => r.type === type);
+      const rate = row ? row.booking_rate : 0;
+      const bk   = row ? row.bookings : 0;
+      const bg   = rate >= 80 ? 'rgba(16,185,129,0.18)' : rate >= 60 ? 'rgba(245,158,11,0.18)' : 'rgba(239,68,68,0.18)';
+      const col  = TS_RATE_COL(rate);
+      return `<td class="ts-biz-td">${fmt(bk)}</td><td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${rate}%</td>`;
+    }).join('');
+    return `<tr><td class="ts-biz-td ts-biz-td--type">${type}</td>${cells}</tr>`;
+  }).join('');
+
+  // Right: by day (heatmap table)
+  const byDay = data.by_day || {};
+  const dayHeader = `<th class="ts-biz-th ts-biz-th--type">Business Category</th>` +
+    TS_DAYS.map(d => `<th class="ts-biz-th">${d}</th>`).join('');
+
+  const dayRows = allTypes.map(type => {
+    const cells = TS_DAYS.map(day => {
+      const row  = (byDay[day] || []).find(r => r.type === type);
+      const rate = row ? row.success_rate : 0;
+      const bg   = rate >= 80 ? 'rgba(16,185,129,0.18)' : rate >= 60 ? 'rgba(245,158,11,0.18)' : 'rgba(239,68,68,0.18)';
+      const col  = TS_RATE_COL(rate);
+      return `<td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${rate}%</td>`;
+    }).join('');
+    return `<tr><td class="ts-biz-td ts-biz-td--type">${type}</td>${cells}</tr>`;
+  }).join('');
+
+  // Overall row for each table
+  const slotOverall = TS_SLOTS.map(slot => {
+    const rows = bySlot[slot] || [];
+    const totalAtt = rows.reduce((s,r) => s + r.attempts, 0);
+    const totalBk  = rows.reduce((s,r) => s + r.bookings, 0);
+    const rate = totalAtt > 0 ? +(totalBk / totalAtt * 100).toFixed(1) : 0;
+    return `<td class="ts-biz-td ts-biz-td--total">${fmt(totalBk)}</td><td class="ts-biz-td ts-biz-td--rate ts-biz-td--total" style="color:${TS_RATE_COL(rate)};">${rate}%</td>`;
+  }).join('');
+
+  const dayOverall = TS_DAYS.map(day => {
+    const rows = byDay[day] || [];
+    const totalBk  = rows.reduce((s,r) => s + r.bookings, 0);
+    const totalAtt = rows.reduce((s,r) => s + r.attempts, 0);
+    const rate = totalAtt > 0 ? +(totalBk / totalAtt * 100).toFixed(1) : 0;
+    return `<td class="ts-biz-td ts-biz-td--rate ts-biz-td--total" style="color:${TS_RATE_COL(rate)};">${rate}%</td>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="ts-biz-split">
+      <div class="ts-biz-half">
+        <div class="ts-biz-half-title">By Time Slot — Booking Rate</div>
+        <div class="ts-table-scroll">
+          <table class="ts-biz-table">
+            <thead>
+              <tr>${slotHeader}</tr>
+              <tr class="ts-biz-subrow">${slotSubheader}</tr>
+            </thead>
+            <tbody>
+              ${slotRows}
+              <tr class="ts-biz-overall-row"><td class="ts-biz-td ts-biz-td--type">Overall</td>${slotOverall}</tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="ts-biz-half">
+        <div class="ts-biz-half-title">By Weekday — Success Rate</div>
+        <div class="ts-table-scroll">
+          <table class="ts-biz-table">
+            <thead><tr>${dayHeader}</tr></thead>
+            <tbody>
+              ${dayRows}
+              <tr class="ts-biz-overall-row"><td class="ts-biz-td ts-biz-td--type">Overall</td>${dayOverall}</tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ── 3. Total Attempts vs Bookings ─────────────────────────── */
+
+function renderTsAttemptsGrid(data) {
+  const container = document.getElementById('ts-attempts-grid');
+  if (!container) return;
+
+  const fmt = IMSERV.fmt.num;
+  const maxAtt = Math.max(...TS_SLOTS.map(s => (data[s]?.attempts || 0)), 1);
+
+  const html = TS_SLOTS.map(slot => {
+    const d   = data[slot] || {};
+    const col = TS_SLOT_COLORS[slot];
+    const attW = (d.attempts / maxAtt * 100).toFixed(1);
+    const bkW  = d.attempts > 0 ? (d.bookings / d.attempts * 100).toFixed(1) : 0;
+
+    return `
+      <div class="ts-att-panel" style="--slot-accent:${col.accent};--slot-bg:${col.bg};">
+        <div class="ts-slot-hd">
+          <span class="ts-slot-icon">${TS_SLOT_ICONS[slot]}</span>
+          <span class="ts-slot-name">${slot}</span>
+        </div>
+        <div class="ts-att-stats">
+          <div class="ts-att-stat">
+            <span class="ts-att-lbl">Total Attempts</span>
+            <strong class="ts-att-val">${fmt(d.attempts || 0)}</strong>
+          </div>
+          <div class="ts-att-stat">
+            <span class="ts-att-lbl">Total Contacts</span>
+            <strong class="ts-att-val">${fmt(d.contacts || 0)}</strong>
+          </div>
+          <div class="ts-att-stat">
+            <span class="ts-att-lbl">Bookings Made</span>
+            <strong class="ts-att-val" style="color:${col.text};">${fmt(d.bookings || 0)}</strong>
+          </div>
+          <div class="ts-att-stat">
+            <span class="ts-att-lbl">Booking Rate</span>
+            <strong class="ts-att-val" style="color:${TS_RATE_COL(d.booking_rate || 0)};">${d.booking_rate || 0}%</strong>
+          </div>
+        </div>
+        <div class="ts-att-bars">
+          <div class="ts-att-bar-row">
+            <span class="ts-att-bar-lbl">Attempts</span>
+            <div class="ts-att-bar-track">
+              <div class="ts-att-bar-fill" style="width:${attW}%;background:${col.accent};opacity:0.4;"></div>
+            </div>
+          </div>
+          <div class="ts-att-bar-row">
+            <span class="ts-att-bar-lbl">Booked</span>
+            <div class="ts-att-bar-track">
+              <div class="ts-att-bar-fill" style="width:${bkW}%;background:${col.accent};"></div>
+            </div>
+            <span class="ts-att-bar-pct" style="color:${TS_RATE_COL(d.booking_rate||0)};">${d.booking_rate||0}%</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `<div class="ts-slots-3">${html}</div>`;
+}
+
+/* ── 4. Agent View — unified 3-slot table ──────────────────── */
+
+function renderTsAgentGrid(data) {
+  const container = document.getElementById('ts-agent-grid');
+  if (!container) return;
+
+  const fmt = IMSERV.fmt.num;
+
+  // Collect all unique agent names preserving rank order (by Morning total as proxy)
+  const agentNames = (data['Morning'] || []).map(r => r.agent);
+
+  // Build per-agent lookup: agentName → {Morning, Afternoon, Evening}
+  const lookup = {};
+  TS_SLOTS.forEach(slot => {
+    (data[slot] || []).forEach(r => {
+      if (!lookup[r.agent]) lookup[r.agent] = {};
+      lookup[r.agent][slot] = r;
+    });
+  });
+
+  // Re-rank by total attempts across all slots
+  const ranked = agentNames
+    .map(name => ({
+      name,
+      total: TS_SLOTS.reduce((s, sl) => s + (lookup[name]?.[sl]?.attempts || 0), 0),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  // Column max per slot (for bar scaling)
+  const slotMax = {};
+  TS_SLOTS.forEach(slot => {
+    slotMax[slot] = Math.max(...(data[slot] || []).map(r => r.attempts), 1);
+  });
+
+  // Slot header
+  const slotHeaders = TS_SLOTS.map(slot => {
+    const col = TS_SLOT_COLORS[slot];
+    return `<th class="ts-tbl-slot-hd" colspan="3" style="border-bottom:3px solid ${col.accent};">
+      ${TS_SLOT_ICONS[slot]} ${slot}
+    </th>`;
+  }).join('');
+
+  const subHeaders = TS_SLOTS.map(() =>
+    `<th class="ts-tbl-sub">Attempts</th><th class="ts-tbl-sub">Bookings</th><th class="ts-tbl-sub">Rate</th>`
+  ).join('');
+
+  const rows = ranked.map(({ name, total }, idx) => {
+    const cells = TS_SLOTS.map(slot => {
+      const col = TS_SLOT_COLORS[slot];
+      const d   = lookup[name]?.[slot] || { attempts: 0, bookings: 0, booking_rate: 0 };
+      const barW = (d.attempts / slotMax[slot] * 100).toFixed(1);
+      const rateColor = TS_RATE_COL(d.booking_rate);
+      return `
+        <td class="ts-tbl-cell">
+          <div class="ts-tbl-bar-wrap">
+            <div class="ts-tbl-bar-track">
+              <div class="ts-tbl-bar-att" style="width:${barW}%;background:${col.accent};"></div>
+              <div class="ts-tbl-bar-bk"  style="width:${(d.booking_rate)}%;background:${col.accent};opacity:0.9;"></div>
+            </div>
+            <span class="ts-tbl-num">${fmt(d.attempts)}</span>
+          </div>
+        </td>
+        <td class="ts-tbl-cell ts-tbl-cell--bk">${fmt(d.bookings)}</td>
+        <td class="ts-tbl-cell ts-tbl-cell--rate" style="color:${rateColor};">${d.booking_rate}%</td>`;
+    }).join('');
+
+    const totalBookings = TS_SLOTS.reduce((s, sl) => s + (lookup[name]?.[sl]?.bookings || 0), 0);
+    const overallRate   = total > 0 ? (totalBookings / total * 100).toFixed(1) : '0.0';
+    const rowClass      = idx % 2 === 0 ? '' : ' ts-tbl-row--alt';
+
+    return `<tr class="ts-tbl-row${rowClass}">
+      <td class="ts-tbl-rank">#${idx + 1}</td>
+      <td class="ts-tbl-name" title="${name}">${name}</td>
+      ${cells}
+      <td class="ts-tbl-total">${fmt(total)}</td>
+      <td class="ts-tbl-total-rate" style="color:${TS_RATE_COL(parseFloat(overallRate))};">${overallRate}%</td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="ts-ag-table-wrap">
+      <table class="ts-ag-table">
+        <thead>
+          <tr>
+            <th class="ts-tbl-rank-hd" rowspan="2">#</th>
+            <th class="ts-tbl-name-hd" rowspan="2">Agent</th>
+            ${slotHeaders}
+            <th class="ts-tbl-total-hd" colspan="2">Total</th>
+          </tr>
+          <tr>${subHeaders}<th class="ts-tbl-sub">Attempts</th><th class="ts-tbl-sub">Rate</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}

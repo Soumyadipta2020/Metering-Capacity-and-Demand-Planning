@@ -25,6 +25,7 @@ async function loadCancellationsDashboard() {
     }
     if (cancelTrends) renderCancelTrend(cancelTrends);
     await loadCancellationRisk(false);
+    loadFieldScorecard();
   } finally {
     IMSERV.setLoading(loadingTargets, false);
   }

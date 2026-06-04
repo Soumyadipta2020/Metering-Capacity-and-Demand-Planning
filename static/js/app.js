@@ -6,6 +6,8 @@ const VIEW_CONFIG = {
   cancellations: { title: 'Appointment Fallout Risk and Recovery', breadcrumb: 'IMSERV / Appointments / Risk and Recovery', loader: loadCancellationsDashboard },
   'field-ops': { title: 'Appointment and Resource Planning', breadcrumb: 'IMSERV / Planning / Contact Attempt Forecast and Capacity', loader: loadFieldOpsDashboard },
   financial: { title: 'Appointment and Resource Financial Planning', breadcrumb: 'IMSERV / Finance / Scenario Impact', loader: loadFinancialDashboard },
+  timeslot:  { title: 'Time-Slot Booking Analysis', breadcrumb: 'IMSERV / Appointments / Time-Slot Analysis', loader: loadTimeslotDashboard },
+  meterview: { title: 'Single Meter View', breadcrumb: 'IMSERV / Meters / Single Meter View', loader: loadMeterViewDashboard },
 };
 
 let _currentView = 'journey';
@@ -86,6 +88,17 @@ function updateSidebarControls() {
       el.dataset.iconReady = 'true';
     }
   });
+}
+
+function switchPlanningSubtab(tab) {
+  document.querySelectorAll('.pst-panel').forEach(p => p.classList.remove('pst-panel--active'));
+  document.querySelectorAll('.pst-btn').forEach(b => b.classList.remove('pst-btn--active'));
+  const panel = document.getElementById('pstab-' + tab);
+  if (panel) panel.classList.add('pst-panel--active');
+  const btn = document.querySelector(`.pst-btn[data-tab="${tab}"]`);
+  if (btn) btn.classList.add('pst-btn--active');
+  if (tab === 'shortterm') loadRosterTimeline();
+  if (tab === 'longterm')  loadLongTermPlanning();
 }
 
 function activateSidebarSubnav(viewName, tabName) {

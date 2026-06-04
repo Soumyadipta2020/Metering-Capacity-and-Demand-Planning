@@ -27,6 +27,9 @@ async function loadFieldOpsDashboard(force = false) {
   const qs     = `?region=${region}&year=${year}`;
   IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body'], true);
 
+  // Long Term is the default active sub-tab — load it alongside main data
+  if (typeof loadLongTermPlanning === 'function') loadLongTermPlanning(force);
+
   try {
     const kpis = await IMSERV.apiFetch('/api/field-ops/kpis' + qs);
     if (kpis) renderFieldOpsKPIs(kpis);

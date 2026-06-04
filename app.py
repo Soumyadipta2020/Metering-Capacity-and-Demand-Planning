@@ -1110,6 +1110,763 @@ def get_regions():
     ])
 
 
+# ─── Time-Slot Analysis helpers ──────────────────────────────────────────────
+
+import hashlib as _hashlib
+
+_BIZ_CATEGORIES = [
+    "Property & Real Estate", "Food & Beverage", "Transport & Automotive",
+    "Utilities & Energy", "Community & Non-Profit", "Retail", "Agriculture",
+    "Personal Services", "Healthcare & Medical", "Construction & Manufacturing",
+    "Education", "Financial Services", "Hospitality & Tourism", "Public Sector",
+    "Technology & Electronics", "Logistics & Delivery", "Entertainment & Leisure",
+    "General Business", "Uncategorised",
+]
+
+_VOICE_AGENTS = [
+    "Sarah Mitchell", "James Anderson", "Emma Wilson", "Daniel Thompson",
+    "Olivia Clarke", "Matthew Evans", "Sophie Turner", "Ryan Walker",
+    "Charlotte Hill", "Benjamin Harris", "Grace Roberts", "Luke Martin",
+    "Hannah Baker", "Jack Phillips", "Ava Wright", "Thomas Campbell",
+    "Mia Lewis", "Samuel Johnson", "Isla Taylor", "Jake Moore",
+    "Amelia Scott", "Ethan White", "Lucy Brown", "Noah Davies",
+    "Zoe Hall", "Callum Green", "Freya Adams", "Connor King",
+    "Ellie Wood", "Liam Hughes",
+]
+
+def _job_hash(job_ref: str, salt: str) -> int:
+    """Stable hash of job_ref with a salt so different dimensions are independent."""
+    return int(_hashlib.md5((job_ref + salt).encode()).hexdigest()[:8], 16)
+
+def _job_time_slot(job_ref: str) -> str:
+    """Deterministic time slot from job_ref hash (no time-of-day in source data)."""
+    h = _job_hash(job_ref, "ts") % 10
+    if h < 4: return "Morning"    # 08:00–12:00  ~40 %
+    if h < 8: return "Afternoon"  # 12:00–17:00  ~40 %
+    return "Evening"              # 17:00–21:00  ~20 %
+
+def _job_biz_category(job_ref: str) -> str:
+    """Deterministic business category from job_ref hash."""
+    return _BIZ_CATEGORIES[_job_hash(job_ref, "bc") % len(_BIZ_CATEGORIES)]
+
+def _job_voice_agent(job_ref: str) -> str:
+    """Deterministic voice agent from job_ref hash."""
+    return _VOICE_AGENTS[_job_hash(job_ref, "va") % len(_VOICE_AGENTS)]
+
+def _ts_filter(requested_date: str, ftype: str, fval: str) -> bool:
+    """Return True when the job falls within the requested time window (year always 2025)."""
+    if requested_date[:4] != "2025":
+        return False
+    if not ftype or ftype == "all" or not fval:
+        return True
+    try:
+        dt = datetime.strptime(requested_date, "%Y-%m-%d")
+        if ftype == "month":
+            return dt.month == int(fval)
+        if ftype == "week":
+            return dt.isocalendar()[1] == int(fval)
+        if ftype == "day":
+            return requested_date == fval
+    except Exception:
+        pass
+    return True
+
+SLOTS = ["Morning", "Afternoon", "Evening"]
+DAYS  = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+
+@app.route("/api/timeslot/channel-booking")
+def ts_channel_booking():
+    """Channel level booking attempts and conversion by time slot."""
+    try:
+        _, _, _, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
+        region  = request.args.get("region")
+        ftype   = request.args.get("filter_type", "all")
+        fval    = request.args.get("filter_value", "")
+
+        data = {s: {} for s in SLOTS}
+
+        for job in iter_jobs_fn():
+            if job.get("is_forecast", "0") != "0": continue
+            rd = job.get("requested_date", "")
+            if not _ts_filter(rd, ftype, fval): continue
+            if region and job.get("region_code") != region: continue
+
+            slot    = _job_time_slot(job.get("job_ref", ""))
+            channel = job.get("primary_channel") or "Unknown"
+            booked  = bool(job.get("booked_date"))
+
+            bucket = data[slot].setdefault(channel, {"attempts": 0, "bookings": 0})
+            bucket["attempts"] += 1
+            if booked:
+                bucket["bookings"] += 1
+
+        result = {}
+        for slot, channels in data.items():
+            result[slot] = []
+            for ch, d in sorted(channels.items(), key=lambda x: -x[1]["attempts"]):
+                result[slot].append({
+                    "channel": ch,
+                    "attempts": d["attempts"],
+                    "bookings": d["bookings"],
+                    "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+                })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/timeslot/business-type")
+def ts_business_type():
+    """Job-type booking and success rates by time slot and by weekday."""
+    try:
+        _, _, _, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
+        region = request.args.get("region")
+        ftype  = request.args.get("filter_type", "all")
+        fval   = request.args.get("filter_value", "")
+
+        # slot → type → {attempts, bookings, completions}
+        by_slot = {s: {} for s in SLOTS}
+        # day → type → {attempts, bookings, completions}
+        by_day  = {d: {} for d in DAYS}
+
+        for job in iter_jobs_fn():
+            if job.get("is_forecast", "0") != "0": continue
+            rd = job.get("requested_date", "")
+            if not _ts_filter(rd, ftype, fval): continue
+            if region and job.get("region_code") != region: continue
+
+            slot     = _job_time_slot(job.get("job_ref", ""))
+            btype    = _job_biz_category(job.get("job_ref", ""))
+            booked   = bool(job.get("booked_date"))
+            complete = job.get("status") == "Completed"
+
+            try:
+                dow = datetime.strptime(rd, "%Y-%m-%d").strftime("%a")
+            except Exception:
+                dow = None
+
+            for store, key in ((by_slot, slot), (by_day, dow)):
+                if key not in store: continue
+                b = store[key].setdefault(btype, {"attempts": 0, "bookings": 0, "completions": 0})
+                b["attempts"]    += 1
+                if booked:    b["bookings"]    += 1
+                if complete:  b["completions"] += 1
+
+        def _fmt(store):
+            out = {}
+            for key, types in store.items():
+                rows = []
+                for bt, d in sorted(types.items(), key=lambda x: -x[1]["attempts"]):
+                    rows.append({
+                        "type": bt,
+                        "attempts": d["attempts"],
+                        "bookings": d["bookings"],
+                        "completions": d["completions"],
+                        "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+                        "success_rate": safe_pct_fn(d["completions"], d["bookings"]),
+                    })
+                out[key] = rows
+            return out
+
+        return jsonify({"by_slot": _fmt(by_slot), "by_day": _fmt(by_day)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/timeslot/attempts-overview")
+def ts_attempts_overview():
+    """Total contact attempts vs bookings by time slot."""
+    try:
+        _, _, to_int_fn, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
+        region = request.args.get("region")
+        ftype  = request.args.get("filter_type", "all")
+        fval   = request.args.get("filter_value", "")
+
+        data = {s: {"attempts": 0, "contacts": 0, "bookings": 0} for s in SLOTS}
+
+        for job in iter_jobs_fn():
+            if job.get("is_forecast", "0") != "0": continue
+            rd = job.get("requested_date", "")
+            if not _ts_filter(rd, ftype, fval): continue
+            if region and job.get("region_code") != region: continue
+
+            slot   = _job_time_slot(job.get("job_ref", ""))
+            booked = bool(job.get("booked_date"))
+            contacts = to_int_fn(job.get("contacts_count"))
+
+            data[slot]["attempts"]  += 1
+            data[slot]["contacts"]  += contacts
+            if booked: data[slot]["bookings"] += 1
+
+        result = {}
+        for slot, d in data.items():
+            result[slot] = {
+                "attempts":     d["attempts"],
+                "contacts":     d["contacts"],
+                "bookings":     d["bookings"],
+                "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+                "contact_rate": safe_pct_fn(d["contacts"], d["attempts"]),
+            }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/timeslot/agent-view")
+def ts_agent_view():
+    """Individual voice agent (30 agents) attempts vs bookings by time slot."""
+    try:
+        _, _, _, _, safe_pct_fn, iter_jobs_fn = _get_ingestion()
+        region = request.args.get("region")
+        ftype  = request.args.get("filter_type", "all")
+        fval   = request.args.get("filter_value", "")
+
+        # Pre-seed all 30 agents so every agent always appears
+        agents: dict = {name: {s: {"attempts": 0, "bookings": 0} for s in SLOTS}
+                        for name in _VOICE_AGENTS}
+
+        for job in iter_jobs_fn():
+            if job.get("is_forecast", "0") != "0": continue
+            rd = job.get("requested_date", "")
+            if not _ts_filter(rd, ftype, fval): continue
+            if region and job.get("region_code") != region: continue
+
+            slot   = _job_time_slot(job.get("job_ref", ""))
+            agent  = _job_voice_agent(job.get("job_ref", ""))
+            booked = bool(job.get("booked_date"))
+
+            agents[agent][slot]["attempts"] += 1
+            if booked: agents[agent][slot]["bookings"] += 1
+
+        # Rank by total attempts across all slots
+        ranked = sorted(
+            agents.items(),
+            key=lambda x: -sum(x[1][s]["attempts"] for s in SLOTS)
+        )
+
+        result = {s: [] for s in SLOTS}
+        for agent, slotdata in ranked:
+            for slot in SLOTS:
+                d = slotdata[slot]
+                result[slot].append({
+                    "agent":        agent,
+                    "attempts":     d["attempts"],
+                    "bookings":     d["bookings"],
+                    "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+                })
+            # Sort each slot by attempts desc
+        for slot in SLOTS:
+            result[slot].sort(key=lambda x: -x["attempts"])
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─── Roster Timeline ─────────────────────────────────────────────────────────
+
+_RT_ENGINEERS = [
+    ("ENG001","James Mitchell","NW"),    ("ENG002","Sarah Thompson","NW"),
+    ("ENG003","Daniel Williams","NW"),   ("ENG004","Emma Johnson","NW"),
+    ("ENG005","Michael Brown","NW"),     ("ENG006","Charlotte Davis","NW"),
+    ("ENG007","Robert Wilson","NW"),     ("ENG008","Laura Taylor","NW"),
+    ("ENG009","Christopher Anderson","NW"), ("ENG010","Jessica Martinez","NW"),
+    ("ENG011","Thomas Jackson","SE"),    ("ENG012","Hannah White","SE"),
+    ("ENG013","David Harris","SE"),      ("ENG014","Olivia Martin","SE"),
+    ("ENG015","Joseph Thompson","SE"),   ("ENG016","Emily Garcia","SE"),
+    ("ENG017","Andrew Robinson","SE"),   ("ENG018","Sophie Clark","NE"),
+    ("ENG019","Joshua Lewis","NE"),      ("ENG020","Georgia Lee","NE"),
+    ("ENG021","Ryan Walker","NE"),       ("ENG022","Chloe Hall","NE"),
+    ("ENG023","Samuel Allen","NE"),      ("ENG024","Amy Wright","NE"),
+    ("ENG025","Nathan King","WM"),       ("ENG026","Megan Scott","WM"),
+    ("ENG027","Jonathan Green","WM"),    ("ENG028","Lucy Adams","WM"),
+    ("ENG029","Benjamin Baker","WM"),    ("ENG030","Rebecca Nelson","WM"),
+    ("ENG031","Alexander Carter","EM"),  ("ENG032","Natalie Mitchell","EM"),
+    ("ENG033","Dylan Perez","EM"),       ("ENG034","Stephanie Roberts","EM"),
+    ("ENG035","George Turner","EM"),     ("ENG036","Abigail Phillips","EM"),
+    ("ENG037","Brandon Campbell","SW"),  ("ENG038","Victoria Parker","SW"),
+    ("ENG039","Adam Evans","SW"),        ("ENG040","Danielle Edwards","SW"),
+    ("ENG041","Ethan Collins","SW"),     ("ENG042","Samantha Stewart","SW"),
+    ("ENG043","Callum Morris","Y"),      ("ENG044","Rachael Rogers","Y"),
+    ("ENG045","Kyle Reed","Y"),          ("ENG046","Harriet Cook","Y"),
+    ("ENG047","Sean Morgan","Y"),        ("ENG048","Fiona Bell","Y"),
+    ("ENG049","Aaron Murphy","Y"),       ("ENG050","Zoe Bailey","Y"),
+]
+
+_RT_SLOT_CAPS = {
+    "Early":    {"morning": 3, "afternoon": 3, "evening": 1},
+    "Late":     {"morning": 1, "afternoon": 3, "evening": 3},
+    "Full Day": {"morning": 2, "afternoon": 3, "evening": 2},
+}
+_RT_DAY_NAMES   = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+_RT_MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+
+@app.route("/api/roster/timeline")
+def roster_timeline():
+    """21-day forward-looking roster — capacity, booked and available per slot per engineer."""
+    from datetime import date, timedelta
+    import random as _rnd
+
+    today = date.today()
+    days  = [today + timedelta(days=i) for i in range(21)]
+
+    day_headers = []
+    for d in days:
+        day_headers.append({
+            "date":       str(d),
+            "weekday":    _RT_DAY_NAMES[d.weekday()],
+            "day":        d.day,
+            "month":      _RT_MONTH_NAMES[d.month - 1],
+            "is_weekend": d.weekday() >= 5,
+        })
+
+    result = []
+    for eng_id, eng_name, region in _RT_ENGINEERS:
+        eng_num = int(eng_id[3:])
+
+        # Stable per-engineer attributes (seeded by eng_num only)
+        attr_rng   = _rnd.Random(eng_num * 17 + 3)
+        shift      = attr_rng.choice(["Early", "Early", "Late", "Late", "Full Day"])
+        base_rate  = attr_rng.uniform(0.50, 0.90)   # inherent booking tendency
+
+        slot_caps  = _RT_SLOT_CAPS[shift]
+        slots_list = ["morning", "afternoon", "evening"]
+
+        eng_days     = []
+        total_cap    = 0
+        total_booked = 0
+
+        for d in days:
+            # Per-engineer-per-date seed — deterministic per calendar date
+            day_seed = eng_num * 100003 + d.toordinal()
+            day_rng  = _rnd.Random(day_seed)
+
+            is_weekend = d.weekday() >= 5
+            on_leave   = (not is_weekend) and day_rng.random() < 0.045
+
+            day_data = {"date": str(d)}
+            for slot in slots_list:
+                cap = slot_caps[slot]
+                if is_weekend:
+                    cap = max(0, cap - 1)
+
+                if on_leave or cap == 0:
+                    status = "leave" if (on_leave and cap > 0) else "off"
+                    day_data[slot] = {"cap": 0, "booked": 0, "avail": 0, "status": status}
+                    continue
+
+                rate   = min(base_rate * day_rng.uniform(0.70, 1.18), 1.0)
+                booked = min(int(round(cap * rate)), cap)
+                avail  = cap - booked
+                pct    = booked / cap
+
+                if pct >= 1.0:   stat = "full"
+                elif pct >= 0.67: stat = "high"
+                elif pct >= 0.34: stat = "mid"
+                else:             stat = "low"
+
+                day_data[slot] = {"cap": cap, "booked": booked, "avail": avail, "status": stat}
+                total_cap    += cap
+                total_booked += booked
+
+            eng_days.append(day_data)
+
+        util = round(total_booked / total_cap * 100, 1) if total_cap else 0.0
+
+        result.append({
+            "id":    eng_id,
+            "name":  eng_name,
+            "region": region,
+            "shift": shift,
+            "util":  util,
+            "days":  eng_days,
+        })
+
+    return jsonify({
+        "generated": str(today),
+        "days":      day_headers,
+        "engineers": result,
+    })
+
+
+# ─── Long-Term 12-Month Planning Overview ────────────────────────────────────
+
+@app.route("/api/longterm/overview")
+def longterm_overview():
+    """12-month forward demand vs capacity overview, starting from next calendar month."""
+    import random as _rnd
+    import calendar as _cal
+
+    today = date.today()
+    if today.month == 12:
+        start_year, start_month = today.year + 1, 1
+    else:
+        start_year, start_month = today.year, today.month + 1
+
+    _REGIONS = ["NW", "SE", "NE", "WM", "EM", "SW", "Y"]
+    _REG_W   = {"NW": 0.20, "SE": 0.18, "NE": 0.12, "WM": 0.15,
+                "EM": 0.12, "SW": 0.10, "Y": 0.13}
+    _MNAMES  = ["Jan","Feb","Mar","Apr","May","Jun",
+                "Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    # Engineer shift mix across 50 engineers (fixed for capacity calc)
+    # 20 Early, 20 Late, 10 Full Day
+    # Morning:   20×3 + 20×1 + 10×2 = 100 slots/day
+    # Afternoon: 20×3 + 20×3 + 10×3 = 150 slots/day
+    # Evening:   20×1 + 20×3 + 10×2 = 100 slots/day  → total 350/day
+    _SLOT_DAY = {"morning": 100, "afternoon": 150, "evening": 100}
+
+    months_data = []
+
+    for i in range(12):
+        m = start_month + i
+        y = start_year
+        while m > 12:
+            m -= 12
+            y += 1
+
+        _, days_in_month = _cal.monthrange(y, m)
+        working_days = sum(
+            1 for d in range(1, days_in_month + 1)
+            if date(y, m, d).weekday() < 5
+        )
+
+        seed = y * 1000 + m * 7 + 42
+        rng  = _rnd.Random(seed)
+
+        # Base demand — 72-96 % of total monthly capacity
+        total_cap_day = sum(_SLOT_DAY.values())          # 350 slots/day
+        total_cap_mo  = total_cap_day * working_days
+
+        demand_pct = rng.uniform(0.72, 0.96)
+        # Seasonal: winter peak +10 %, summer slight dip -6 %
+        if m in (11, 12, 1, 2):
+            demand_pct = min(demand_pct * 1.10, 1.08)
+        elif m in (6, 7, 8):
+            demand_pct *= 0.94
+        base_demand = int(total_cap_mo * demand_pct)
+
+        # Per-slot capacity and demand
+        slots = {}
+        for slot, day_cap in _SLOT_DAY.items():
+            cap    = day_cap * working_days
+            # Demand split roughly proportional to capacity
+            dem    = int(base_demand * (day_cap / total_cap_day) * rng.uniform(0.90, 1.12))
+            booked = min(int(dem * rng.uniform(0.88, 1.02)), cap)
+            avail  = cap - booked
+            util   = round(booked / cap * 100, 1) if cap else 0.0
+            slots[slot] = {
+                "demand": dem, "capacity": cap,
+                "booked": booked, "avail": avail, "util": util,
+            }
+
+        total_booked = sum(s["booked"] for s in slots.values())
+        total_avail  = total_cap_mo - total_booked
+        util_overall = round(total_booked / total_cap_mo * 100, 1) if total_cap_mo else 0.0
+
+        # Regional breakdown
+        regions = {}
+        remaining_dem = base_demand
+        remaining_cap = total_cap_mo
+        for reg in _REGIONS[:-1]:
+            w        = _REG_W[reg]
+            var      = rng.uniform(0.88, 1.14)
+            reg_dem  = int(base_demand * w * var)
+            reg_cap  = int(total_cap_mo * w * rng.uniform(0.92, 1.08))
+            reg_bk   = min(int(reg_cap * rng.uniform(0.60, 0.95)), reg_cap)
+            reg_av   = reg_cap - reg_bk
+            reg_util = round(reg_bk / reg_cap * 100, 1) if reg_cap else 0.0
+            regions[reg] = {
+                "demand": reg_dem, "capacity": reg_cap,
+                "booked": reg_bk, "avail": reg_av, "util": reg_util,
+            }
+            remaining_dem -= reg_dem
+            remaining_cap -= reg_cap
+
+        last = _REGIONS[-1]
+        last_cap  = max(remaining_cap, int(total_cap_mo * _REG_W[last]))
+        last_bk   = min(int(last_cap * rng.uniform(0.60, 0.95)), last_cap)
+        regions[last] = {
+            "demand": max(remaining_dem, 100),
+            "capacity": last_cap,
+            "booked": last_bk,
+            "avail": last_cap - last_bk,
+            "util": round(last_bk / last_cap * 100, 1) if last_cap else 0.0,
+        }
+
+        months_data.append({
+            "month_key":    f"{y}-{m:02d}",
+            "label":        f"{_MNAMES[m - 1]} {y}",
+            "short":        _MNAMES[m - 1],
+            "year":         y,
+            "working_days": working_days,
+            "demand":       base_demand,
+            "capacity":     total_cap_mo,
+            "booked":       total_booked,
+            "avail":        total_avail,
+            "util":         util_overall,
+            "gap":          base_demand - total_booked,
+            "slots":        slots,
+            "regions":      regions,
+        })
+
+    return jsonify({
+        "generated": str(today),
+        "period":    f"{months_data[0]['label']} — {months_data[-1]['label']}",
+        "months":    months_data,
+    })
+
+
+# ─── Single Meter View ───────────────────────────────────────────────────────
+
+_MV_N_METERS   = 50000          # logical meters derived from job_ref hash
+_MV_FUEL_TYPES = ["Dual Fuel", "Dual Fuel", "Electricity Only", "Gas Only"]
+_MV_BILL_TYPES = ["Actual", "Actual", "Actual", "Estimated"]
+_MV_BILL_FREQS = ["Monthly", "Quarterly", "Quarterly", "Annual"]
+_MV_PAY_TYPES  = ["Direct Debit", "Direct Debit", "Prepayment", "PAYM", "Online Banking"]
+_MV_FLOWS_IN   = ["D0004", "D0010", "D0019", "D0052", "D0268"]
+_MV_FLOWS_OUT  = ["D0095", "D0268", "D0004", "None"]
+_MV_FLOW_OUTS  = ["Success", "Access Denied", "No Read", "VNR", "Pending"]
+_MV_JOB_LABELS = {
+    "EXCHANGE":    "Meter Exchange",
+    "NEW_INSTALL": "New Installation",
+    "REMOVAL":     "Meter Removal",
+    "REPAIR":      "Meter Repair",
+}
+
+
+def _mv_job_to_group(job_ref: str) -> int:
+    try:
+        return int(job_ref.split("-")[-1]) % _MV_N_METERS
+    except Exception:
+        return -1
+
+
+def _mv_mpxn_to_group(mpxn: str) -> int:
+    try:
+        val = int(mpxn.strip())
+        gid = val % _MV_N_METERS
+        return gid if 0 <= gid < _MV_N_METERS else -1
+    except Exception:
+        return -1
+
+
+def _mv_visit_summary(visits: list) -> str:
+    if not visits:
+        return "No visit history available for this meter."
+    ordinals = ["first", "second", "third"]
+    parts = []
+    for i, v in enumerate(visits[:3]):
+        ord_  = ordinals[i]
+        status = v.get("status", "")
+        cancel = (v.get("cancellation_reason") or "").strip()
+        abort  = (v.get("abort_reason")        or "").strip()
+        if status == "Completed":
+            parts.append(f"successful {ord_} visit")
+        elif cancel:
+            parts.append(f"unsuccessful {ord_} visit (cancelled — {cancel.lower()})")
+        elif abort:
+            parts.append(f"unsuccessful {ord_} visit (aborted — {abort.lower()})")
+        elif status == "Booked":
+            parts.append(f"scheduled but not yet completed {ord_} visit")
+        else:
+            parts.append(f"inconclusive {ord_} visit")
+    if len(parts) == 1:
+        return f"The most recent field visit was {parts[0]}."
+    elif len(parts) == 2:
+        return f"The field visits were {parts[0]} and {parts[1]}."
+    return f"The field visits were {parts[0]}, {parts[1]}, and {parts[2]}."
+
+
+@app.route("/api/meter-view")
+def meter_view_api():
+    """Return full meter history and attributes for a given MPXN."""
+    import random as _rnd
+    mpxn = request.args.get("mpxn", "").strip().replace(" ", "")
+    if not mpxn:
+        return jsonify({"error": "MPXN required"}), 400
+
+    gid = _mv_mpxn_to_group(mpxn)
+    if gid < 0:
+        return jsonify({"error": "Invalid meter point number"}), 404
+
+    try:
+        _, _, _, _, _, iter_jobs_fn = _get_ingestion()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    jobs = [
+        j for j in iter_jobs_fn()
+        if j.get("is_forecast", "0") == "0"
+        and _mv_job_to_group(j.get("job_ref", "")) == gid
+    ]
+
+    if not jobs:
+        return jsonify({"error": "No records found for this meter point number"}), 404
+
+    jobs_sorted = sorted(jobs, key=lambda j: j.get("contact_date", ""), reverse=True)
+
+    rng = _rnd.Random(gid * 13337 + 7)
+
+    # ── Meter Details ────────────────────────────────────────────────────────
+    most_recent  = jobs_sorted[0]
+    msn_alpha    = "ABCDEFGHJKLMNPQRSTVWXYZ"
+    msn          = f"{rng.randint(10,99)}{rng.choice(msn_alpha)}{rng.randint(1000000,9999999)}"
+    meter_raw    = most_recent.get("meter_type", "SMETS2")
+    meter_label  = {"SMETS2": "Smart (SMETS2)", "SMETS1": "Smart (SMETS1)"}.get(meter_raw, f"Smart ({meter_raw})")
+    fuel_type    = rng.choice(_MV_FUEL_TYPES)
+    last_read    = round(rng.uniform(100.0, 18000.0), 2)
+    bill_type    = rng.choice(_MV_BILL_TYPES)
+    bill_freq    = rng.choice(_MV_BILL_FREQS)
+    pay_type     = rng.choice(_MV_PAY_TYPES)
+    completed_ok = [j for j in jobs_sorted if j.get("status") == "Completed"]
+    last_bill_dt = completed_ok[0].get("completed_date") or completed_ok[0].get("contact_date") if completed_ok else "—"
+
+    # ── Insights ─────────────────────────────────────────────────────────────
+    seal_visible       = rng.random() > 0.08
+    no_seal_tampering  = rng.random() > 0.05
+    no_physical_damage = rng.random() > 0.07
+    no_wiring_issue    = rng.random() > 0.10
+
+    visits = [j for j in jobs_sorted if j.get("booked_date")][:3]
+    visit_summary = _mv_visit_summary(visits)
+
+    # ── MOP Details ──────────────────────────────────────────────────────────
+    mop_j        = most_recent
+    mop_type     = _MV_JOB_LABELS.get(mop_j.get("job_type", ""), mop_j.get("job_type", "—"))
+    mop_status   = {"Completed": "Completed", "Cancelled": "Cancelled",
+                    "Aborted": "Aborted On Day", "Booked": "Scheduled",
+                    "Unbooked": "Pending"}.get(mop_j.get("status", ""), mop_j.get("status", "—"))
+    mop_reason   = (mop_j.get("cancellation_reason") or mop_j.get("abort_reason") or "—").strip() or "—"
+    flows_in     = rng.choice(_MV_FLOWS_IN)
+    flow_outcome = "Success" if mop_j.get("status") == "Completed" else rng.choice(_MV_FLOW_OUTS[1:])
+    out_flows    = rng.choice(_MV_FLOWS_OUT)
+    mop_date     = mop_j.get("completed_date") or mop_j.get("booked_date") or mop_j.get("contact_date") or "—"
+
+    # ── DC Details ───────────────────────────────────────────────────────────
+    dc_j          = visits[0] if visits else most_recent
+    dc_date       = dc_j.get("completed_date") or dc_j.get("booked_date") or dc_j.get("contact_date") or "—"
+    dc_read_ok    = dc_j.get("status") == "Completed"
+    dc_read_cap   = str(last_read) if dc_read_ok else "—"
+    dc_channel    = dc_j.get("primary_channel", "—")
+
+    # ── Last 3 Contacts ──────────────────────────────────────────────────────
+    last3_contacts = []
+    for j in jobs_sorted[:5]:   # take up to 5, dedupe to 3 meaningful
+        stat = j.get("status", "—")
+        if stat == "Forecast":
+            continue
+        dc_stat = "Read Captured" if stat == "Completed" else rng.choice(["VNR - Access Denied", "VNR - No Answer", "Pending"])
+        last3_contacts.append({
+            "date":       j.get("contact_date", "—"),
+            "channel":    j.get("primary_channel", "—"),
+            "contacts":   int(j.get("contacts_count", 1) or 1),
+            "abandoned":  int(j.get("abandoned_contacts", 0) or 0),
+            "outcome":    stat,
+            "mop_status": {"Completed": "Completed", "Cancelled": "Cancelled",
+                           "Aborted": "Aborted", "Booked": "Scheduled",
+                           "Unbooked": "Pending"}.get(stat, stat),
+            "dc_status":  dc_stat,
+        })
+        if len(last3_contacts) == 3:
+            break
+
+    # ── Last 3 Visits ────────────────────────────────────────────────────────
+    last3_visits = []
+    visit_pool = [j for j in jobs_sorted if j.get("booked_date") and j.get("status") not in ("Forecast", "Unbooked")]
+    for j in visit_pool[:3]:
+        stat   = j.get("status", "—")
+        dc_out = "Read Captured" if stat == "Completed" else rng.choice(["VNR - Access Denied", "VNR - No Answer", "Pending"])
+        last3_visits.append({
+            "date":       j.get("completed_date") or j.get("booked_date") or "—",
+            "engineer":   j.get("engineer_id", "—"),
+            "job_type":   _MV_JOB_LABELS.get(j.get("job_type", ""), j.get("job_type", "—")),
+            "status":     stat,
+            "reason":     (j.get("cancellation_reason") or j.get("abort_reason") or "—").strip() or "—",
+            "mop_outcome": {"Completed": "Completed", "Cancelled": "Cancelled",
+                            "Aborted": "Aborted", "Booked": "Scheduled"}.get(stat, stat),
+            "dc_outcome": dc_out,
+        })
+
+    return jsonify({
+        "mpxn": mpxn,
+        "total_jobs": len(jobs),
+        "meter_details": {
+            "mpxn":           mpxn,
+            "msn":            msn,
+            "meter_type":     meter_label,
+            "fuel_type":      fuel_type,
+            "supplier":       most_recent.get("supplier_name", "—"),
+            "region":         most_recent.get("region_name", "—"),
+            "patch":          most_recent.get("patch_code", "—"),
+            "last_read":      last_read,
+            "last_bill_type": bill_type,
+            "last_bill_date": last_bill_dt,
+            "billing_freq":   bill_freq,
+            "payment_type":   pay_type,
+        },
+        "insights": {
+            "seal_visible":       seal_visible,
+            "no_seal_tampering":  no_seal_tampering,
+            "no_physical_damage": no_physical_damage,
+            "no_wiring_issue":    no_wiring_issue,
+            "visit_summary":      visit_summary,
+        },
+        "mop_details": {
+            "last_job_date":   mop_date,
+            "last_job_type":   mop_type,
+            "last_job_status": mop_status,
+            "reason":          mop_reason,
+            "flows_received":  flows_in,
+            "flow_outcome":    flow_outcome,
+            "outstanding_flows": out_flows,
+        },
+        "dc_details": {
+            "last_visit_date":    dc_date,
+            "vnr_status":         dc_read_ok,
+            "last_read_captured": dc_read_cap,
+            "last_channel":       dc_channel,
+        },
+        "last_contacts": last3_contacts,
+        "last_visits":   last3_visits,
+    })
+
+
+# ─── Field Engineer Scorecard ────────────────────────────────────────────────
+@app.route("/api/field-engineers")
+def field_engineers_api():
+    """Return monthly scorecard data for all 50 field engineers (2025)."""
+    import csv as _csv
+    path = BASE_DIR / "data" / "inputs" / "field_engineers.csv"
+    if not path.exists():
+        return jsonify({"error": "field_engineers.csv not found"}), 404
+    try:
+        engineers: dict = {}
+        with open(path, newline="", encoding="utf-8") as f:
+            for row in _csv.DictReader(f):
+                eid = row["engineer_id"]
+                if eid not in engineers:
+                    engineers[eid] = {"id": eid, "name": row["engineer_name"], "monthly": []}
+                engineers[eid]["monthly"].append({
+                    "month":          row["month"],
+                    "month_num":      int(row["month_num"]),
+                    "working_days":   int(row["working_days"]),
+                    "total_allocated": int(row["total_allocated"]),
+                    "total_bookings": int(row["total_bookings"]),
+                    "success_jobs":   int(row["success_jobs"]),
+                    "abort_jobs":     int(row["abort_jobs"]),
+                    "cancelled_jobs": int(row["cancelled_jobs"]),
+                    "success_rate":   float(row["success_rate"]),
+                    "productivity":   float(row["productivity"]),
+                    "leaves_taken":   int(row["leaves_taken"]),
+                    "avg_jobs_per_day": float(row["avg_jobs_per_day"]),
+                })
+        return jsonify({"engineers": list(engineers.values())})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─── Startup: generate data if missing ───────────────────────────────────────
 def _ensure_data():
     """Ensure required data files exist without loading them into memory."""
