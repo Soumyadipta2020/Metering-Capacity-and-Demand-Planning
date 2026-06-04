@@ -1607,13 +1607,13 @@ _VOICE_AGENTS = [
 
 def _job_hash(job_ref: str, salt: str) -> int:
     """Stable hash of job_ref with a salt so different dimensions are independent."""
-    return int(_hashlib.md5((job_ref + salt).encode()).hexdigest()[:8], 16)
+    import zlib
+    return zlib.crc32((job_ref + salt).encode())
 
 def _job_time_slot(job_ref: str, booked: bool = False) -> str:
     """Deterministic time slot from job_ref hash, biased by booking status and category to create realistic variation."""
     h = _job_hash(job_ref, "ts") % 100
-    btype = _job_biz_category(job_ref)
-    bias = int(_hashlib.md5(btype.encode()).hexdigest(), 16) % 3
+    bias = _job_hash(job_ref, "bc") % 3
     
     if booked:
         if bias == 0:
