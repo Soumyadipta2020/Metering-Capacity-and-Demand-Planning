@@ -76,6 +76,14 @@ def sqlite_enabled() -> bool:
     return os.getenv("IMSERV_SQLITE_ENABLED", "true").lower() not in {"0", "false", "no"}
 
 
+def _build_on_read_enabled() -> bool:
+    """Allow local/dev reads to create SQLite, but avoid heavy web-request builds on Render."""
+    explicit = os.getenv("IMSERV_SQLITE_BUILD_ON_READ")
+    if explicit is not None:
+        return explicit.lower() not in {"0", "false", "no"}
+    return not os.getenv("RENDER")
+
+
 def _quote_ident(name: str) -> str:
     return '"' + str(name).replace('"', '""') + '"'
 
@@ -238,6 +246,9 @@ def ensure_sqlite_store(force: bool = False) -> bool:
             _READY_SIGNATURE = signature
             _LAST_ERROR_SIGNATURE = None
             return True
+        if not force and not _build_on_read_enabled():
+            _LAST_ERROR_SIGNATURE = signature
+            return False
         if not force and _LAST_ERROR_SIGNATURE == signature:
             return False
         try:

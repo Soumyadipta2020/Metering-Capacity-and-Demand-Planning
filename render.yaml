@@ -31,6 +31,8 @@ services:
         value: "false"
       - key: IMSERV_SQLITE_ENABLED
         value: "true"
+      - key: IMSERV_SQLITE_BUILD_ON_READ
+        value: "false"
       - key: IMSERV_AUTO_GENERATE_DATA
         value: "false"
       - key: MALLOC_ARENA_MAX
