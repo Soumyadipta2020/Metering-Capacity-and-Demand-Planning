@@ -1398,6 +1398,13 @@ _RT_SLOT_CAPS = {
     "Late":     {"morning": 1, "afternoon": 3, "evening": 3},
     "Full Day": {"morning": 2, "afternoon": 3, "evening": 2},
 }
+_RT_JOB_TYPES = [
+    ("Meter Exchange", 0.48),
+    ("New Install", 0.24),
+    ("Meter Removal", 0.11),
+    ("Repair", 0.10),
+    ("Revisit", 0.07),
+]
 _RT_DAY_NAMES   = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
 _RT_MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
@@ -1446,7 +1453,7 @@ def roster_timeline():
             on_leave   = (not is_weekend) and day_rng.random() < 0.045
 
             day_data = {"date": str(d)}
-            for slot in slots_list:
+            for slot_idx, slot in enumerate(slots_list):
                 cap = slot_caps[slot]
                 if is_weekend:
                     cap = max(0, cap - 1)
@@ -1466,7 +1473,24 @@ def roster_timeline():
                 elif pct >= 0.34: stat = "mid"
                 else:             stat = "low"
 
-                day_data[slot] = {"cap": cap, "booked": booked, "avail": avail, "status": stat}
+                job_mix = {}
+                if booked:
+                    job_rng = _rnd.Random(day_seed * 31 + slot_idx * 997)
+                    for _ in range(booked):
+                        pick = job_rng.random()
+                        cursor = 0.0
+                        chosen = _RT_JOB_TYPES[-1][0]
+                        for job_type, weight in _RT_JOB_TYPES:
+                            cursor += weight
+                            if pick <= cursor:
+                                chosen = job_type
+                                break
+                        job_mix[chosen] = job_mix.get(chosen, 0) + 1
+
+                day_data[slot] = {
+                    "cap": cap, "booked": booked, "avail": avail,
+                    "status": stat, "jobs": job_mix,
+                }
                 total_cap    += cap
                 total_booked += booked
 

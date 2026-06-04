@@ -233,6 +233,7 @@
           </div>
           <div class="ts-picker-wrap" id="ts-picker-wrap" style="display:none;">
             <select class="ts-picker-select" id="ts-picker-select" onchange="tsApplyPicker()"></select>
+            <input class="ts-picker-select ts-picker-date" type="date" id="ts-picker-date" min="2025-01-01" max="2025-12-31" value="2025-01-01" onchange="tsApplyPicker()" style="display:none;" />
           </div>
           <div class="ts-active-label" id="ts-active-label">Showing: All 2025</div>
         </div>
@@ -433,16 +434,6 @@
           <div class="rt-toolbar">
             <div class="rt-toolbar-left">
               <input type="text" class="rt-search" placeholder="Search engineer or ID…" oninput="rtSetSearch(this.value)">
-              <select class="rt-region-sel" onchange="rtSetRegion(this.value)">
-                <option value="">All Regions</option>
-                <option value="NW">North West</option>
-                <option value="SE">South East</option>
-                <option value="NE">North East</option>
-                <option value="WM">West Midlands</option>
-                <option value="EM">East Midlands</option>
-                <option value="SW">South West</option>
-                <option value="Y">Yorkshire</option>
-              </select>
             </div>
             <div class="rt-header-right">
               <div class="rt-date-badge" id="rt-date-range">Next 21 Days</div>
@@ -481,6 +472,10 @@
               <div class="pt-lb" id="pt-lb">
                 <table class="pt-lt">
                   <tbody id="pt-lbody"><tr><td colspan="5" class="loading" style="padding:40px;text-align:center"><span class="spinner"></span></td></tr></tbody>
+                </table>
+              </div>
+              <div class="pt-lf" id="pt-lf">
+                <table class="pt-lt">
                   <tfoot id="pt-lfoot"></tfoot>
                 </table>
               </div>
@@ -499,6 +494,10 @@
               <div class="pt-rb" id="pt-rb">
                 <table class="pt-rt">
                   <tbody id="pt-rbody"></tbody>
+                </table>
+              </div>
+              <div class="pt-rf" id="pt-rf">
+                <table class="pt-rt">
                   <tfoot id="pt-rfoot"></tfoot>
                 </table>
               </div>
@@ -510,24 +509,6 @@
 
         <!-- ── Long Term sub-tab ── -->
         <div class="pst-panel pst-panel--active" id="pstab-longterm">
-
-          <!-- Toolbar -->
-          <div class="lt-toolbar">
-            <div class="lt-toolbar-left">
-              <span class="lt-range-badge" id="lt-range-badge">Loading…</span>
-              <select class="rt-region-sel" id="lt-region-filter" onchange="ltSetRegion(this.value)">
-                <option value="">All Regions</option>
-                <option value="NW">North West</option>
-                <option value="SE">South East</option>
-                <option value="NE">North East</option>
-                <option value="WM">West Midlands</option>
-                <option value="EM">East Midlands</option>
-                <option value="SW">South West</option>
-                <option value="Y">Yorkshire</option>
-              </select>
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="loadLongTermPlanning(true)">↺ Refresh</button>
-          </div>
 
           <!-- KPI Strip -->
           <div class="lt-kpi-strip" id="lt-kpi-strip">

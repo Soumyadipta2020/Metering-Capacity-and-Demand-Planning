@@ -137,6 +137,12 @@ function switchView(viewName, navEl) {
 function onRegionChange() {
   invalidateLoadedViews();
   refreshCurrentView();
+  if (document.getElementById('pstab-shortterm')?.classList.contains('pst-panel--active')) {
+    if (typeof loadRosterTimeline === 'function') loadRosterTimeline();
+  }
+  if (document.getElementById('pstab-longterm')?.classList.contains('pst-panel--active')) {
+    if (typeof loadLongTermPlanning === 'function') loadLongTermPlanning();
+  }
 }
 
 function onYearChange() {
@@ -248,6 +254,68 @@ function escapeChatHtml(value = '') {
   }[char]));
 }
 
+function formatChatInlineMarkdown(value = '') {
+  return escapeChatHtml(value)
+    .replace(/\*\*([^*\n][\s\S]*?[^*\n])\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_\n][\s\S]*?[^_\n])__/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(])\*([^*\n]+?)\*(?=$|[\s).,!?:;])/g, '$1<em>$2</em>');
+}
+
+function formatChatMarkdown(value = '') {
+  const lines = String(value).replace(/\r\n?/g, '\n').split('\n');
+  const parts = [];
+  let paragraph = [];
+  let listType = null;
+
+  const closeParagraph = () => {
+    if (!paragraph.length) return;
+    parts.push(`<p>${paragraph.map(formatChatInlineMarkdown).join('<br>')}</p>`);
+    paragraph = [];
+  };
+  const closeList = () => {
+    if (!listType) return;
+    parts.push(`</${listType}>`);
+    listType = null;
+  };
+  const ensureList = type => {
+    closeParagraph();
+    if (listType === type) return;
+    closeList();
+    parts.push(`<${type}>`);
+    listType = type;
+  };
+
+  lines.forEach(rawLine => {
+    const line = rawLine.trim();
+    if (!line) {
+      closeParagraph();
+      closeList();
+      return;
+    }
+
+    const bullet = line.match(/^[-*\u2022]\s+(.+)$/);
+    if (bullet) {
+      ensureList('ul');
+      parts.push(`<li>${formatChatInlineMarkdown(bullet[1])}</li>`);
+      return;
+    }
+
+    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (numbered) {
+      ensureList('ol');
+      parts.push(`<li>${formatChatInlineMarkdown(numbered[1])}</li>`);
+      return;
+    }
+
+    closeList();
+    paragraph.push(line);
+  });
+
+  closeParagraph();
+  closeList();
+  return parts.join('');
+}
+
 function toggleChatbot(forceOpen) {
   const widget = document.getElementById('chatbot-widget');
   const launcher = document.getElementById('chatbot-launcher');
@@ -275,7 +343,10 @@ function appendChatMessage(role, content, options = {}) {
   if (!messages) return null;
   const item = document.createElement('div');
   item.className = `chatbot-message ${role}${options.pending ? ' pending' : ''}`;
-  item.innerHTML = `<div class="chatbot-bubble">${escapeChatHtml(content).replace(/\n/g, '<br>')}</div>`;
+  const html = role === 'assistant'
+    ? formatChatMarkdown(content)
+    : escapeChatHtml(content).replace(/\n/g, '<br>');
+  item.innerHTML = `<div class="chatbot-bubble">${html}</div>`;
   messages.appendChild(item);
   messages.scrollTop = messages.scrollHeight;
   return item;

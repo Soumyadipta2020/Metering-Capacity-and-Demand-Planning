@@ -70,6 +70,10 @@ window.tsSetFilter = function(ftype, fval) {
   });
   const wrap = document.getElementById('ts-picker-wrap');
   if (wrap) wrap.style.display = 'none';
+  const sel = document.getElementById('ts-picker-select');
+  const dateInput = document.getElementById('ts-picker-date');
+  if (sel) sel.style.display = '';
+  if (dateInput) dateInput.style.display = 'none';
 
   const lbl = document.getElementById('ts-active-label');
   if (lbl) lbl.textContent = 'Showing: All 2025';
@@ -85,9 +89,13 @@ window.tsOpenPicker = function(ftype) {
 
   const wrap   = document.getElementById('ts-picker-wrap');
   const sel    = document.getElementById('ts-picker-select');
-  if (!wrap || !sel) return;
+  const dateInput = document.getElementById('ts-picker-date');
+  if (!wrap || !sel || !dateInput) return;
 
   sel.innerHTML = '';
+  sel.style.display = ftype === 'day' ? 'none' : '';
+  dateInput.style.display = ftype === 'day' ? '' : 'none';
+
   if (ftype === 'month') {
     TS_MONTHS.forEach(([v, l]) => {
       const o = document.createElement('option');
@@ -99,15 +107,8 @@ window.tsOpenPicker = function(ftype) {
       o.value = w; o.textContent = `Week ${w}`; sel.appendChild(o);
     }
   } else if (ftype === 'day') {
-    const months = TS_MONTHS.map(([v]) => parseInt(v));
-    const days   = [31,28,31,30,31,30,31,31,30,31,30,31];
-    months.forEach(m => {
-      for (let d = 1; d <= days[m-1]; d++) {
-        const ds = `2025-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-        const o  = document.createElement('option');
-        o.value = ds; o.textContent = ds; sel.appendChild(o);
-      }
-    });
+    const current = /^\d{4}-\d{2}-\d{2}$/.test(_tsFilterValue) ? _tsFilterValue : '2025-01-01';
+    dateInput.value = current;
   }
   wrap.style.display = '';
   tsApplyPicker();
@@ -115,8 +116,9 @@ window.tsOpenPicker = function(ftype) {
 
 window.tsApplyPicker = function() {
   const sel = document.getElementById('ts-picker-select');
-  if (!sel) return;
-  _tsFilterValue = sel.value;
+  const dateInput = document.getElementById('ts-picker-date');
+  if (!sel || !dateInput) return;
+  _tsFilterValue = _tsFilterType === 'day' ? dateInput.value : sel.value;
   _tsLoaded = false;
 
   const lbl = document.getElementById('ts-active-label');

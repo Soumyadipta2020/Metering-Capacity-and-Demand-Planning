@@ -1,6 +1,6 @@
 /* IMSERV — 21-Day Roster Pivot Table (split-panel) */
 
-const RT = { data: null, search: '', region: '' };
+const RT = { data: null, search: '' };
 const SLOTS = ['morning', 'afternoon', 'evening'];
 
 // ── Load ──────────────────────────────────────────────────────────────────────
@@ -18,7 +18,24 @@ async function loadRosterTimeline(force) {
 }
 
 function rtSetSearch(q) { RT.search = q.toLowerCase().trim(); rtRenderPivot(); }
-function rtSetRegion(r)  { RT.region = r;                      rtRenderPivot(); }
+
+function rtEscapeAttr(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function rtSelectedRegions() {
+  const region = IMSERV.getRegion();
+  if (!region) return null;
+  const map = {
+    MID: ['MID', 'WM', 'EM'],
+    YRK: ['YRK', 'Y'],
+  };
+  return map[region] || [region];
+}
 
 // ── Top-level render ──────────────────────────────────────────────────────────
 function rtRender() {
@@ -97,7 +114,8 @@ function rtApplyTableWidths() {
   const minW   = RT.data.days.length * 3 * COL_W;   // e.g. 21×3×44 = 2772px
 
   [document.querySelector('#pt-rh table'),
-   document.querySelector('#pt-rb table')].forEach(el => {
+   document.querySelector('#pt-rb table'),
+   document.querySelector('#pt-rf table')].forEach(el => {
     if (el) el.style.minWidth = minW + 'px';
   });
 }
@@ -111,7 +129,8 @@ function rtRenderPivot() {
 
   if (RT.search) engs = engs.filter(e =>
     e.name.toLowerCase().includes(RT.search) || e.id.toLowerCase().includes(RT.search));
-  if (RT.region) engs = engs.filter(e => e.region === RT.region);
+  const selectedRegions = rtSelectedRegions();
+  if (selectedRegions) engs = engs.filter(e => selectedRegions.includes(e.region));
 
   const shiftCls = {
     'Early':    'pt-sh--early',
@@ -179,7 +198,7 @@ function rtRenderFooter(days, engs) {
     });
   });
 
-  const regionLabel = RT.region || 'All Regions';
+  const regionLabel = document.getElementById('global-region')?.selectedOptions?.[0]?.textContent || 'All Regions';
   const metrics = [
     { label: 'Capacity', key: 'cap',    cls: () => 'pt-fc--cap' },
     { label: 'Booked',   key: 'booked', cls: () => 'pt-fc--booked' },
@@ -230,8 +249,12 @@ function rtSlotCells(day) {
     if (s.status === 'off' || s.cap === 0) return `<td class="pt-sc ${sc} pt-sc--off${ec}">—</td>`;
 
     const fill = `pt-sc--${s.status}`;
-    const tip  = `${slot}: ${s.booked}/${s.cap} booked, ${s.avail} free`;
-    return `<td class="pt-sc ${sc} ${fill}${ec}" title="${tip}">
+    const jobEntries = Object.entries(s.jobs || {}).filter(([, count]) => count > 0);
+    const jobText = jobEntries.length
+      ? jobEntries.map(([kind, count]) => `- ${kind}: ${count}`).join('\n')
+      : '- No booked jobs';
+    const tip = `${slot}: ${s.booked}/${s.cap} booked, ${s.avail} free\nBooked job types:\n${jobText}`;
+    return `<td class="pt-sc ${sc} ${fill}${ec}" title="${rtEscapeAttr(tip)}">
       <span class="pt-bk">${s.booked}</span><span class="pt-div">/</span><span class="pt-cp">${s.cap}</span>
     </td>`;
   }).join('');
@@ -242,6 +265,7 @@ function rtSetupScrollSync() {
   const rb = document.getElementById('pt-rb');
   const lb = document.getElementById('pt-lb');
   const rh = document.getElementById('pt-rh');
+  const rf = document.getElementById('pt-rf');
   if (!rb) return;
 
   let syncing = false;
@@ -250,6 +274,7 @@ function rtSetupScrollSync() {
     syncing = true;
     if (lb) lb.scrollTop  = rb.scrollTop;   // vertical sync to left body
     if (rh) rh.scrollLeft = rb.scrollLeft;   // horizontal sync to right header
+    if (rf) rf.scrollLeft = rb.scrollLeft;   // horizontal sync to fixed footer
     syncing = false;
   });
 }

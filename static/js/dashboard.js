@@ -11,7 +11,6 @@ async function loadJourneyDashboard() {
   const qs     = `?region=${region}&year=${year}`;
   refreshJourneyVisualLabels();
   const loadingTargets = [
-    'funnel-chart',
     'journey-trend-chart',
     'regional-heatmap-grid',
     'decomposition-tree-container',
@@ -33,9 +32,6 @@ async function loadJourneyDashboard() {
 
     if (trend) renderJourneyTrend(trend);
 
-    // Render funnel (uses KPI data)
-    if (kpis) renderFunnel(kpis);
-
     if (suppliers) renderSupplierBehaviour(suppliers);
 
     await loadDecompositionTree();
@@ -52,7 +48,6 @@ async function loadJourneyDashboard() {
 
 function refreshJourneyVisualLabels() {
   const updates = [
-    ['Smart Meter Appointment Journey Funnel', 'Shows customer data loaded into dialler, contact attempts, appointments booked, D-1 cancellations, total visits, same-day aborts and successful execution'],
     ['Weekly Smart Meter Appointment and Success Trend', 'Monthly stacked trend of appointments booked, D-1 cancellations and same-day aborts'],
     ['Regional Success Rate - UK Map', 'UK map coloured by selected regional success rate'],
   ];
@@ -981,6 +976,8 @@ function renderDecompositionTree(data, container) {
     </div>
   `;
 
+  const colsArea = document.getElementById('decomp-cols-area');
+  if (colsArea) colsArea.addEventListener('scroll', drawDecompLines, { passive: true });
   setTimeout(() => drawDecompLines(), 50);
 }
 

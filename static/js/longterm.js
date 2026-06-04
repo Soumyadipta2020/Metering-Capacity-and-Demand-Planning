@@ -2,7 +2,6 @@
 
 const LT = {
   data:          null,
-  region:        '',
   selectedMonth: 0,
   charts:        {},
 };
@@ -31,41 +30,75 @@ async function loadLongTermPlanning(force) {
   }
 }
 
-function ltSetRegion(r) {
-  LT.region = r;
-  if (LT.data) ltRender();
+function ltSelectedRegions() {
+  const region = IMSERV.getRegion();
+  if (!region) return null;
+  const map = {
+    MID: ['WM', 'EM'],
+    YRK: ['Y'],
+  };
+  return map[region] || [region];
+}
+
+function ltAggregateRegionSlice(month, regions) {
+  return regions.reduce((acc, code) => {
+    const r = month.regions?.[code] || {};
+    acc.demand += r.demand || 0;
+    acc.capacity += r.capacity || 0;
+    acc.booked += r.booked || 0;
+    acc.avail += r.avail || 0;
+    return acc;
+  }, { demand: 0, capacity: 0, booked: 0, avail: 0, util: 0 });
+}
+
+function ltScaleSlotsToMonth(sourceMonth, totals) {
+  const slots = {};
+  ['morning', 'afternoon', 'evening'].forEach(slot => {
+    const source = sourceMonth.slots?.[slot] || {};
+    const demand = sourceMonth.demand ? Math.round(totals.demand * ((source.demand || 0) / sourceMonth.demand)) : 0;
+    const capacity = sourceMonth.capacity ? Math.round(totals.capacity * ((source.capacity || 0) / sourceMonth.capacity)) : 0;
+    const booked = sourceMonth.booked ? Math.round(totals.booked * ((source.booked || 0) / sourceMonth.booked)) : 0;
+    const safeBooked = Math.min(booked, capacity);
+    slots[slot] = {
+      demand,
+      capacity,
+      booked: safeBooked,
+      avail: Math.max(capacity - safeBooked, 0),
+      util: capacity ? Number(((safeBooked / capacity) * 100).toFixed(1)) : 0,
+    };
+  });
+  return slots;
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
 function ltRender() {
   if (!LT.data) return;
 
-  const badge = document.getElementById('lt-range-badge');
-  if (badge) badge.textContent = LT.data.period;
-
   const months = ltFilteredMonths();
 
   ltRenderKPIs(months);
   ltRenderTrendChart(months);
-  ltRenderRegionChart();
   ltRenderSlotCharts(months);
-  ltRenderMonthNav();
-  ltRenderMonthDetail(LT.selectedMonth);
+  ltRenderMonthNav(months);
+  ltRenderMonthDetail(LT.selectedMonth, months);
 }
 
 // When a region is active, remap each month's top-level demand/capacity/booked/avail/util
 // to that region's slice so KPIs and trend chart reflect it.
 function ltFilteredMonths() {
-  if (!LT.region) return LT.data.months;
+  const regions = ltSelectedRegions();
+  if (!regions) return LT.data.months;
   return LT.data.months.map(m => {
-    const r = m.regions[LT.region] || {};
+    const r = ltAggregateRegionSlice(m, regions);
+    r.util = r.capacity ? Math.round(r.booked / r.capacity * 100) : 0;
     return {
       ...m,
-      demand:   r.demand   || 0,
-      capacity: r.capacity || 0,
-      booked:   r.booked   || 0,
-      avail:    r.avail    || 0,
-      util:     r.util     || 0,
+      demand:   r.demand,
+      capacity: r.capacity,
+      booked:   r.booked,
+      avail:    r.avail,
+      util:     r.util,
+      slots:    ltScaleSlotsToMonth(m, r),
     };
   });
 }
@@ -155,7 +188,7 @@ function ltRenderTrendChart(months) {
   ltDestroyChart('trend');
 
   const { grid, text } = ltChartColors();
-  const labels   = months.map(m => m.short);
+  const labels   = months.map(m => m.label || `${m.short} ${m.year || ''}`.trim());
   const capacity = months.map(m => m.capacity);
   const booked   = months.map(m => m.booked);
   const demand   = months.map(m => m.demand);
@@ -277,7 +310,8 @@ function ltRenderRegionChart() {
   const colors = sorted.map((_, i) => _LT_COLORS[i % _LT_COLORS.length]);
 
   // Highlight selected region
-  const borderW = sorted.map(r => LT.region && r === LT.region ? 3 : 1.5);
+  const selectedRegions = ltSelectedRegions();
+  const borderW = sorted.map(r => selectedRegions?.includes(r) ? 3 : 1.5);
 
   LT.charts.region = new Chart(ctx, {
     type: 'bar',
@@ -343,6 +377,7 @@ function ltRenderSlotCharts(months) {
     const cap    = months.map(m => m.slots?.[cfg.key]?.capacity || 0);
     const booked = months.map(m => m.slots?.[cfg.key]?.booked   || 0);
     const demand = months.map(m => m.slots?.[cfg.key]?.demand   || 0);
+    const util   = months.map(m => m.slots?.[cfg.key]?.util     || 0);
 
     const totalCap    = cap.reduce((s, v) => s + v, 0);
     const totalBooked = booked.reduce((s, v) => s + v, 0);
@@ -359,7 +394,7 @@ function ltRenderSlotCharts(months) {
     LT.charts[cfg.key] = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: months.map(m => m.short),
+        labels: months.map(m => m.label || `${m.short} ${m.year || ''}`.trim()),
         datasets: [
           {
             label: 'Capacity',
@@ -389,6 +424,21 @@ function ltRenderSlotCharts(months) {
             tension: 0.35,
             fill: false,
             order: 1,
+            yAxisID: 'y',
+          },
+          {
+            label: 'Utilisation %',
+            data: util,
+            type: 'line',
+            borderColor: '#ef4444',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: [5, 4],
+            pointRadius: 2.5,
+            tension: 0.35,
+            fill: false,
+            order: 0,
+            yAxisID: 'y2',
           },
         ],
       },
@@ -400,11 +450,33 @@ function ltRenderSlotCharts(months) {
             position: 'bottom',
             labels: { color: text, usePointStyle: true, boxHeight: 7, padding: 10 },
           },
-          tooltip: { mode: 'index', intersect: false },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            callbacks: {
+              label(ctx) {
+                const v = ctx.raw;
+                return ctx.dataset.label === 'Utilisation %'
+                  ? ` ${ctx.dataset.label}: ${v}%`
+                  : ` ${ctx.dataset.label}: ${Number(v).toLocaleString()}`;
+              },
+            },
+          },
         },
         scales: {
           x: { grid: { color: grid }, ticks: { color: text, font: { size: 10 } } },
-          y: { grid: { color: grid }, ticks: { color: text } },
+          y: {
+            position: 'left',
+            grid: { color: grid },
+            ticks: { color: text },
+          },
+          y2: {
+            position: 'right',
+            min: 0,
+            max: 110,
+            grid: { drawOnChartArea: false },
+            ticks: { color: '#ef4444', callback: v => v + '%' },
+          },
         },
       },
     });
@@ -412,11 +484,11 @@ function ltRenderSlotCharts(months) {
 }
 
 // ── Month Navigator ───────────────────────────────────────────────────────────
-function ltRenderMonthNav() {
+function ltRenderMonthNav(months = ltFilteredMonths()) {
   const nav = document.getElementById('lt-month-nav');
   if (!nav || !LT.data) return;
 
-  nav.innerHTML = LT.data.months.map((m, i) => {
+  nav.innerHTML = months.map((m, i) => {
     const util    = m.util;
     const pillCls = util >= 88 ? 'lt-mpill--hi' : util >= 70 ? 'lt-mpill--mid' : 'lt-mpill--lo';
     const active  = i === LT.selectedMonth ? ' lt-mpill--active' : '';
@@ -436,12 +508,13 @@ function ltSelectMonth(idx) {
 }
 
 // ── Month Detail — regional + slot breakdown table ────────────────────────────
-function ltRenderMonthDetail(idx) {
+function ltRenderMonthDetail(idx, filteredMonths = ltFilteredMonths()) {
   const body = document.getElementById('lt-detail-body');
   if (!body || !LT.data) return;
 
-  const m = LT.data.months[idx];
-  if (!m) return;
+  const rawMonth = LT.data.months[idx];
+  const m = filteredMonths[idx];
+  if (!rawMonth || !m) return;
 
   function utilCls(u) {
     return u >= 88 ? 'lt-rag--red' : u >= 70 ? 'lt-rag--amber' : 'lt-rag--green';
@@ -453,11 +526,12 @@ function ltRenderMonthDetail(idx) {
   }
 
   // Regional rows
-  const sortedRegs = [..._LT_REGIONS].sort(
-    (a, b) => (m.regions[b]?.demand || 0) - (m.regions[a]?.demand || 0)
+  const activeRegions = ltSelectedRegions() || _LT_REGIONS;
+  const sortedRegs = [...activeRegions].sort(
+    (a, b) => (rawMonth.regions[b]?.demand || 0) - (rawMonth.regions[a]?.demand || 0)
   );
   const regRows = sortedRegs.map(r => {
-    const d = m.regions[r] || {};
+    const d = rawMonth.regions[r] || {};
     return `<tr>
       <td class="lt-dt-cell lt-dt-reg">
         <span class="rt-region">${r}</span>
