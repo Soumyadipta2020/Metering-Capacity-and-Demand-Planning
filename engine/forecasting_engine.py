@@ -15,6 +15,13 @@ from engine.ingestion import (
     get_forecast_baseline_2025,
     to_int, to_float, safe_pct
 )
+from engine.date_windows import (
+    actual_date_in_window,
+    actual_week_overlaps,
+    is_actual_flag,
+    parse_iso_date,
+    rolling_actual_window,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 _FORECAST_CACHE = {}
@@ -83,6 +90,18 @@ INTERACTION_ROUTE_RULES = [
         "journey_stage": "Reminder",
     },
 ]
+
+
+def _is_actual_job(row: dict, date_field: str = "requested_date") -> bool:
+    return is_actual_flag(row.get("is_forecast")) and actual_date_in_window(row.get(date_field, ""))
+
+
+def _is_actual_daily(row: dict, date_field: str = "contact_date") -> bool:
+    return is_actual_flag(row.get("is_forecast")) and actual_date_in_window(row.get(date_field, ""))
+
+
+def _is_actual_week(row: dict) -> bool:
+    return is_actual_flag(row.get("is_forecast")) and actual_week_overlaps(row)
 
 # ─── Seasonal Helpers ─────────────────────────────────────────────────────────
 
@@ -186,7 +205,7 @@ def _daily_volume_history(region_code: str = None, channel: str = None, year: in
             continue
         if channel and r.get("channel") != channel:
             continue
-        if to_int(r.get("year")) != year or r.get("is_forecast", "0") != "0":
+        if not _is_actual_daily(r):
             continue
         day = r.get("contact_date") or ""
         if day:
@@ -323,7 +342,7 @@ def forecast_channel_volume(
             continue
         if channel and r.get("channel") != channel:
             continue
-        if r.get("is_forecast", "0") != "0":
+        if not _is_actual_daily(r):
             continue
         wk = f"{r.get('year', '2025')}-W{int(r.get('week', 1)):02d}"
         weekly[wk] += to_float(r.get("volume", 0))
@@ -343,13 +362,13 @@ def forecast_channel_volume(
     p10, p50, p90 = _confidence_bands(ensemble)
 
     # Build forecast date labels
-    last_date = date(2025, 12, 28)
+    _, last_date = rolling_actual_window()
     labels = []
     for i in range(horizon_weeks):
         d = last_date + timedelta(weeks=i + 1)
         labels.append(str(d))
 
-    model_accuracy = _daily_model_accuracy(region_code, channel, 2025, include_models)
+    model_accuracy = _daily_model_accuracy(region_code, channel, year=None, include_models=include_models)
 
     result = {
         "labels":          labels,
@@ -376,7 +395,7 @@ def get_channel_kpis(region_code: str = None, year: int = 2025) -> dict:
     for r in iter_channel_volume():
         if region_code and r.get("region_code") != region_code:
             continue
-        if to_int(r.get("year")) != year:
+        if not _is_actual_daily(r):
             continue
 
         total_volume   += to_int(r["volume"])
@@ -425,7 +444,7 @@ def get_customer_interaction_map(region_code: str = None, year: int = 2025) -> d
     for r in iter_channel_volume():
         if region_code and r.get("region_code") != region_code:
             continue
-        if to_int(r.get("year")) != year or r.get("is_forecast", "0") != "0":
+        if not _is_actual_daily(r):
             continue
 
         ch = r["channel"]
@@ -508,7 +527,7 @@ def get_booking_conversion_funnel(region_code: str = None, year: int = 2025) -> 
     rows = get_booking_journey()
     if region_code:
         rows = [r for r in rows if r["region_code"] == region_code]
-    rows = [r for r in rows if to_int(r.get("year")) == year]
+    rows = [r for r in rows if _is_actual_week(r)]
 
     total_requests     = sum(to_int(r["total_requests"])     for r in rows)
     total_contacts     = sum(to_int(r["total_contacts"])     for r in rows)
@@ -520,12 +539,11 @@ def get_booking_conversion_funnel(region_code: str = None, year: int = 2025) -> 
     total_after_aborts = max(total_visits - total_aborts, 0)
     total_not_completed = max(total_after_aborts - total_completions, 0)
 
-    year_str = str(year)
     not_completed_reasons = Counter()
     for job in iter_jobs():
         if region_code and job.get("region_code") != region_code:
             continue
-        if job.get("requested_date", "")[:4] != year_str or job.get("is_forecast", "0") != "0":
+        if not _is_actual_job(job):
             continue
         if job.get("status") == "Booked":
             job_type = job.get("job_type") or "Other"
@@ -593,7 +611,7 @@ def get_booking_conversion_funnel(region_code: str = None, year: int = 2025) -> 
 
 
 def get_planning_target_kpis(region_code: str = None, year: int = 2025) -> dict:
-    """Actual 2025 planning performance against operational targets."""
+    """Rolling actual planning performance against operational targets."""
     funnel = get_booking_conversion_funnel(region_code, year)
     f = funnel.get("funnel", {})
 
@@ -608,7 +626,7 @@ def get_planning_target_kpis(region_code: str = None, year: int = 2025) -> dict:
     for row in get_capacity_demand():
         if region_code and row.get("region_code") != region_code:
             continue
-        if to_int(row.get("year")) != year or str(row.get("is_forecast", "0")) != "0":
+        if not _is_actual_week(row):
             continue
         visit_target += to_int(row.get("capacity_jobs"))
 
@@ -635,7 +653,7 @@ def get_planning_target_kpis(region_code: str = None, year: int = 2025) -> dict:
         "fallout_rate": fallout_rate,
         "fallout_rate_target": fallout_target_pct,
         "fallout_rate_delta": round(fallout_rate - fallout_target_pct, 1),
-        "target_basis": "Accuracy is 100 minus daily MAPE for the forecast created at the beginning of 2025 against 2025 actual contact attempts. Total visits target uses 2025 capacity_jobs. Success target is 85.0%; fallout target is 25.0% or lower.",
+        "target_basis": "Accuracy is 100 minus daily MAPE for the baseline forecast against the rolling 12 completed months of actual contact attempts. Total visits target uses rolling actual capacity_jobs. Success target is 85.0%; fallout target is 25.0% or lower.",
         "contact_to_visit_rate": safe_pct(total_visits, f.get("contacts") or 0),
         "abandon_rate": None,
     }
@@ -643,7 +661,6 @@ def get_planning_target_kpis(region_code: str = None, year: int = 2025) -> dict:
 
 def get_decomposition_tree(region_code: str = None, year: int = 2025) -> dict:
     """Build the appointment journey decomposition tree data."""
-    year_str = str(year)
 
     # region_code -> channel -> raw counters
     reg_ch = defaultdict(lambda: defaultdict(lambda: {
@@ -655,7 +672,7 @@ def get_decomposition_tree(region_code: str = None, year: int = 2025) -> dict:
     for job in iter_jobs():
         if region_code and job.get("region_code") != region_code:
             continue
-        if job.get("requested_date", "")[:4] != year_str or job.get("is_forecast", "0") != "0":
+        if not _is_actual_job(job):
             continue
 
         reg = job.get("region_code") or "Unknown"

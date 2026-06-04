@@ -128,7 +128,7 @@ def _chatbot_context(region: str | None, year: int, view: str | None) -> str:
         rows = [
             r for r in get_journey()
             if (not region or r.get("region_code") == region)
-            and to_int_fn(r.get("year")) == year
+            
             and r.get("is_forecast", "0") == "0"
         ]
         requests_total = sum(to_int_fn(r.get("total_requests")) for r in rows)
@@ -309,7 +309,7 @@ def journey_kpis():
         rows = get_journey()
         if region:
             rows = [r for r in rows if r["region_code"] == region]
-        rows = [r for r in rows if to_int_fn(r.get("year")) == year and r.get("is_forecast", "0") == "0"]
+        rows = [r for r in rows if r.get("is_forecast", "0") == "0"]
 
         total_requests      = sum(to_int_fn(r["total_requests"])      for r in rows)
         total_contacts      = sum(to_int_fn(r["total_contacts"])       for r in rows)
@@ -332,7 +332,7 @@ def journey_kpis():
         for job in iter_jobs_fn():
             if region and job.get("region_code") != region:
                 continue
-            if job.get("requested_date", "")[:4] != str(year) or job.get("is_forecast", "0") != "0":
+            if job.get("is_forecast", "0") != "0":
                 continue
             if job.get("status") == "Booked":
                 not_completed_reasons[job.get("job_type") or "Other"] += 1
@@ -388,7 +388,7 @@ def journey_weekly_trend():
         rows = get_journey()
         if region:
             rows = [r for r in rows if r["region_code"] == region]
-        rows = [r for r in rows if to_int_fn(r.get("year")) == year and r.get("is_forecast", "0") == "0"]
+        rows = [r for r in rows if r.get("is_forecast", "0") == "0"]
         rows = sorted(rows, key=lambda x: x.get("week_start", ""))
 
         weekly = {}
@@ -453,7 +453,7 @@ def journey_suppliers():
         for job in iter_jobs_fn():
             if region and job.get("region_code") != region:
                 continue
-            if job.get("requested_date", "")[:4] != str(year) or job.get("is_forecast", "0") != "0":
+            if job.get("is_forecast", "0") != "0":
                 continue
 
             supplier = (job.get("supplier_name") or "Unassigned Supplier").strip()
@@ -615,7 +615,7 @@ def journey_regional_heatmap():
     try:
         get_journey, _, to_int_fn, to_float_fn, safe_pct_fn, _ = _get_ingestion()
         rows = get_journey()
-        rows = [r for r in rows if to_int_fn(r.get("year")) == year and r.get("is_forecast", "0") == "0"]
+        rows = [r for r in rows if r.get("is_forecast", "0") == "0"]
 
         by_region = {}
         for r in rows:
@@ -1518,15 +1518,15 @@ def roster_timeline():
 
 @app.route("/api/longterm/overview")
 def longterm_overview():
-    """12-month forward demand vs capacity overview, starting from next calendar month."""
+    """12-month forward demand vs capacity overview, starting from current forecast window."""
     import random as _rnd
     import calendar as _cal
+    from datetime import date
+    from engine.date_windows import rolling_forecast_window
 
     today = date.today()
-    if today.month == 12:
-        start_year, start_month = today.year + 1, 1
-    else:
-        start_year, start_month = today.year, today.month + 1
+    forecast_start, _ = rolling_forecast_window()
+    start_year, start_month = forecast_start.year, forecast_start.month
 
     _REGIONS = ["NW", "SE", "NE", "WM", "EM", "SW", "Y"]
     _REG_W   = {"NW": 0.20, "SE": 0.18, "NE": 0.12, "WM": 0.15,
@@ -1891,36 +1891,173 @@ def field_engineers_api():
         return jsonify({"error": str(e)}), 500
 
 
-# ─── Startup: generate data if missing ───────────────────────────────────────
-def _ensure_data():
-    """Ensure required data files exist without loading them into memory."""
-    global _DATA_READY
-    if _DATA_READY:
+# ─── Startup: automatic rolling-window data check ───────────────────────────
+
+_DATA_READY_ANCHOR = None
+
+import threading
+_generation_lock = threading.Lock()
+
+def _acquire_generation_lock() -> bool:
+    return _generation_lock.acquire(blocking=False)
+
+def _release_generation_lock() -> None:
+    try:
+        _generation_lock.release()
+    except RuntimeError:
+        pass
+
+def _auto_generate_data_enabled() -> bool:
+    import os
+    return (
+        os.getenv("IMSERV_AUTO_GENERATE_DATA", "").lower() == "true"
+        or (os.getenv("FLASK_ENV", "development") == "development" and not os.getenv("RENDER"))
+    )
+
+def _read_data_manifest() -> dict:
+    import json
+    path = BASE_DIR / "data" / "inputs" / "manifest.json"
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def _data_window_state(current_anchor: str) -> tuple[bool, bool]:
+    input_dir = BASE_DIR / "data" / "inputs"
+    required_files = [
+        "master_operations.csv",
+        "booking_journey.csv",
+        "capacity_demand.csv",
+        "channel_volume.csv",
+        "engineer_availability.csv",
+        "engineers.csv",
+        "field_engineers.csv",
+        "financial_data.csv",
+        "forecast_baseline_2025.csv",
+        "suppliers.csv"
+    ]
+    
+    for f in required_files:
+        if not (input_dir / f).exists():
+            print(f"IMSERV: Missing required file {f}.")
+            return True, False
+
+    from engine.date_windows import rolling_actual_window, parse_iso_date
+    actual_start, _ = rolling_actual_window()
+
+    try:
+        import csv as _csv
+        
+        # Check master_operations.csv strictly
+        with open(input_dir / "master_operations.csv", encoding="utf-8-sig", newline="") as f:
+            reader = _csv.DictReader(f)
+            first_row = next(reader, None)
+            if not first_row:
+                return True, False
+            rd = parse_iso_date(first_row.get("requested_date", ""))
+            if rd != actual_start:
+                print(f"IMSERV: master_operations.csv first date {rd} != expected {actual_start}. Marking stale.")
+                return False, True
+                
+        # Check booking_journey.csv strictly
+        with open(input_dir / "booking_journey.csv", encoding="utf-8-sig", newline="") as f:
+            reader = _csv.DictReader(f)
+            first_row = next(reader, None)
+            if not first_row:
+                return True, False
+            ws = parse_iso_date(first_row.get("week_start", ""))
+            if not ws or abs((ws - actual_start).days) > 7:
+                print(f"IMSERV: booking_journey.csv out of sync with {actual_start}. Marking stale.")
+                return False, True
+
+    except Exception as e:
+        print(f"IMSERV: CSV spot-check error: {e}. Marking stale.")
+        return False, True
+
+    return False, False
+
+def _ensure_data() -> None:
+    from engine.date_windows import rolling_generation_profile
+    profile = rolling_generation_profile()
+    current_anchor = profile["anchor_month"]
+
+
+    print(f"IMSERV: Rolling-window check | anchor={current_anchor} | actuals={profile['actual_period']} | forecast={profile['forecast_period']}")
+    missing, stale = _data_window_state(current_anchor)
+
+    if not missing and not stale:
+        print("IMSERV: All CSVs are aligned to the current rolling window. Ready.")
         return
 
-    manifest = BASE_DIR / "data" / "inputs" / "manifest.json"
-    master = BASE_DIR / "data" / "inputs" / "master_operations.csv"
-    if not manifest.exists() or not master.exists():
-        can_generate = (
-            os.getenv("IMSERV_AUTO_GENERATE_DATA", "").lower() == "true"
-            or (
-                os.getenv("FLASK_ENV", "development") == "development"
-                and not os.getenv("RENDER")
-            )
+    if not _auto_generate_data_enabled():
+        reason = "missing" if missing else "out-of-date"
+        print(f"IMSERV: Data is {reason} but auto-generation is disabled.")
+        return
+
+    if missing:
+        print("IMSERV: Data files are missing; date-only refresh cannot run without an existing dataset.")
+        return
+
+    reason = "not found" if missing else "out-of-date for current rolling window"
+    print(f"IMSERV: Data is {reason}; rolling existing CSV dates now...")
+
+    if not _acquire_generation_lock():
+        print("IMSERV: Another worker is rolling data dates. Waiting for it to finish...")
+        return
+
+    try:
+        missing2, stale2 = _data_window_state(current_anchor)
+        if not missing2 and not stale2:
+            print("IMSERV: Another worker already finished regeneration. Ready.")
+            _DATA_READY        = True
+            _DATA_READY_ANCHOR = current_anchor
+            return
+
+        from engine.date_roller import roll_existing_data_dates
+        roll_result = roll_existing_data_dates()
+
+        try:
+            from engine.ingestion import clear_data_caches
+            from engine.forecasting_engine import clear_forecast_cache
+            clear_data_caches()
+            clear_forecast_cache()
+        except Exception:
+            pass
+
+        print(
+            "IMSERV: Existing CSV dates rolled successfully "
+            f"for anchor {current_anchor} (month_delta={roll_result['month_delta']})."
         )
-        if can_generate:
-            print("IMSERV: Connected data source not found - generating synthetic datasets...")
-            try:
-                from engine.data_generator import generate_all
-                generate_all()
-            except Exception as e:
-                print(f"IMSERV: Data generation failed: {e}")
-        else:
-            print("IMSERV: Connected data source missing. Skipping auto-generation on constrained runtime.")
+    except Exception as exc:
+        print(f"IMSERV: CSV date roll failed: {exc}")
+    finally:
+        _release_generation_lock()
 
-    print("IMSERV: Data files verified. CSVs will be loaded lazily per request.")
-    _DATA_READY = True
+@app.before_request
+def _ensure_data_before_api_request():
+    from flask import request
+    if request.path.startswith("/api/"):
+        _ensure_data()
 
+@app.route("/api/data/status")
+def data_status_api():
+    from engine.date_windows import rolling_generation_profile
+    from flask import jsonify
+    profile = rolling_generation_profile()
+    current_anchor = profile["anchor_month"]
+    missing, stale = _data_window_state(current_anchor)
+    manifest = _read_data_manifest()
+    
+    return jsonify({
+        "status": "ready" if not missing and not stale else ("stale" if stale else "missing"),
+        "current_anchor": current_anchor,
+        "manifest_anchor": manifest.get("rolling_anchor_month"),
+        "auto_generate_enabled": _auto_generate_data_enabled(),
+        "windows": profile
+    })
 
 # ─────────────────────────────────────────────────────────────────────────────
 

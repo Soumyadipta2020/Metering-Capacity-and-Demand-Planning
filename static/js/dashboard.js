@@ -209,7 +209,7 @@ function renderJourneyTrend(data) {
     return;
   }
 
-  const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short' });
+  const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' });
   const monthly = new Map();
 
   labels.forEach((label, idx) => {

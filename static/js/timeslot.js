@@ -4,6 +4,7 @@ let _tsFilterType  = 'all';
 let _tsFilterValue = '';
 let _tsAgentData   = null;
 let _tsLoaded      = false;
+let _tsWindow      = null;
 
 const TS_SLOTS = ['Morning', 'Afternoon', 'Evening'];
 const TS_DAYS  = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -23,6 +24,70 @@ const TS_MONTHS = [
 
 const TS_RATE_COL = v => v >= 80 ? '#10b981' : v >= 60 ? '#f59e0b' : '#ef4444';
 
+function tsFormatMonth(value) {
+  const d = new Date(`${value}-01T00:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' }).format(d);
+}
+
+function tsLocalWindowFallback() {
+  const today = new Date();
+  const current = new Date(today.getFullYear(), today.getMonth(), 1);
+  const start = new Date(current.getFullYear(), current.getMonth() - 12, 1);
+  const end = new Date(current.getFullYear(), current.getMonth(), 0);
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const months = [];
+  for (let i = 0; i < 12; i += 1) {
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    months.push({ value, label: tsFormatMonth(value) });
+  }
+  const weeks = [];
+  const cursor = new Date(start);
+  cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7));
+  while (cursor <= end) {
+    const value = iso(cursor);
+    weeks.push({ value, label: `Week of ${new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(cursor)}` });
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return {
+    start: iso(start),
+    end: iso(end),
+    label: `${tsFormatMonth(months[0].value)} - ${tsFormatMonth(months[months.length - 1].value)}`,
+    months,
+    weeks,
+    default_day: iso(start),
+  };
+}
+
+function tsApplyWindowChrome() {
+  const label = _tsWindow?.label || 'Rolling actuals';
+  const allBtn = document.querySelector('.ts-period-btn[data-ftype="all"]');
+  if (allBtn) allBtn.textContent = `All ${label}`;
+
+  const dateInput = document.getElementById('ts-picker-date');
+  if (dateInput && _tsWindow) {
+    dateInput.min = _tsWindow.start;
+    dateInput.max = _tsWindow.end;
+    if (!dateInput.value) dateInput.value = _tsWindow.default_day || _tsWindow.start;
+  }
+
+  const active = document.getElementById('ts-active-label');
+  if (active && _tsFilterType === 'all') active.textContent = `Showing: ${label}`;
+}
+
+async function tsEnsureWindow() {
+  if (_tsWindow) return _tsWindow;
+  try {
+    _tsWindow = await IMSERV.apiFetch('/api/data/actual-window', { force: true });
+  } catch (err) {
+    console.warn('Timeslot actual window metadata unavailable', err);
+  }
+  if (!_tsWindow?.start) _tsWindow = tsLocalWindowFallback();
+  tsApplyWindowChrome();
+  return _tsWindow;
+}
+
 function tsQs() {
   const region = IMSERV.getRegion();
   let qs = `filter_type=${_tsFilterType}&filter_value=${encodeURIComponent(_tsFilterValue)}`;
@@ -33,6 +98,7 @@ function tsQs() {
 async function loadTimeslotDashboard(force = false) {
   if (_tsLoaded && !force) return;
   _tsLoaded = true;
+  await tsEnsureWindow();
 
   tsSetLoading();
   try {
@@ -60,7 +126,8 @@ function tsSetLoading() {
 
 /* ── Filter controls ───────────────────────────────────────── */
 
-window.tsSetFilter = function(ftype, fval) {
+window.tsSetFilter = async function(ftype, fval) {
+  await tsEnsureWindow();
   _tsFilterType  = ftype;
   _tsFilterValue = fval;
   _tsLoaded = false;
@@ -76,12 +143,13 @@ window.tsSetFilter = function(ftype, fval) {
   if (dateInput) dateInput.style.display = 'none';
 
   const lbl = document.getElementById('ts-active-label');
-  if (lbl) lbl.textContent = 'Showing: All 2025';
+  if (lbl) lbl.textContent = `Showing: ${_tsWindow?.label || 'Rolling actuals'}`;
 
   loadTimeslotDashboard(true);
 };
 
-window.tsOpenPicker = function(ftype) {
+window.tsOpenPicker = async function(ftype) {
+  await tsEnsureWindow();
   _tsFilterType = ftype;
   document.querySelectorAll('.ts-period-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.ftype === ftype);
@@ -97,17 +165,19 @@ window.tsOpenPicker = function(ftype) {
   dateInput.style.display = ftype === 'day' ? '' : 'none';
 
   if (ftype === 'month') {
-    TS_MONTHS.forEach(([v, l]) => {
+    (_tsWindow?.months || []).forEach(({ value, label }) => {
       const o = document.createElement('option');
-      o.value = v; o.textContent = l; sel.appendChild(o);
+      o.value = value; o.textContent = label; sel.appendChild(o);
     });
   } else if (ftype === 'week') {
-    for (let w = 1; w <= 52; w++) {
+    (_tsWindow?.weeks || []).forEach(({ value, label }) => {
       const o = document.createElement('option');
-      o.value = w; o.textContent = `Week ${w}`; sel.appendChild(o);
-    }
+      o.value = value; o.textContent = label; sel.appendChild(o);
+    });
   } else if (ftype === 'day') {
-    const current = /^\d{4}-\d{2}-\d{2}$/.test(_tsFilterValue) ? _tsFilterValue : '2025-01-01';
+    const current = /^\d{4}-\d{2}-\d{2}$/.test(_tsFilterValue)
+      ? _tsFilterValue
+      : (_tsWindow?.default_day || _tsWindow?.start || '');
     dateInput.value = current;
   }
   wrap.style.display = '';
@@ -124,8 +194,10 @@ window.tsApplyPicker = function() {
   const lbl = document.getElementById('ts-active-label');
   if (lbl) {
     const txt = _tsFilterType === 'month'
-      ? TS_MONTHS.find(([v]) => v === _tsFilterValue)?.[1] || _tsFilterValue
-      : _tsFilterType === 'week' ? `Week ${_tsFilterValue}` : _tsFilterValue;
+      ? (_tsWindow?.months || []).find(m => m.value === _tsFilterValue)?.label || tsFormatMonth(_tsFilterValue)
+      : _tsFilterType === 'week'
+        ? (_tsWindow?.weeks || []).find(w => w.value === _tsFilterValue)?.label || `Week of ${_tsFilterValue}`
+        : _tsFilterValue;
     lbl.textContent = `Showing: ${txt}`;
   }
   loadTimeslotDashboard(true);

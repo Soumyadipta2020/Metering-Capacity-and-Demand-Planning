@@ -9,6 +9,13 @@ from engine.ingestion import (
     iter_jobs, get_booking_journey,
     to_float, safe_pct
 )
+from engine.date_windows import (
+    actual_date_in_window,
+    actual_week_overlaps,
+    is_actual_flag,
+    parse_iso_date,
+    rolling_actual_window,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -37,6 +44,14 @@ def _resolve_abort_reason(job_ref: str, csv_reason: str) -> str:
         return "Eng didn't reach"
     return csv_reason
 
+
+def _is_actual_job(row: dict, date_field: str = "requested_date") -> bool:
+    return is_actual_flag(row.get("is_forecast")) and actual_date_in_window(row.get(date_field, ""))
+
+
+def _is_actual_week(row: dict) -> bool:
+    return is_actual_flag(row.get("is_forecast")) and actual_week_overlaps(row)
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 def get_cancellation_kpis(region_code: str = None, year: int = 2025) -> dict:
@@ -46,12 +61,11 @@ def get_cancellation_kpis(region_code: str = None, year: int = 2025) -> dict:
     Returns:
         dict with rates, volumes, trends, and regional comparison
     """
-    year_str = str(year)
     total = cancelled = aborted = completed = 0
     for r in iter_jobs():
         if region_code and r.get("region_code") != region_code:
             continue
-        if r.get("requested_date", "")[:4] != year_str or r.get("is_forecast", "0") != "0":
+        if not _is_actual_job(r):
             continue
         total += 1
         status = r.get("status")
@@ -93,12 +107,11 @@ def get_cancellation_root_causes(
     category_counter: Counter = Counter()
     reason_supplier_cancellation: dict = defaultdict(Counter)
     reason_supplier_abort: dict = defaultdict(Counter)
-    year_str = str(year)
 
     for r in iter_jobs():
         if region_code and r.get("region_code") != region_code:
             continue
-        if r.get("requested_date", "")[:4] != year_str or r.get("is_forecast", "0") != "0":
+        if not _is_actual_job(r):
             continue
 
         supplier = r.get("supplier_name", "Unknown").strip() or "Unknown"
@@ -181,7 +194,7 @@ def get_cancellation_root_causes(
 
 def get_cancellation_trends(region_code: str = None) -> dict:
     """
-    Monthly cancellation and abort rate trend: 2025 actuals + 2026 forecast.
+    Monthly cancellation and abort rate trend for the rolling 12 completed months.
 
     Returns:
         dict with monthly trend data and 6-month forward projection
@@ -189,12 +202,16 @@ def get_cancellation_trends(region_code: str = None) -> dict:
     rows = get_booking_journey()
     if region_code:
         rows = [r for r in rows if r["region_code"] == region_code]
-    rows = [r for r in rows if r.get("is_forecast", "0") == "0"]
+    rows = [r for r in rows if _is_actual_week(r)]
 
     # Aggregate by month
     monthly: dict = defaultdict(lambda: defaultdict(float))
+    actual_start, _ = rolling_actual_window()
     for r in rows:
-        ym = r.get("week_start", "")[:7]  # YYYY-MM
+        week_date = parse_iso_date(r.get("week_start", ""))
+        if week_date and week_date < actual_start:
+            week_date = actual_start
+        ym = str(week_date or r.get("week_start", ""))[:7]  # YYYY-MM
         monthly[ym]["bookings"]      += to_float(r["total_bookings"])
         monthly[ym]["cancellations"] += to_float(r["total_cancellations"])
         monthly[ym]["aborts"]        += to_float(r["total_aborts"])
@@ -253,9 +270,8 @@ def get_regional_cancellation_heatmap(year: int = 2025) -> list:
         list of region stats sorted by cancellation rate desc
     """
     by_region: dict = defaultdict(lambda: defaultdict(int))
-    year_str = str(year)
     for r in iter_jobs():
-        if r.get("requested_date", "")[:4] != year_str or r.get("is_forecast", "0") != "0":
+        if not _is_actual_job(r):
             continue
         rc = r.get("region_code")
         by_region[rc]["total"]    += 1
@@ -364,10 +380,12 @@ def get_rebooking_analytics(region_code: str = None, year: int = 2025) -> dict:
     from collections import Counter
     rng.seed(42)
 
-    base_cancellations = {
-        "NW": 820, "NE": 610, "MID": 780, "SE": 940,
-        "SW": 580, "WAL": 430, "SCO": 510, "YRK": 670,
-    }
+    base_cancellations = Counter()
+    for row in iter_jobs():
+        if not _is_actual_job(row):
+            continue
+        if row.get("status") == "Cancelled":
+            base_cancellations[row.get("region_code") or "Unknown"] += 1
 
     regions = ["NW", "NE", "MID", "SE", "SW", "WAL", "SCO", "YRK"] if not region_code else [region_code]
     data = []
@@ -375,7 +393,7 @@ def get_rebooking_analytics(region_code: str = None, year: int = 2025) -> dict:
         rebook_rate       = round(rng.uniform(0.35, 0.65), 3)
         avg_lag_days      = round(rng.uniform(8, 21), 1)
         success_pct       = round(rebook_rate * rng.uniform(0.75, 0.92) * 100, 1)
-        total_cancels     = base_cancellations.get(r, 600)
+        total_cancels     = base_cancellations.get(r, 0)
         rebooked_count    = round(total_cancels * rebook_rate)
         completed_rebooks = round(rebooked_count * (success_pct / 100))
         fast_pct          = round(rng.uniform(28, 52), 1)
@@ -394,7 +412,7 @@ def get_rebooking_analytics(region_code: str = None, year: int = 2025) -> dict:
         
     supplier_cancels = Counter()
     for r in iter_jobs():
-        if r.get("status") == "Cancelled":
+        if _is_actual_job(r) and r.get("status") == "Cancelled":
             supplier_cancels[r.get("supplier_name", "Unknown").strip() or "Unknown"] += 1
             
     sorted_suppliers = sorted(supplier_cancels.items(), key=lambda x: -x[1])

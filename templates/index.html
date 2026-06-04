@@ -225,7 +225,7 @@
           <div class="ts-filter-group">
             <span class="ts-filter-label">Period</span>
             <div class="ts-period-toggle">
-              <button class="ts-period-btn active" data-ftype="all"    onclick="tsSetFilter('all','')">All 2025</button>
+              <button class="ts-period-btn active" data-ftype="all"    onclick="tsSetFilter('all','')">All Actuals</button>
               <button class="ts-period-btn"         data-ftype="month"  onclick="tsOpenPicker('month')">Month</button>
               <button class="ts-period-btn"         data-ftype="week"   onclick="tsOpenPicker('week')">Week</button>
               <button class="ts-period-btn"         data-ftype="day"    onclick="tsOpenPicker('day')">Day</button>
@@ -233,9 +233,9 @@
           </div>
           <div class="ts-picker-wrap" id="ts-picker-wrap" style="display:none;">
             <select class="ts-picker-select" id="ts-picker-select" onchange="tsApplyPicker()"></select>
-            <input class="ts-picker-select ts-picker-date" type="date" id="ts-picker-date" min="2025-01-01" max="2025-12-31" value="2025-01-01" onchange="tsApplyPicker()" style="display:none;" />
+            <input class="ts-picker-select ts-picker-date" type="date" id="ts-picker-date" onchange="tsApplyPicker()" style="display:none;" />
           </div>
-          <div class="ts-active-label" id="ts-active-label">Showing: All 2025</div>
+          <div class="ts-active-label" id="ts-active-label">Showing: Rolling actuals</div>
         </div>
 
         <!-- 1. Channel Booking by Slot -->

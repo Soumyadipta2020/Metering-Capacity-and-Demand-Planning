@@ -16,6 +16,8 @@ from collections import defaultdict
 from datetime import date, timedelta, datetime, UTC
 from pathlib import Path
 
+from engine.date_windows import rolling_generation_profile, add_months
+
 RANDOM_SEED = 42
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -124,7 +126,7 @@ def write_csv(filename: str, rows: list, fieldnames: list):
 
 
 def _month_name(month: int) -> str:
-    return date(2025, month, 1).strftime("%B")
+    return date(2000, month, 1).strftime("%B")
 
 
 def _week_start(d: date) -> date:
@@ -158,13 +160,13 @@ def _build_engineers() -> tuple[list, dict, dict]:
     return engineers_rows, by_patch, by_id
 
 
-def _build_availability(engineers: list) -> tuple[list, dict]:
+def _build_availability(engineers: list, start_date: date, end_date: date) -> tuple[list, dict]:
     rows = []
     by_key = {}
     leave_types = ["Available", "Annual Leave", "Sick", "Training", "Unavailable"]
     leave_weights = [0.82, 0.09, 0.04, 0.03, 0.02]
 
-    for d in date_range(date(2025, 1, 1), date(2025, 12, 31)):
+    for d in date_range(start_date, end_date):
         is_weekend = d.weekday() >= 5
         for eng in engineers:
             if is_weekend and random.random() > 0.15:
@@ -212,13 +214,22 @@ def _choose_engineer(patch_engineers: list, availability: dict, d: date, assigne
     return available[0][1]["engineer_id"]
 
 
-def _generate_master_operations(engineers_by_patch: dict, availability: dict, supplier_pool: list[str]) -> tuple[list, dict]:
+def _generate_master_operations(
+    engineers_by_patch: dict,
+    availability: dict,
+    supplier_pool: list[str],
+    actual_start: date,
+    actual_end: date,
+    forecast_start: date,
+    forecast_end: date,
+) -> tuple[list, dict]:
     rows = []
     assigned_counts = defaultdict(int)
     job_counter = 1
 
-    for d in date_range(date(2025, 1, 1), date(2026, 12, 31)):
-        is_forecast = d.year == 2026
+    ledger_dates = list(date_range(actual_start, actual_end)) + list(date_range(forecast_start, forecast_end))
+    for d in ledger_dates:
+        is_forecast = d >= forecast_start
         sf = seasonal_factor(d)
         dof = day_of_week_factor(d)
 
@@ -262,8 +273,8 @@ def _generate_master_operations(engineers_by_patch: dict, availability: dict, su
                 completed_date = ""
                 if status in ("Completed", "Cancelled", "Aborted", "Booked"):
                     booked_dt = d - timedelta(days=random.randint(3, 21))
-                    if booked_dt.year < d.year:
-                        booked_dt = date(d.year, 1, 1)
+                    if booked_dt < actual_start:
+                        booked_dt = actual_start
                     booked_date = str(booked_dt)
                 if status == "Completed":
                     completed_date = str(d)
@@ -462,7 +473,7 @@ def _derive_financial_data(master_rows: list) -> list:
     return rows
 
 
-def _derive_capacity_data(master_rows: list, availability_rows: list) -> list:
+def _derive_capacity_data(master_rows: list, availability_rows: list, forecast_start: date) -> list:
     demand = defaultdict(int)
     meta = {}
     for row in master_rows:
@@ -486,14 +497,15 @@ def _derive_capacity_data(master_rows: list, availability_rows: list) -> list:
     all_keys = set(demand) | set(capacity)
     rows = []
     for calendar_year, week_start, region_code, patch_code in sorted(all_keys):
-        if calendar_year > 2026:
-            continue
         region_name, is_forecast = meta.get(
             (calendar_year, week_start, region_code, patch_code),
-            (capacity[(calendar_year, week_start, region_code, patch_code)]["region_name"], 1 if calendar_year == 2026 else 0),
+            (
+                capacity[(calendar_year, week_start, region_code, patch_code)]["region_name"],
+                1 if week_start >= forecast_start else 0,
+            ),
         )
         cap_jobs = int(capacity[(calendar_year, week_start, region_code, patch_code)]["capacity_jobs"])
-        if calendar_year == 2026 and cap_jobs == 0:
+        if str(is_forecast) == "1" and cap_jobs == 0:
             rinfo = REGIONS[region_code]
             engs_per_patch = max(1, rinfo["engineers"] // rinfo["patches"])
             cap_jobs = engs_per_patch * 4 * 5
@@ -519,30 +531,162 @@ def _derive_capacity_data(master_rows: list, availability_rows: list) -> list:
     return rows
 
 
-def generate_all():
+_FIELD_ENG_NAMES = [
+    "James Mitchell", "Sarah Thompson", "Daniel Williams", "Emma Johnson",
+    "Michael Brown", "Charlotte Davis", "Robert Wilson", "Laura Taylor",
+    "Christopher Anderson", "Jessica Martinez", "Thomas Jackson", "Hannah White",
+    "David Harris", "Olivia Martin", "Joseph Thompson", "Emily Garcia",
+    "Andrew Robinson", "Sophie Clark", "Joshua Lewis", "Georgia Lee",
+    "Ryan Walker", "Chloe Hall", "Samuel Allen", "Amy Wright",
+    "Nathan King", "Megan Scott", "Jonathan Green", "Lucy Adams",
+    "Benjamin Baker", "Rebecca Nelson", "Alexander Carter", "Natalie Mitchell",
+    "Dylan Perez", "Stephanie Roberts", "George Turner", "Abigail Phillips",
+    "Brandon Campbell", "Victoria Parker", "Adam Evans", "Danielle Edwards",
+    "Ethan Collins", "Samantha Stewart", "Callum Morris", "Rachael Rogers",
+    "Kyle Reed", "Harriet Cook", "Sean Morgan", "Fiona Bell",
+    "Aaron Murphy", "Zoe Bailey",
+]
+
+
+def _generate_field_engineers(actual_start: date, actual_end: date) -> list:
+    """Generate 50-engineer monthly scorecard over the rolling actuals window.
+
+    Each month in [actual_start, actual_end] produces one row per engineer.
+    Values are seeded by (engineer_num * 100_003 + year * 12 + month) so they
+    are stable across restarts but shift naturally when a new month becomes
+    the anchor.
+    """
+    rows = []
+    # Collect every calendar month in the actuals window
+    cursor = date(actual_start.year, actual_start.month, 1)
+    final  = date(actual_end.year,   actual_end.month,   1)
+    months = []
+    while cursor <= final:
+        months.append((cursor.year, cursor.month))
+        cursor = add_months(cursor, 1)
+
+    import calendar as _cal
+
+    for eng_num in range(1, 51):
+        eng_id   = f"ENG{eng_num:03d}"
+        eng_name = _FIELD_ENG_NAMES[eng_num - 1]
+        for yr, mo in months:
+            seed = eng_num * 100_003 + yr * 12 + mo
+            rng  = random.Random(seed)
+
+            _, days_in_month = _cal.monthrange(yr, mo)
+            working_days = sum(
+                1 for d in range(1, days_in_month + 1)
+                if date(yr, mo, d).weekday() < 5
+            )
+
+            leaves_taken    = rng.randint(0, max(0, working_days - 10))
+            effective_days  = max(working_days - leaves_taken, 1)
+            jobs_target_day = rng.randint(3, 5)
+            total_allocated = effective_days * jobs_target_day
+            total_bookings  = int(total_allocated * rng.uniform(0.60, 0.85))
+            success_jobs    = int(total_bookings  * rng.uniform(0.70, 0.92))
+            abort_jobs      = int(total_bookings  * rng.uniform(0.02, 0.08))
+            cancelled_jobs  = max(total_bookings - success_jobs - abort_jobs, 0)
+            success_rate    = round(success_jobs / max(total_bookings, 1) * 100, 1)
+            productivity    = round(total_bookings / max(total_allocated, 1) * 100, 1)
+            avg_jobs_per_day = round(success_jobs / max(effective_days, 1), 1)
+
+            month_abbr = date(yr, mo, 1).strftime("%b")  # 'Jan', 'Feb', …
+
+            rows.append({
+                "engineer_id":     eng_id,
+                "engineer_name":   eng_name,
+                "month":           month_abbr,
+                "month_num":       mo,
+                "year":            yr,
+                "working_days":    working_days,
+                "total_allocated": total_allocated,
+                "total_bookings":  total_bookings,
+                "success_jobs":    success_jobs,
+                "abort_jobs":      abort_jobs,
+                "cancelled_jobs":  cancelled_jobs,
+                "success_rate":    success_rate,
+                "productivity":    productivity,
+                "leaves_taken":    leaves_taken,
+                "avg_jobs_per_day": avg_jobs_per_day,
+            })
+    return rows
+
+
+def _generate_forecast_baseline(actual_start: date, actual_end: date) -> list:
+    """Generate one daily row per day in the rolling actuals window.
+
+    Replaces the static forecast_baseline_2025.csv with a version whose
+    dates always match the past-12-month actuals window.
+    Seed is based on the calendar date so values are stable across restarts.
+    """
+    rows = []
+    for d in date_range(actual_start, actual_end):
+        seed = d.toordinal() * 1_000_003 + 7
+        rng  = random.Random(seed)
+        sf   = seasonal_factor(d)
+        dof  = day_of_week_factor(d)
+        # Base total daily volume across all regions
+        total_base = sum(rinfo["base_jobs"] for rinfo in REGIONS.values()) / 22
+        actual_vol   = max(0, int(total_base * sf * dof * rng.gauss(1.0, 0.06)))
+        forecast_vol = max(0, int(actual_vol * rng.uniform(0.88, 1.14)))
+        month_label  = d.strftime("%b %Y")  # e.g. "Jun 2025"
+        rows.append({
+            "forecast_date":       str(d),
+            "year":               d.year,
+            "forecast_created_at": str(date(d.year, d.month, 1)),
+            "forecast_name":       f"{month_label} forecast",
+            "actual_volume":       actual_vol,
+            "forecast_volume":     forecast_vol,
+        })
+    return rows
+
+
+def generate_all(today: date | None = None):
     random.seed(RANDOM_SEED)
+    profile = rolling_generation_profile(today)
+    actual_start = profile["actual_start"]
+    actual_end = profile["actual_end"]
+    forecast_start = profile["forecast_start"]
+    forecast_end = profile["forecast_end"]
+
     print("\nIMSERV - Generating connected synthetic datasets...\n")
+    print(f"  Actuals:  {profile['actual_period']}")
+    print(f"  Forecast: {profile['forecast_period']}\n")
 
     engineers, engineers_by_patch, _ = _build_engineers()
-    availability_rows, availability_by_key = _build_availability(engineers)
+    availability_rows, availability_by_key = _build_availability(engineers, actual_start, actual_end)
     suppliers = _load_suppliers()
     supplier_pool = _build_supplier_pool(suppliers)
-    master_rows, _ = _generate_master_operations(engineers_by_patch, availability_by_key, supplier_pool)
+    master_rows, _ = _generate_master_operations(
+        engineers_by_patch,
+        availability_by_key,
+        supplier_pool,
+        actual_start,
+        actual_end,
+        forecast_start,
+        forecast_end,
+    )
 
-    channel_volume = _derive_channel_volume(master_rows)
-    booking_journey = _derive_booking_journey(master_rows)
-    financial_data = _derive_financial_data(master_rows)
-    capacity_demand = _derive_capacity_data(master_rows, availability_rows)
+    channel_volume    = _derive_channel_volume(master_rows)
+    booking_journey   = _derive_booking_journey(master_rows)
+    financial_data    = _derive_financial_data(master_rows)
+    capacity_demand   = _derive_capacity_data(master_rows, availability_rows, forecast_start)
+    field_engineers   = _generate_field_engineers(actual_start, actual_end)
+    forecast_baseline = _generate_forecast_baseline(actual_start, actual_end)
 
     write_csv("master_operations.csv", master_rows, list(master_rows[0].keys()))
     if SUPPLIERS_FILE.exists():
         write_csv("suppliers.csv", [{"supplier_name": s} for s in suppliers], ["supplier_name"])
-    write_csv("channel_volume.csv", channel_volume, list(channel_volume[0].keys()))
-    write_csv("booking_journey.csv", booking_journey, list(booking_journey[0].keys()))
-    write_csv("engineers.csv", engineers, list(engineers[0].keys()))
-    write_csv("engineer_availability.csv", availability_rows, list(availability_rows[0].keys()))
-    write_csv("financial_data.csv", financial_data, list(financial_data[0].keys()))
-    write_csv("capacity_demand.csv", capacity_demand, list(capacity_demand[0].keys()))
+    write_csv("channel_volume.csv",   channel_volume,    list(channel_volume[0].keys()))
+    write_csv("booking_journey.csv",  booking_journey,   list(booking_journey[0].keys()))
+    write_csv("engineers.csv",        engineers,         list(engineers[0].keys()))
+    write_csv("engineer_availability.csv", availability_rows,  list(availability_rows[0].keys()))
+    write_csv("financial_data.csv",        financial_data,      list(financial_data[0].keys()))
+    write_csv("capacity_demand.csv",       capacity_demand,     list(capacity_demand[0].keys()))
+    write_csv("field_engineers.csv",       field_engineers,     list(field_engineers[0].keys()))
+    write_csv("forecast_baseline_2025.csv",forecast_baseline,   list(forecast_baseline[0].keys()))
 
     manifest = {
         "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -556,6 +700,8 @@ def generate_all():
             "capacity_demand.csv": "Weekly patch demand from master_operations.csv joined to engineer_availability.csv capacity.",
             "engineer_availability.csv": "Engineer-day table whose completed jobs are assigned from master_operations.csv.",
             "engineers.csv": "Engineer dimension joined by engineer_id.",
+            "field_engineers.csv": "50-engineer monthly scorecard for the rolling actuals window (past 12 months).",
+            "forecast_baseline_2025.csv": "Daily actual vs forecast volume for the rolling actuals window.",
         },
         "files": [
             "master_operations.csv",
@@ -566,8 +712,13 @@ def generate_all():
             "engineer_availability.csv",
             "financial_data.csv",
             "capacity_demand.csv",
+            "field_engineers.csv",
+            "forecast_baseline_2025.csv",
         ],
-        "period": "2025-01-01 to 2026-12-31",
+        "rolling_anchor_month": profile["anchor_month"],
+        "actual_period": profile["actual_period"],
+        "forecast_period": profile["forecast_period"],
+        "period": f"{actual_start} to {forecast_end}",
         "regions": list(REGIONS.keys()),
     }
     with open(INPUTS_DIR / "manifest.json", "w", encoding="utf-8") as f:
