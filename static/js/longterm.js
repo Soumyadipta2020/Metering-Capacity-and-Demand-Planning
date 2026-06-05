@@ -17,6 +17,17 @@ const _LT_COLORS    = ['#6366f1','#22c55e','#f59e0b','#ef4444',
 async function loadLongTermPlanning(force) {
   if (LT.data && !force) { ltRender(); return; }
 
+  const loadingTargets = [
+    'lt-kpi-strip',
+    'lt-trend-chart',
+    'lt-region-chart',
+    'lt-slot-m-chart',
+    'lt-slot-a-chart',
+    'lt-slot-e-chart',
+    'lt-detail-body',
+  ];
+  IMSERV.setLoading(loadingTargets, true);
+
   const strip = document.getElementById('lt-kpi-strip');
   if (strip) strip.innerHTML = '<div class="lt-loading"><span class="spinner"></span> Loading 12-month forecast…</div>';
 
@@ -27,6 +38,8 @@ async function loadLongTermPlanning(force) {
     ltRender();
   } catch {
     if (strip) strip.innerHTML = '<div class="lt-error">Failed to load planning data.</div>';
+  } finally {
+    IMSERV.setLoading(loadingTargets, false);
   }
 }
 

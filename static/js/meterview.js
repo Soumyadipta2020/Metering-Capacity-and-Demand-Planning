@@ -16,7 +16,11 @@ async function mvSearch() {
   if (!mpxn) { mvShowError('Please enter a Meter Point Number (MPXN)'); return; }
 
   mvShowError('');
-  document.getElementById('mv-results').style.display = 'none';
+  const results = document.getElementById('mv-results');
+  if (results) {
+    results.style.display = 'block';
+    IMSERV.setLoading('mv-results', true, 'Searching meter...');
+  }
 
   const btn = document.querySelector('.mv-search-btn');
   if (btn) { btn.textContent = 'Searching…'; btn.disabled = true; }
@@ -24,13 +28,18 @@ async function mvSearch() {
   try {
     const res  = await fetch(`/api/meter-view?mpxn=${encodeURIComponent(mpxn)}`);
     const data = await res.json();
-    if (!res.ok || data.error) { mvShowError(data.error || 'Meter not found'); return; }
+    if (!res.ok || data.error) {
+      mvShowError(data.error || 'Meter not found');
+      if (results) results.style.display = 'none';
+      return;
+    }
     mvRenderAll(data);
-    document.getElementById('mv-results').style.display = 'block';
-    document.getElementById('mv-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    results?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch {
     mvShowError('Failed to connect. Please try again.');
+    if (results) results.style.display = 'none';
   } finally {
+    IMSERV.setLoading('mv-results', false);
     if (btn) { btn.textContent = 'Search Meter'; btn.disabled = false; }
   }
 }

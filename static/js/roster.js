@@ -17,6 +17,7 @@ const RT_REGION_NAMES = {
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadRosterTimeline(force) {
   if (RT.data && !force) { rtRender(); return; }
+  IMSERV.setLoading('#view-field-ops .pt-outer', true);
   const lb = document.getElementById('pt-lbody');
   if (lb) lb.innerHTML = '<tr><td colspan="5" class="loading" style="padding:40px;text-align:center"><span class="spinner"></span></td></tr>';
   try {
@@ -25,6 +26,8 @@ async function loadRosterTimeline(force) {
     rtRender();
   } catch {
     if (lb) lb.innerHTML = '<tr><td colspan="5" style="padding:28px;text-align:center;color:var(--fe-red)">Failed to load roster data</td></tr>';
+  } finally {
+    IMSERV.setLoading('#view-field-ops .pt-outer', false);
   }
 }
 

@@ -23,7 +23,7 @@ async function loadCancellationsDashboard(force = false) {
     }
     if (cancelTrends) renderCancelTrend(cancelTrends);
     await loadCancellationRisk(false, dashboard?.prediction);
-    loadFieldScorecard();
+    await loadFieldScorecard(force);
   } finally {
     IMSERV.setLoading(loadingTargets, false);
   }

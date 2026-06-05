@@ -28,13 +28,14 @@ async function loadFieldOpsDashboard(force = false) {
   IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body'], true);
 
   // Short Term is the default active sub-tab — load it alongside main data
-  if (typeof loadRosterTimeline === 'function') loadRosterTimeline(force);
+  const rosterLoad = typeof loadRosterTimeline === 'function' ? loadRosterTimeline(force) : Promise.resolve();
 
   try {
     const kpis = await IMSERV.apiFetch('/api/field-ops/kpis' + qs);
     if (kpis) renderFieldOpsKPIs(kpis);
 
     await Promise.all([
+      rosterLoad,
       typeof loadForecastingDashboard === 'function' ? loadForecastingDashboard(force) : Promise.resolve(),
       loadCapacityForecast(),
       loadCapacityMatrix(),
@@ -354,9 +355,13 @@ async function loadPatchPlan() {
 }
 
 async function loadEngineerPerformance() {
+  IMSERV.setLoading('engineer-perf-body', true);
   const data   = await IMSERV.apiFetch('/api/field-ops/engineer-performance' + IMSERV.getGlobalQs({ top_n: 20 }));
   const tbody  = document.getElementById('engineer-perf-body');
-  if (!tbody || !data) return;
+  if (!tbody || !data) {
+    IMSERV.setLoading('engineer-perf-body', false);
+    return;
+  }
 
   tbody.innerHTML = data.map(e => `
     <tr>
@@ -377,6 +382,7 @@ async function loadEngineerPerformance() {
       </td>
     </tr>
   `).join('');
+  IMSERV.setLoading('engineer-perf-body', false);
 }
 
 

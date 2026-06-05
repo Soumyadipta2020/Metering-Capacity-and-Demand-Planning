@@ -154,6 +154,8 @@ async function loadTimeslotDashboard(force = false) {
     if (agData)   { _tsAgentData = agData; renderTsAgentGrid(agData); }
   } catch (e) {
     console.error('Timeslot load error', e);
+  } finally {
+    tsSetLoading(false);
   }
 }
 
@@ -166,7 +168,10 @@ window.addEventListener('imserv:themechange', () => {
   }
 });
 
-function tsSetLoading() {
+function tsSetLoading(isLoading = true) {
+  const targets = ['ts-summary-kpis', 'ts-outcome-grid','ts-channel-grid','ts-biz-wrap','ts-attempts-grid','ts-agent-grid'];
+  if (window.IMSERV?.setLoading) IMSERV.setLoading(targets, isLoading);
+  if (!isLoading) return;
   ['ts-outcome-grid','ts-channel-grid','ts-biz-wrap','ts-attempts-grid','ts-agent-grid'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '<div class="loading"><span class="spinner"></span></div>';

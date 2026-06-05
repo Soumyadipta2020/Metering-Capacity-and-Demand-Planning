@@ -164,7 +164,13 @@ const IMSERV = {
   setLoading(targets, isLoading, label = 'Loading...') {
     const list = Array.isArray(targets) ? targets : [targets];
     list.forEach(target => {
-      const raw = typeof target === 'string' ? document.getElementById(target) : target;
+      let raw = target;
+      if (typeof target === 'string') {
+        raw = document.getElementById(target);
+        if (!raw) {
+          try { raw = document.querySelector(target); } catch { raw = null; }
+        }
+      }
       if (!raw) return;
       const el = raw.tagName === 'CANVAS' ? raw.closest('.chart-wrap') || raw.parentElement : raw;
       if (!el) return;

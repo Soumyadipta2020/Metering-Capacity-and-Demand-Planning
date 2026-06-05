@@ -10,6 +10,60 @@ const VIEW_CONFIG = {
   meterview: { title: 'Single Meter View', breadcrumb: 'IMSERV / Meters / Single Meter View', loader: loadMeterViewDashboard },
 };
 
+const VIEW_LOADING_TARGETS = {
+  journey: [
+    'journey-kpis',
+    'funnel-chart',
+    'journey-trend-chart',
+    'regional-heatmap-grid',
+    'decomposition-tree-container',
+    'supplier-behaviour-grid',
+  ],
+  timeslot: [
+    'ts-summary-kpis',
+    'ts-outcome-grid',
+    'ts-channel-grid',
+    'ts-biz-wrap',
+    'ts-attempts-grid',
+    'ts-agent-grid',
+  ],
+  cancellations: [
+    'cancel-kpis',
+    'pareto-chart',
+    'category-chart',
+    'recovery-constellation-stage',
+    'cancel-trend-chart',
+    'cancel-risk-panel',
+    'fe-kpi-strip',
+    '.fe-table-wrap',
+  ],
+  'field-ops': [
+    '#view-field-ops .pt-outer',
+    'lt-kpi-strip',
+    'lt-trend-chart',
+    'lt-region-chart',
+    'lt-slot-m-chart',
+    'lt-slot-a-chart',
+    'lt-slot-e-chart',
+    'lt-detail-body',
+    'capacity-forecast-chart',
+    'resource-gap-chart',
+    'capacity-matrix-chart',
+    'patch-plan-body',
+    'engineer-perf-body',
+    'optimise-body',
+  ],
+  financial: [
+    'fin-kpis',
+    'fin-monthly-chart',
+    'fin-jobtype-chart',
+    'forecast-profit-chart',
+  ],
+  meterview: [
+    'mv-results',
+  ],
+};
+
 let _currentView = 'journey';
 let _sidebarResizeObserver = null;
 let _globalFilterOptions = { months: [], forecast_months: [] };
@@ -39,11 +93,27 @@ function loadViewData(viewName, force = false) {
   }
 
   _viewLoadKeys.set(viewName, key);
+  setViewLoading(viewName, true);
   const result = config.loader(force);
-  if (result?.catch) {
-    result.catch(() => _viewLoadKeys.delete(viewName));
+  if (result?.then) {
+    return Promise.resolve(result)
+      .catch(err => {
+        _viewLoadKeys.delete(viewName);
+        throw err;
+      })
+      .finally(() => setViewLoading(viewName, false));
+  }
+  if (!result?.then) {
+    setViewLoading(viewName, false);
   }
   return result;
+}
+
+function setViewLoading(viewName, isLoading, label = 'Loading...') {
+  const targets = VIEW_LOADING_TARGETS[viewName] || [];
+  if (targets.length && window.IMSERV?.setLoading) {
+    IMSERV.setLoading(targets, isLoading, label);
+  }
 }
 
 function syncSidebarWidth() {
@@ -143,7 +213,7 @@ function updateHeaderFiltersForView(viewName) {
   if (!regionSel && !monthSel) return;
 
   const hideRegion = viewName === 'meterview';
-  const hideMonth = viewName === 'field-ops' || viewName === 'forecasting';
+  const hideMonth = viewName === 'field-ops' || viewName === 'forecasting' || viewName === 'timeslot';
   const clearAndToggle = (select, hidden) => {
     if (!select) return;
     if (hidden && select.value) select.value = '';
