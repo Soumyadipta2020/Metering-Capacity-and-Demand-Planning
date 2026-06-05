@@ -1,5 +1,5 @@
 """
-IMSERV Platform — Monthly Rolling Data Refresh
+ABC Platform — Monthly Rolling Data Refresh
 ================================================
 Run this script on the 1st of every month (or on each app startup in production)
 to keep all CSVs aligned with the rolling 12-month actuals window.
@@ -183,7 +183,7 @@ def print_status() -> None:
 
     sep = "-" * 60
     print(sep)
-    print("IMSERV Data Refresh -- Status Report")
+    print("ABC Data Refresh -- Status Report")
     print(sep)
     print(f"  Today             : {date.today()}")
     print(f"  Current anchor    : {current_anchor}")
@@ -239,7 +239,7 @@ def print_status() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="IMSERV monthly data refresh - checks and rolls CSV dates without regenerating data."
+        description="ABC monthly data refresh - checks and rolls CSV dates without regenerating data."
     )
     parser.add_argument(
         "--force",  action="store_true",
@@ -256,7 +256,7 @@ def main() -> None:
     actual_start, actual_end     = rolling_actual_window()
     forecast_start, _            = rolling_forecast_window()
 
-    print(f"IMSERV Data Refresh  |  anchor={current_anchor}  |  {datetime.now(UTC).isoformat()}")
+    print(f"ABC Data Refresh  |  anchor={current_anchor}  |  {datetime.now(UTC).isoformat()}")
 
     if args.status:
         print_status()

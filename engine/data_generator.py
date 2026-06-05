@@ -1,5 +1,5 @@
 """
-IMSERV Platform - Connected Synthetic Dataset Generator.
+ABC Platform - Connected Synthetic Dataset Generator.
 
 The generated data now has a single source of truth:
 data/inputs/master_operations.csv
@@ -316,7 +316,7 @@ def _generate_master_operations(
                     job_counter += 1
 
                 rows.append({
-                    "job_ref": f"IMSERV-{d.year}-{job_counter:07d}",
+                    "job_ref": f"ABC-{d.year}-{job_counter:07d}",
                     "supplier_name": supplier_pool[(job_counter - 1) % len(supplier_pool)],
                     "region_code": region_code,
                     "region_name": rinfo["name"],
@@ -666,7 +666,7 @@ def generate_all(today: date | None = None):
     forecast_start = profile["forecast_start"]
     forecast_end = profile["forecast_end"]
 
-    print("\nIMSERV - Generating connected synthetic datasets...\n")
+    print("\nABC - Generating connected synthetic datasets...\n")
     print(f"  Actuals:  {profile['actual_period']}")
     print(f"  Forecast: {profile['forecast_period']}\n")
 

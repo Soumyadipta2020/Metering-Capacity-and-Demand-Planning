@@ -1,11 +1,11 @@
 /* ============================================================
-   IMSERV Smart Meter Field Planning Platform
+   ABC Smart Meter Field Planning Platform
    Design System — Extended from DAA-Project dark theme
    ============================================================ */
 
 /* ─── CSS Variables ────────────────────────────────────────── */
 :root {
-  /* Brand - IMSERV Power BI theme palette */
+  /* Brand - ABC Power BI theme palette */
   --brand-primary:   #028178;
   --brand-accent:    #02C2B7;
   --brand-bright:    #03F4E8;
@@ -189,16 +189,29 @@ body {
   padding: 12px 16px;
   display: flex;
   align-items: center;
+  gap: 10px;
   border-bottom: 1px solid var(--border);
   min-height: var(--header-height);
 }
 
-.brand-logo-image {
-  width: 158px;
-  height: auto;
-  display: block;
-  border-radius: 6px;
+.brand-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+  color: var(--text-invert);
   flex-shrink: 0;
+}
+
+.brand-word {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--text-primary);
 }
 
 .sidebar.collapsed .sidebar-brand {
@@ -206,11 +219,13 @@ body {
   justify-content: center;
 }
 
-.sidebar.collapsed .brand-logo-image {
+.sidebar.collapsed .brand-word {
+  display: none;
+}
+
+.sidebar.collapsed .brand-icon {
   width: 42px;
   height: 42px;
-  object-fit: cover;
-  object-position: left center;
 }
 
 .sidebar-nav {

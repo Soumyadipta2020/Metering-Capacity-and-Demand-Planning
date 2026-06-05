@@ -1,5 +1,5 @@
 """
-SQLite-backed data store for generated IMSERV CSV inputs.
+SQLite-backed data store for generated ABC CSV inputs.
 
 CSV files remain the source of truth. This module builds a local SQLite cache
 when CSV mtimes/sizes change, then exposes rows through indexed SELECTs.
@@ -16,7 +16,7 @@ from typing import Iterable
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 INPUTS_DIR = BASE_DIR / "data" / "inputs"
-DB_PATH = BASE_DIR / "data" / "imserv.db"
+DB_PATH = BASE_DIR / "data" / "abc.db"
 SCHEMA_VERSION = 2
 
 DATASET_FILES = [
@@ -73,12 +73,12 @@ _LAST_ERROR_SIGNATURE: str | None = None
 
 
 def sqlite_enabled() -> bool:
-    return os.getenv("IMSERV_SQLITE_ENABLED", "true").lower() not in {"0", "false", "no"}
+    return os.getenv("ABC_SQLITE_ENABLED", "true").lower() not in {"0", "false", "no"}
 
 
 def _build_on_read_enabled() -> bool:
     """Allow local/dev reads to create SQLite, but avoid heavy web-request builds on Render."""
-    explicit = os.getenv("IMSERV_SQLITE_BUILD_ON_READ")
+    explicit = os.getenv("ABC_SQLITE_BUILD_ON_READ")
     if explicit is not None:
         return explicit.lower() not in {"0", "false", "no"}
     return not os.getenv("RENDER")
@@ -128,7 +128,7 @@ def _database_is_fresh(signature: str) -> bool:
     try:
         conn = _connect()
         row = conn.execute(
-            "SELECT value FROM _imserv_meta WHERE key = 'source_signature'"
+            "SELECT value FROM _abc_meta WHERE key = 'source_signature'"
         ).fetchone()
         return bool(row and row["value"] == signature)
     except sqlite3.Error:
@@ -206,17 +206,17 @@ def _build_database(signature: str) -> None:
         conn.execute("PRAGMA temp_store=MEMORY")
         conn.execute("PRAGMA cache_size=-64000")
         conn.execute("BEGIN")
-        conn.execute("CREATE TABLE _imserv_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute("CREATE TABLE _abc_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         counts = {}
         for filename in DATASET_FILES:
             counts[filename] = _load_csv_table(conn, filename)
         _create_indexes(conn)
         conn.execute(
-            "INSERT INTO _imserv_meta (key, value) VALUES (?, ?)",
+            "INSERT INTO _abc_meta (key, value) VALUES (?, ?)",
             ("source_signature", signature),
         )
         conn.execute(
-            "INSERT INTO _imserv_meta (key, value) VALUES (?, ?)",
+            "INSERT INTO _abc_meta (key, value) VALUES (?, ?)",
             ("row_counts", json.dumps(counts, sort_keys=True)),
         )
         conn.commit()
@@ -258,7 +258,7 @@ def ensure_sqlite_store(force: bool = False) -> bool:
             return True
         except Exception as exc:
             _LAST_ERROR_SIGNATURE = signature
-            print(f"IMSERV: SQLite data store build failed; falling back to CSV ({exc})")
+            print(f"ABC: SQLite data store build failed; falling back to CSV ({exc})")
             return False
 
 
@@ -272,7 +272,7 @@ def row_counts() -> dict:
     conn = None
     try:
         conn = _connect()
-        row = conn.execute("SELECT value FROM _imserv_meta WHERE key = 'row_counts'").fetchone()
+        row = conn.execute("SELECT value FROM _abc_meta WHERE key = 'row_counts'").fetchone()
         return json.loads(row["value"]) if row else {}
     except (sqlite3.Error, json.JSONDecodeError):
         return {}
@@ -309,7 +309,7 @@ def iter_rows(
         cursor = conn.execute(sql, tuple(params))
         return _rows_from_cursor(cursor)
     except sqlite3.Error as exc:
-        print(f"IMSERV: SQLite read failed for {filename}; falling back to CSV ({exc})")
+        print(f"ABC: SQLite read failed for {filename}; falling back to CSV ({exc})")
         return None
 
 
@@ -345,7 +345,7 @@ def query_rows(sql: str, params: Iterable = ()) -> list[dict] | None:
         conn = _connect()
         return [dict(row) for row in conn.execute(sql, tuple(params))]
     except sqlite3.Error as exc:
-        print(f"IMSERV: SQLite query failed; falling back to Python aggregation ({exc})")
+        print(f"ABC: SQLite query failed; falling back to Python aggregation ({exc})")
         return None
     finally:
         if conn is not None:

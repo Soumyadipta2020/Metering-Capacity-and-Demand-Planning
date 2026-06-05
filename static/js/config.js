@@ -1,5 +1,5 @@
-/* IMSERV — Client-side configuration and shared utilities */
-const IMSERV = {
+/* ABC — Client-side configuration and shared utilities */
+const ABC = {
   version: '1.0.0',
   charts: {},   // registered Chart.js instances
   apiCache: new Map(),
@@ -217,17 +217,17 @@ const IMSERV = {
   priorityIcon: () => '',
 };
 
-window.IMSERV = IMSERV;
-IMSERV.applyChartTheme();
+window.ABC = ABC;
+ABC.applyChartTheme();
 
 // Apply initial theme icon
 (function () {
-  const t = localStorage.getItem('imserv-theme') || 'light';
+  const t = localStorage.getItem('abc-theme') || 'light';
   const icon = document.getElementById('theme-icon');
   if (icon) icon.textContent = t === 'dark' ? 'Dark' : 'Light';
 })();
 
-Object.assign(IMSERV, {
+Object.assign(ABC, {
   iconSvg(name) {
     const icons = {
       activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
@@ -308,6 +308,8 @@ Object.assign(IMSERV, {
   },
 
   hydrateIcons(root = document) {
+    root.querySelectorAll('.brand-icon:not([data-icon-ready])').forEach(el => this.setElementIcon(el, 'zap'));
+
     root.querySelectorAll('.kpi-icon:not([data-icon-ready])').forEach(el => {
       const card = el.closest('.kpi-card');
       const label = card?.querySelector('.kpi-label')?.textContent || '';
@@ -354,12 +356,12 @@ Object.assign(IMSERV, {
   },
 });
 
-window.IMSERV = IMSERV;
+window.ABC = ABC;
 
 document.addEventListener('DOMContentLoaded', () => {
-  IMSERV.hydrateIcons();
+  ABC.hydrateIcons();
   const observer = new MutationObserver(() => {
-    window.requestAnimationFrame(() => IMSERV.hydrateIcons());
+    window.requestAnimationFrame(() => ABC.hydrateIcons());
   });
   observer.observe(document.body, { childList: true, subtree: true });
 });

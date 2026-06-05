@@ -1,4 +1,4 @@
-# IMSERV Smart Meter Field Planning Platform
+# ABC Smart Meter Field Planning Platform
 # Runtime dependencies for the Flask app.
 
 Flask==3.0.3

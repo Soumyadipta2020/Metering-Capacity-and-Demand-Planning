@@ -1,4 +1,4 @@
--- IMSERV Platform — PostgreSQL Schema
+-- ABC Platform — PostgreSQL Schema
 -- Extends DAA file-based architecture with persistent relational storage
 
 -- ─── Core Reference Tables ────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 """
-IMSERV Platform — Contact Centre Forecasting Engine
+ABC Platform — Contact Centre Forecasting Engine
 Multi-model ensemble: Prophet, ARIMA, XGBoost, LightGBM.
 Mirrors DAA's modular ML architecture pattern.
 """

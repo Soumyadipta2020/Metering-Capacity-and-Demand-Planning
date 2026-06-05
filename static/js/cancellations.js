@@ -1,14 +1,14 @@
-/* IMSERV - Module 3: Appointment Fallout */
+/* ABC - Module 3: Appointment Fallout */
 
 async function loadCancellationsDashboard(force = false) {
-  const region = IMSERV.getRegion();
-  const year = IMSERV.getYear();
-  const qs = IMSERV.getGlobalQs();
+  const region = ABC.getRegion();
+  const year = ABC.getYear();
+  const qs = ABC.getGlobalQs();
   const loadingTargets = ['pareto-chart', 'category-chart', 'recovery-constellation-stage', 'cancel-trend-chart', 'cancel-risk-panel'];
-  IMSERV.setLoading(loadingTargets, true);
+  ABC.setLoading(loadingTargets, true);
 
   try {
-    const dashboard = await IMSERV.apiFetch('/api/cancellations/dashboard' + qs, { force });
+    const dashboard = await ABC.apiFetch('/api/cancellations/dashboard' + qs, { force });
     const kpis = dashboard?.kpis;
     const rootCauses = dashboard?.root_causes;
     const rebook = dashboard?.rebooking;
@@ -25,7 +25,7 @@ async function loadCancellationsDashboard(force = false) {
     await loadCancellationRisk(false, dashboard?.prediction);
     await loadFieldScorecard(force);
   } finally {
-    IMSERV.setLoading(loadingTargets, false);
+    ABC.setLoading(loadingTargets, false);
   }
 }
 
@@ -34,10 +34,10 @@ function renderCancelKPIs(kpis) {
     const el = document.getElementById(id);
     if (el) el.textContent = v;
   };
-  set('can-kpi-total', IMSERV.fmt.num(kpis.cancellations));
-  set('can-kpi-rate', IMSERV.fmt.pct(kpis.cancel_rate_pct));
-  set('can-kpi-aborts', IMSERV.fmt.num(kpis.aborts));
-  set('can-kpi-abort-rate', IMSERV.fmt.pct(kpis.abort_rate_pct));
+  set('can-kpi-total', ABC.fmt.num(kpis.cancellations));
+  set('can-kpi-rate', ABC.fmt.pct(kpis.cancel_rate_pct));
+  set('can-kpi-aborts', ABC.fmt.num(kpis.aborts));
+  set('can-kpi-abort-rate', ABC.fmt.pct(kpis.abort_rate_pct));
 }
 
 function cancelEscape(value) {
@@ -91,7 +91,7 @@ function renderReasonBreakdown(container, rows, total, config) {
     let segmentsHtml = '';
     let combinedTooltip = '';
     if (r.suppliers && r.suppliers.length > 0) {
-      combinedTooltip = r.suppliers.map(sup => `${cancelEscape(sup.name)}: ${IMSERV.fmt.num(sup.count)}`).join('&#10;');
+      combinedTooltip = r.suppliers.map(sup => `${cancelEscape(sup.name)}: ${ABC.fmt.num(sup.count)}`).join('&#10;');
       segmentsHtml = r.suppliers.map((sup, sIdx) => {
         const w = (sup.count / Math.max(r.count, 1)) * 100;
         const bg = sup.name === 'Others' ? '#bdc3c7' : supplierColors[sIdx % supplierColors.length];
@@ -108,8 +108,8 @@ function renderReasonBreakdown(container, rows, total, config) {
           <i><b style="display: flex; background: none;">${segmentsHtml}</b></i>
         </div>
         <div class="reason-breakdown-metric">
-          <strong>${IMSERV.fmt.num(r.count)}</strong>
-          <small>${IMSERV.fmt.pct(r.pct)}</small>
+          <strong>${ABC.fmt.num(r.count)}</strong>
+          <small>${ABC.fmt.pct(r.pct)}</small>
         </div>
       </div>
     `;
@@ -119,8 +119,8 @@ function renderReasonBreakdown(container, rows, total, config) {
     <div class="reason-breakdown ${config.tone}">
       <div class="reason-breakdown-total">
         <span>${cancelEscape(config.totalLabel)}</span>
-        <strong>${IMSERV.fmt.num(total)}</strong>
-        <em>${IMSERV.fmt.num(top.length)} reasons shown</em>
+        <strong>${ABC.fmt.num(total)}</strong>
+        <em>${ABC.fmt.num(top.length)} reasons shown</em>
       </div>
       <div class="reason-breakdown-list">
         ${rowsHtml}
@@ -128,8 +128,8 @@ function renderReasonBreakdown(container, rows, total, config) {
     </div>
     <div class="cause-summary-strip">
       <div><span>Top reason</span><strong>${cancelEscape(top[0].reason)}</strong></div>
-      <div><span>Top reason rate</span><strong>${IMSERV.fmt.pct(topShare)}</strong></div>
-      <div><span>Shown volume</span><strong>${IMSERV.fmt.num(top.reduce((sum, r) => sum + r.count, 0))}</strong></div>
+      <div><span>Top reason rate</span><strong>${ABC.fmt.pct(topShare)}</strong></div>
+      <div><span>Shown volume</span><strong>${ABC.fmt.num(top.reduce((sum, r) => sum + r.count, 0))}</strong></div>
     </div>
   `;
 }
@@ -174,7 +174,7 @@ function renderCancelTrend(data) {
   const nodes = all.map((t, idx) => {
     const p = point(t.cancel_rate, idx, all.length);
     const isForecast = idx >= actuals.length;
-    return `<span class="pulse-node ${isForecast ? 'forecast' : ''}" style="--x:${p.x}%; --y:${p.y}%;" title="${cancelEscape(t.month)} ${IMSERV.fmt.pct(t.cancel_rate)}"></span>`;
+    return `<span class="pulse-node ${isForecast ? 'forecast' : ''}" style="--x:${p.x}%; --y:${p.y}%;" title="${cancelEscape(t.month)} ${ABC.fmt.pct(t.cancel_rate)}"></span>`;
   }).join('');
 
   const latest = actuals[actuals.length - 1] || all[all.length - 1];
@@ -192,7 +192,7 @@ function renderCancelTrend(data) {
       ${nodes}
       <div class="pulse-readout">
         <span>Latest Actual</span>
-        <strong>${IMSERV.fmt.pct(latest.cancel_rate)}</strong>
+        <strong>${ABC.fmt.pct(latest.cancel_rate)}</strong>
         <em>${cancelEscape(latest.month)}</em>
       </div>
       <div class="pulse-forecast-badge ${driftLabel.toLowerCase()}">
@@ -224,9 +224,9 @@ function renderCancelRegional(data) {
         </div>
         <div class="region-risk-copy">
           <span>Appointment fallout pressure</span>
-          <strong>${IMSERV.fmt.pct(loss)}</strong>
-          <em><b>${IMSERV.fmt.pct(r.cancel_rate)}</b> D-1 cancelled</em>
-          <em><b>${IMSERV.fmt.pct(r.abort_rate)}</b> same-day aborted</em>
+          <strong>${ABC.fmt.pct(loss)}</strong>
+          <em><b>${ABC.fmt.pct(r.cancel_rate)}</b> D-1 cancelled</em>
+          <em><b>${ABC.fmt.pct(r.abort_rate)}</b> same-day aborted</em>
         </div>
         <small>#${idx + 1}</small>
       </div>
@@ -237,11 +237,11 @@ function renderCancelRegional(data) {
 }
 
 async function loadCancellationRisk(showLoading = true, providedData = null) {
-  if (showLoading) IMSERV.setLoading('cancel-risk-panel', true);
-  const data = providedData || await IMSERV.apiFetch('/api/cancellations/predict' + IMSERV.getGlobalQs());
+  if (showLoading) ABC.setLoading('cancel-risk-panel', true);
+  const data = providedData || await ABC.apiFetch('/api/cancellations/predict' + ABC.getGlobalQs());
   const panel = document.getElementById('cancel-risk-panel');
   if (!panel || !data) {
-    if (showLoading) IMSERV.setLoading('cancel-risk-panel', false);
+    if (showLoading) ABC.setLoading('cancel-risk-panel', false);
     return;
   }
 
@@ -284,8 +284,8 @@ async function loadCancellationRisk(showLoading = true, providedData = null) {
 
       <div class="risk-prediction-detail">
         <div class="risk-metric-grid">
-          <div><span>D-1 Cancellation Rate</span><strong>${IMSERV.fmt.pct(data.cancel_rate)}</strong></div>
-          <div><span>Same-Day Abort Rate</span><strong>${IMSERV.fmt.pct(data.abort_rate)}</strong></div>
+          <div><span>D-1 Cancellation Rate</span><strong>${ABC.fmt.pct(data.cancel_rate)}</strong></div>
+          <div><span>Same-Day Abort Rate</span><strong>${ABC.fmt.pct(data.abort_rate)}</strong></div>
           <div><span>Trend</span><strong style="color:${trendColor};">${cancelEscape(data.trend_direction)} <small>${trendIcon}</small></strong></div>
         </div>
         <div class="risk-recommendation">
@@ -301,7 +301,7 @@ async function loadCancellationRisk(showLoading = true, providedData = null) {
       </div>
     </div>
   `;
-  if (showLoading) IMSERV.setLoading('cancel-risk-panel', false);
+  if (showLoading) ABC.setLoading('cancel-risk-panel', false);
 }
 
 /* ── Recovery Constellation ───────────────────────────────── */
@@ -443,11 +443,11 @@ function renderRebooking(data) {
         <span class="rc-card-score">${r.score}</span>
         <span class="rc-card-region">${cancelEscape(r.region_code)}</span>
         <span class="rc-card-status">${tone === 'strong' ? 'Strong' : tone === 'steady' ? 'Recovering' : 'At risk'}</span>
-        <span class="rc-card-count"><b>${IMSERV.fmt.num(r.rebooked_count)}</b> / ${IMSERV.fmt.num(r.total_cancellations)}</span>
+        <span class="rc-card-count"><b>${ABC.fmt.num(r.rebooked_count)}</b> / ${ABC.fmt.num(r.total_cancellations)}</span>
         <span class="rc-card-lag">${r.avg_rebook_lag_days}d lag</span>
         <span class="rc-card-bar rebook"><i></i><em>Rebook ${r.rebook_rate_pct}%</em></span>
         <span class="rc-card-bar success"><i></i><em>Success ${r.rebook_success_pct}%</em></span>
-        <span class="rc-card-meta">${IMSERV.fmt.num(r.completed_rebooks)} executed successfully</span>
+        <span class="rc-card-meta">${ABC.fmt.num(r.completed_rebooks)} executed successfully</span>
       </button>
     `;
   }).join('');
@@ -701,7 +701,7 @@ function renderSupplierRebooking(data) {
         <div class="rc-supplier-header">
           <div class="rc-supplier-rank">#${i + 1}</div>
           <div class="rc-supplier-name" title="${cancelEscape(r.supplier_name)}">${cancelEscape(r.supplier_name)}</div>
-          <div class="rc-supplier-volume">${IMSERV.fmt.num(r.rebooked_count)} / ${IMSERV.fmt.num(r.total_cancellations)}</div>
+          <div class="rc-supplier-volume">${ABC.fmt.num(r.rebooked_count)} / ${ABC.fmt.num(r.total_cancellations)}</div>
         </div>
         <div class="rc-supplier-main-metric">
           <div class="rc-supplier-main-metric-label">

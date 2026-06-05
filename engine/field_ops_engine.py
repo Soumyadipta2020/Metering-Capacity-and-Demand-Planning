@@ -1,5 +1,5 @@
 """
-IMSERV Platform — Field Operations & Engineer Planning Engine
+ABC Platform — Field Operations & Engineer Planning Engine
 Engineer scheduling, patch-level capacity planning, utilisation optimisation,
 AI-driven understaffing prediction and workforce balancing.
 Mirrors DAA's three-tier planning + OR-Tools philosophy.

@@ -1,5 +1,5 @@
 """
-IMSERV Platform — Data Ingestion Layer
+ABC Platform — Data Ingestion Layer
 Loads and caches CSV datasets; provides typed accessor functions.
 Mirrors DAA-Project's lazy-loading cache pattern.
 """
@@ -37,7 +37,7 @@ _DATA_HEALTH_CACHE = {}
 
 def _cache_large_datasets() -> bool:
     """Keep large CSVs uncached by default on constrained hosts like Render."""
-    return os.getenv("IMSERV_CACHE_LARGE_DATASETS", "").lower() == "true"
+    return os.getenv("ABC_CACHE_LARGE_DATASETS", "").lower() == "true"
 
 
 def _file_sig(filename: str) -> tuple:
@@ -121,7 +121,7 @@ def _sqlite_load_rows(filename: str):
         from engine.sqlite_store import load_rows
         rows = load_rows(filename)
     except Exception as exc:
-        print(f"IMSERV: SQLite load unavailable for {filename}; using CSV ({exc})")
+        print(f"ABC: SQLite load unavailable for {filename}; using CSV ({exc})")
         return None
     if rows is not None:
         _record_health(filename, len(rows))
@@ -133,7 +133,7 @@ def _sqlite_iter_rows(filename: str, where_sql: str = "", params=(), columns=Non
         from engine.sqlite_store import iter_rows
         return iter_rows(filename, where_sql, params, columns)
     except Exception as exc:
-        print(f"IMSERV: SQLite stream unavailable for {filename}; using CSV ({exc})")
+        print(f"ABC: SQLite stream unavailable for {filename}; using CSV ({exc})")
         return None
 
 

@@ -1,5 +1,5 @@
 """
-IMSERV Platform — Cancellation & Abort Analytics Engine
+ABC Platform — Cancellation & Abort Analytics Engine
 Root cause analysis, trend detection, AI-driven prediction, and rebooking analytics.
 """
 import hashlib as _ce_hl

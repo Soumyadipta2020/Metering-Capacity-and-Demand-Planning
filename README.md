@@ -1,6 +1,6 @@
-# IMSERV Smart Meter Field Planning & Utility Operations Platform
+# ABC Smart Meter Field Planning & Utility Operations Platform
 
-Enterprise-grade utility operations planning platform for IMSERV — extended from the DAA-Project architecture.
+Enterprise-grade utility operations planning platform for ABC — extended from the DAA-Project architecture.
 
 ---
 
@@ -34,7 +34,7 @@ Inherits the DAA-Project pattern: flat Flask monolith with modular Python engine
 
 ```bash
 # 1. Clone and enter project
-cd IMSERV-Project
+cd ABC-Project
 
 # 2. Install Python dependencies
 pip install -r requirements.txt
@@ -95,7 +95,7 @@ The `render.yaml` file handles all non-secret configuration automatically. Keep 
 ## Project Structure
 
 ```
-IMSERV-Project/
+ABC-Project/
 ├── app.py                      # Flask application — all API routes
 ├── requirements.txt
 ├── render.yaml                 # Render.com deployment config

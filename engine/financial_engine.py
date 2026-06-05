@@ -1,5 +1,5 @@
 """
-IMSERV Platform — Financial Scenario Planning Engine
+ABC Platform — Financial Scenario Planning Engine
 Interactive simulation: job volume, meter type, region, engineer allocation,
 productivity assumptions → operational cost, revenue, margin, cost-per-job.
 Mirrors DAA's Monte Carlo simulation architecture.

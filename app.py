@@ -1,5 +1,5 @@
 """
-IMSERV Smart Meter Appointment Planning & Utility Operations Platform
+ABC Smart Meter Appointment Planning & Utility Operations Platform
 Flask application — extends DAA-Project architecture patterns.
 
 Modules:
@@ -29,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # ─── Flask App ────────────────────────────────────────────────────────────────
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.secret_key = os.getenv("SECRET_KEY", "imserv-dev-secret-2026")
+app.secret_key = os.getenv("SECRET_KEY", "abc-dev-secret-2026")
 CORS(app)
 _DATA_READY = False
 SUPPORTED_YEARS = {2025, 2026}
@@ -119,7 +119,7 @@ def _compact_chat_messages(messages: list[dict], limit: int = 10) -> list[dict]:
 def _chatbot_context(region: str | None, year: int, view: str | None) -> str:
     """Build a compact app snapshot so the chatbot can answer app-specific questions."""
     lines = [
-        "IMSERV Smart Meter Appointment Planning & Utility Operations Platform.",
+        "ABC Smart Meter Appointment Planning & Utility Operations Platform.",
         "Modules: Appointment Journey, Contact Attempt Forecast, Risk & Recovery, Resource Planning, Scenario Impact.",
         f"Current view: {view or 'unknown'}. Region filter: {region or 'All Regions'}. Year: {year}.",
     ]
@@ -1492,7 +1492,7 @@ def chatbot_message():
 
         context = _chatbot_context(region, year, view)
         system_prompt = (
-            "You are the IMSERV app assistant. Help users understand and use this smart meter "
+            "You are the ABC app assistant. Help users understand and use this smart meter "
             "operations dashboard. Be concise, practical, and app-specific. Use the provided "
             "snapshot for numbers. If a user asks for a metric not in the snapshot, say where "
             "in the app they can inspect it instead of inventing values.\n\n"
@@ -1578,10 +1578,10 @@ def data_store_status():
 def data_generate():
     """Trigger synthetic data generation (dev/reset use only)."""
     try:
-        if os.getenv("RENDER") and os.getenv("IMSERV_ENABLE_DATA_GENERATE", "").lower() != "true":
+        if os.getenv("RENDER") and os.getenv("ABC_ENABLE_DATA_GENERATE", "").lower() != "true":
             return jsonify({
                 "error": "Dataset generation is disabled on Render to stay within memory limits.",
-                "hint": "Set IMSERV_ENABLE_DATA_GENERATE=true only for a one-off maintenance run.",
+                "hint": "Set ABC_ENABLE_DATA_GENERATE=true only for a one-off maintenance run.",
             }), 403
         from engine.data_generator import generate_all
         from engine.ingestion import clear_data_caches, build_sqlite_store
@@ -2798,7 +2798,7 @@ def _release_generation_lock() -> None:
 def _auto_generate_data_enabled() -> bool:
     import os
     return (
-        os.getenv("IMSERV_AUTO_GENERATE_DATA", "").lower() == "true"
+        os.getenv("ABC_AUTO_GENERATE_DATA", "").lower() == "true"
         or (os.getenv("FLASK_ENV", "development") == "development" and not os.getenv("RENDER"))
     )
 
@@ -2830,7 +2830,7 @@ def _data_window_state(current_anchor: str) -> tuple[bool, bool]:
     
     for f in required_files:
         if not (input_dir / f).exists():
-            print(f"IMSERV: Missing required file {f}.")
+            print(f"ABC: Missing required file {f}.")
             return True, False
 
     from engine.date_windows import rolling_actual_window, parse_iso_date
@@ -2847,7 +2847,7 @@ def _data_window_state(current_anchor: str) -> tuple[bool, bool]:
                 return True, False
             rd = parse_iso_date(first_row.get("requested_date", ""))
             if rd != actual_start:
-                print(f"IMSERV: master_operations.csv first date {rd} != expected {actual_start}. Marking stale.")
+                print(f"ABC: master_operations.csv first date {rd} != expected {actual_start}. Marking stale.")
                 return False, True
                 
         # Check booking_journey.csv strictly
@@ -2858,11 +2858,11 @@ def _data_window_state(current_anchor: str) -> tuple[bool, bool]:
                 return True, False
             ws = parse_iso_date(first_row.get("week_start", ""))
             if not ws or abs((ws - actual_start).days) > 7:
-                print(f"IMSERV: booking_journey.csv out of sync with {actual_start}. Marking stale.")
+                print(f"ABC: booking_journey.csv out of sync with {actual_start}. Marking stale.")
                 return False, True
 
     except Exception as e:
-        print(f"IMSERV: CSV spot-check error: {e}. Marking stale.")
+        print(f"ABC: CSV spot-check error: {e}. Marking stale.")
         return False, True
 
     return False, False
@@ -2880,35 +2880,35 @@ def _ensure_data() -> None:
     if _DATA_READY_ANCHOR == current_anchor and _DATA_READY_SIGNATURE == current_signature:
         return
 
-    print(f"IMSERV: Rolling-window check | anchor={current_anchor} | actuals={profile['actual_period']} | forecast={profile['forecast_period']}")
+    print(f"ABC: Rolling-window check | anchor={current_anchor} | actuals={profile['actual_period']} | forecast={profile['forecast_period']}")
     missing, stale = _data_window_state(current_anchor)
 
     if not missing and not stale:
         _DATA_READY_ANCHOR = current_anchor
         _DATA_READY_SIGNATURE = current_signature
-        print("IMSERV: All CSVs are aligned to the current rolling window. Ready.")
+        print("ABC: All CSVs are aligned to the current rolling window. Ready.")
         return
 
     if not _auto_generate_data_enabled():
         reason = "missing" if missing else "out-of-date"
-        print(f"IMSERV: Data is {reason} but auto-generation is disabled.")
+        print(f"ABC: Data is {reason} but auto-generation is disabled.")
         return
 
     if missing:
-        print("IMSERV: Data files are missing; date-only refresh cannot run without an existing dataset.")
+        print("ABC: Data files are missing; date-only refresh cannot run without an existing dataset.")
         return
 
     reason = "not found" if missing else "out-of-date for current rolling window"
-    print(f"IMSERV: Data is {reason}; rolling existing CSV dates now...")
+    print(f"ABC: Data is {reason}; rolling existing CSV dates now...")
 
     if not _acquire_generation_lock():
-        print("IMSERV: Another worker is rolling data dates. Waiting for it to finish...")
+        print("ABC: Another worker is rolling data dates. Waiting for it to finish...")
         return
 
     try:
         missing2, stale2 = _data_window_state(current_anchor)
         if not missing2 and not stale2:
-            print("IMSERV: Another worker already finished regeneration. Ready.")
+            print("ABC: Another worker already finished regeneration. Ready.")
             _DATA_READY_ANCHOR = current_anchor
             _DATA_READY_SIGNATURE = (
                 _input_file_signature("master_operations.csv"),
@@ -2933,7 +2933,7 @@ def _ensure_data() -> None:
             pass
 
         print(
-            "IMSERV: Existing CSV dates rolled successfully "
+            "ABC: Existing CSV dates rolled successfully "
             f"for anchor {current_anchor} (month_delta={roll_result['month_delta']})."
         )
         _DATA_READY_ANCHOR = current_anchor
@@ -2942,7 +2942,7 @@ def _ensure_data() -> None:
             _input_file_signature("booking_journey.csv"),
         )
     except Exception as exc:
-        print(f"IMSERV: CSV date roll failed: {exc}")
+        print(f"ABC: CSV date roll failed: {exc}")
     finally:
         _release_generation_lock()
 
@@ -2981,5 +2981,5 @@ _ensure_data()
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     debug = os.getenv("FLASK_ENV", "development") == "development"
-    print(f"\nIMSERV Platform running on http://localhost:{port}\n")
+    print(f"\nABC Platform running on http://localhost:{port}\n")
     app.run(host="0.0.0.0", port=port, debug=debug)
