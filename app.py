@@ -555,9 +555,10 @@ def _journey_supplier_payload(base: dict, top_n: int, safe_pct_fn) -> dict:
     }
 
 
-def _get_journey_dashboard_data(region: str | None, year: int, top_n: int = 25) -> dict:
+def _get_journey_dashboard_data(region: str | None, year: int, top_n: int = 25,
+                                month: str | None = None, supplier: str | None = None) -> dict:
     region_key = region or ""
-    cache_key = (_journey_source_signature(), region_key, year)
+    cache_key = (_journey_source_signature(), region_key, year, month or "", supplier or "")
     with _JOURNEY_CACHE_LOCK:
         cached = _JOURNEY_CACHE.get(cache_key)
         if cached is not None:
@@ -569,6 +570,8 @@ def _get_journey_dashboard_data(region: str | None, year: int, top_n: int = 25) 
 
     all_rows = _journey_region_rows(get_journey(), None)
     rows = _journey_region_rows(all_rows, region)
+    if month:
+        rows = [r for r in rows if r.get("week_start", "")[:7] == month]
     booked_reasons = Counter()
     by_supplier = {}
     supplier_totals = {k: 0 for k in ("requests", "contacts", "bookings", "visits", "completions", "cancellations", "aborts", "unbooked", "unresolved")}
@@ -634,6 +637,12 @@ def _get_journey_dashboard_data(region: str | None, year: int, top_n: int = 25) 
         if region:
             where_sql += " AND region_code = ?"
             params.append(region)
+        if month:
+            where_sql += " AND strftime('%Y-%m', requested_date) = ?"
+            params.append(month)
+        if supplier:
+            where_sql += " AND supplier_name = ?"
+            params.append(supplier)
         grouped_rows = query_rows(f"""
             SELECT region_code, supplier_name, status,
                    CASE WHEN booked_date <> '' THEN 1 ELSE 0 END AS booked,
@@ -655,7 +664,8 @@ def _get_journey_dashboard_data(region: str | None, year: int, top_n: int = 25) 
             "job_ref", "region_code", "is_forecast", "requested_date", "supplier_name",
             "status", "booked_date", "job_type", "primary_channel", "contacts_count",
         )
-        for job in iter_jobs_filtered(region_code=region, actual_only=True, columns=job_columns):
+        for job in iter_jobs_filtered(region_code=region, actual_only=True, columns=job_columns,
+                                      supplier_name=supplier, month=month):
             apply_job_group(job, 1, to_int_fn(job.get("contacts_count")))
 
     suppliers = []
@@ -723,11 +733,13 @@ def _get_journey_dashboard_data(region: str | None, year: int, top_n: int = 25) 
 
 @app.route("/api/journey/dashboard")
 def journey_dashboard():
-    region = request.args.get("region")
-    year = _request_year()
-    top_n = int(request.args.get("top_n", 25))
+    region   = request.args.get("region")
+    year     = _request_year()
+    top_n    = int(request.args.get("top_n", 25))
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        data = _get_journey_dashboard_data(region, year, top_n)
+        data = _get_journey_dashboard_data(region, year, top_n, month=month, supplier=supplier)
         return jsonify({k: v for k, v in data.items() if not k.startswith("_")})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -740,10 +752,12 @@ def journey_dashboard():
 @app.route("/api/journey/kpis")
 def journey_kpis():
     """Top-level funnel KPIs for the executive dashboard."""
-    region = request.args.get("region")
-    year   = _request_year()
+    region   = request.args.get("region")
+    year     = _request_year()
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        return jsonify(_get_journey_dashboard_data(region, year)["kpis"])
+        return jsonify(_get_journey_dashboard_data(region, year, month=month, supplier=supplier)["kpis"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -751,10 +765,12 @@ def journey_kpis():
 @app.route("/api/journey/weekly-trend")
 def journey_weekly_trend():
     """Weekly completion rate trend for line chart."""
-    region = request.args.get("region")
-    year   = _request_year()
+    region   = request.args.get("region")
+    year     = _request_year()
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        return jsonify(_get_journey_dashboard_data(region, year)["weekly_trend"])
+        return jsonify(_get_journey_dashboard_data(region, year, month=month, supplier=supplier)["weekly_trend"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -762,11 +778,13 @@ def journey_weekly_trend():
 @app.route("/api/journey/suppliers")
 def journey_suppliers():
     """Supplier-level contribution and behaviour analytics for the journey tab."""
-    region = request.args.get("region")
-    year = _request_year()
-    top_n = int(request.args.get("top_n", 18))
+    region   = request.args.get("region")
+    year     = _request_year()
+    top_n    = int(request.args.get("top_n", 18))
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        return jsonify(_get_journey_dashboard_data(region, year, top_n)["suppliers"])
+        return jsonify(_get_journey_dashboard_data(region, year, top_n, month=month, supplier=supplier)["suppliers"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -796,10 +814,12 @@ def journey_interactions():
 @app.route("/api/journey/decomposition-tree")
 def journey_decomposition_tree():
     """Build the appointment journey decomposition tree data."""
-    region = request.args.get("region")
-    year = _request_year()
+    region   = request.args.get("region")
+    year     = _request_year()
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        return jsonify(_get_journey_dashboard_data(region, year)["decomposition_tree"])
+        return jsonify(_get_journey_dashboard_data(region, year, month=month, supplier=supplier)["decomposition_tree"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -875,9 +895,10 @@ def _clear_cancellation_cache() -> None:
         _CANCELLATION_CACHE.clear()
 
 
-def _get_cancellation_dashboard_data(region: str | None, year: int, include_aborts: bool = True) -> dict:
+def _get_cancellation_dashboard_data(region: str | None, year: int, include_aborts: bool = True,
+                                     month: str | None = None, supplier: str | None = None) -> dict:
     region_key = region or ""
-    cache_key = (_cancellation_source_signature(), region_key, year, include_aborts)
+    cache_key = (_cancellation_source_signature(), region_key, year, include_aborts, month or "", supplier or "")
     with _CANCELLATION_CACHE_LOCK:
         cached = _CANCELLATION_CACHE.get(cache_key)
         if cached is not None:
@@ -935,33 +956,36 @@ def _get_cancellation_dashboard_data(region: str | None, year: int, include_abor
     used_sqlite = False
     try:
         from engine.sqlite_store import query_rows
-        status_rows = query_rows("""
+        base_where = "WHERE is_forecast = '0'"
+        base_params = []
+        if region:
+            base_where += " AND region_code = ?"
+            base_params.append(region)
+        if month:
+            base_where += " AND strftime('%Y-%m', requested_date) = ?"
+            base_params.append(month)
+        if supplier:
+            base_where += " AND supplier_name = ?"
+            base_params.append(supplier)
+        status_rows = query_rows(f"""
             SELECT region_code, status, COUNT(*) AS n
             FROM master_operations
-            WHERE is_forecast = '0'
+            {base_where}
             GROUP BY region_code, status
-        """)
-        reason_where = "WHERE is_forecast = '0' AND status = 'Cancelled'"
-        reason_params = []
-        if region:
-            reason_where += " AND region_code = ?"
-            reason_params.append(region)
+        """, base_params)
+        reason_where = base_where + " AND status = 'Cancelled'"
         cancellation_rows = query_rows(f"""
             SELECT region_code, supplier_name, cancellation_reason, COUNT(*) AS n
             FROM master_operations
             {reason_where}
             GROUP BY region_code, supplier_name, cancellation_reason
-        """, reason_params)
-        abort_where = "WHERE is_forecast = '0' AND status = 'Aborted'"
-        abort_params = []
-        if region:
-            abort_where += " AND region_code = ?"
-            abort_params.append(region)
+        """, base_params)
+        abort_where = base_where + " AND status = 'Aborted'"
         abort_rows = query_rows(f"""
             SELECT job_ref, region_code, supplier_name, abort_reason
             FROM master_operations
             {abort_where}
-        """, abort_params)
+        """, base_params)
         used_sqlite = status_rows is not None and cancellation_rows is not None and abort_rows is not None
     except Exception:
         used_sqlite = False
@@ -978,13 +1002,11 @@ def _get_cancellation_dashboard_data(region: str | None, year: int, include_abor
             "job_ref", "region_code", "is_forecast", "requested_date", "status",
             "cancellation_reason", "abort_reason", "supplier_name",
         )
-        for row in iter_jobs_filtered(actual_only=True, columns=job_columns):
+        for row in iter_jobs_filtered(actual_only=True, columns=job_columns,
+                                      region_code=region, supplier_name=supplier, month=month):
             row_region = row.get("region_code") or "Unknown"
             status = row.get("status")
             apply_status_count(row_region, status, 1)
-            selected = not region or row_region == region
-            if not selected:
-                continue
             if status == "Cancelled":
                 apply_cancellation_reason(row, 1)
             elif status == "Aborted":
@@ -1170,40 +1192,48 @@ def _get_cancellation_dashboard_data(region: str | None, year: int, include_abor
 
 @app.route("/api/cancellations/dashboard")
 def cancellations_dashboard():
-    region = request.args.get("region")
-    year = _request_year()
+    region         = request.args.get("region")
+    year           = _request_year()
     include_aborts = request.args.get("include_aborts", "true").lower() == "true"
+    month          = request.args.get("month") or None
+    supplier       = request.args.get("supplier") or None
     try:
-        return jsonify(_get_cancellation_dashboard_data(region, year, include_aborts))
+        return jsonify(_get_cancellation_dashboard_data(region, year, include_aborts, month=month, supplier=supplier))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/cancellations/kpis")
 def cancellations_kpis():
-    region = request.args.get("region")
-    year   = _request_year()
+    region   = request.args.get("region")
+    year     = _request_year()
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        return jsonify(_get_cancellation_dashboard_data(region, year)["kpis"])
+        return jsonify(_get_cancellation_dashboard_data(region, year, month=month, supplier=supplier)["kpis"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cancellations/root-causes")
 def cancellations_root_causes():
-    region        = request.args.get("region")
-    year          = _request_year()
-    include_aborts= request.args.get("include_aborts", "true").lower() == "true"
+    region         = request.args.get("region")
+    year           = _request_year()
+    include_aborts = request.args.get("include_aborts", "true").lower() == "true"
+    month          = request.args.get("month") or None
+    supplier       = request.args.get("supplier") or None
     try:
-        return jsonify(_get_cancellation_dashboard_data(region, year, include_aborts)["root_causes"])
+        return jsonify(_get_cancellation_dashboard_data(region, year, include_aborts, month=month, supplier=supplier)["root_causes"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cancellations/trends")
 def cancellations_trends():
-    region = request.args.get("region")
+    region   = request.args.get("region")
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        return jsonify(_get_cancellation_dashboard_data(region, _request_year())["trends"])
+        return jsonify(_get_cancellation_dashboard_data(region, _request_year(), month=month, supplier=supplier)["trends"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1220,19 +1250,23 @@ def cancellations_heatmap():
 
 @app.route("/api/cancellations/predict")
 def cancellations_predict():
-    region = request.args.get("region") or None
+    region   = request.args.get("region") or None
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        return jsonify(_get_cancellation_dashboard_data(region, _request_year())["prediction"])
+        return jsonify(_get_cancellation_dashboard_data(region, _request_year(), month=month, supplier=supplier)["prediction"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cancellations/rebooking")
 def cancellations_rebooking():
-    region = request.args.get("region")
-    year   = _request_year()
+    region   = request.args.get("region")
+    year     = _request_year()
+    month    = request.args.get("month") or None
+    supplier = request.args.get("supplier") or None
     try:
-        return jsonify(_get_cancellation_dashboard_data(region, year)["rebooking"])
+        return jsonify(_get_cancellation_dashboard_data(region, year, month=month, supplier=supplier)["rebooking"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1581,6 +1615,35 @@ def get_regions():
     ])
 
 
+@app.route("/api/filters")
+def get_filters():
+    """Return available months and suppliers for global filter dropdowns."""
+    import calendar
+    from engine.sqlite_store import query_rows
+    try:
+        month_rows = query_rows("""
+            SELECT DISTINCT strftime('%Y-%m', requested_date) AS month
+            FROM master_operations
+            WHERE requested_date IS NOT NULL
+            ORDER BY month
+        """) or []
+        months = []
+        for r in month_rows:
+            m = r.get("month")
+            if m:
+                year, mo = int(m[:4]), int(m[5:7])
+                months.append({"value": m, "label": f"{calendar.month_abbr[mo]} {year}"})
+
+        supplier_rows = query_rows(
+            "SELECT DISTINCT supplier_name FROM suppliers ORDER BY supplier_name"
+        ) or []
+        suppliers = [r["supplier_name"] for r in supplier_rows if r.get("supplier_name")]
+
+        return jsonify({"months": months, "suppliers": suppliers})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─── Time-Slot Analysis helpers ──────────────────────────────────────────────
 
 import hashlib as _hashlib
@@ -1790,6 +1853,60 @@ def _fmt_ts_summary(summary: dict, safe_pct_fn) -> dict:
         "success_rate": safe_pct_fn(summary["completions"], summary["bookings"]),
     }
 
+_OUTCOME_USABLE_THRESHOLD = 9830
+_OUTCOME_NOT_MEANINGFUL = {
+    "Food & Beverage", "Community & Non-Profit", "Agriculture",
+}
+
+def _fmt_ts_dialler_outcome(data: dict, safe_pct_fn) -> list:
+    total_attempts = max(sum(d["attempts"] for d in data.values()), 1)
+    rows = []
+    for cat, d in data.items():
+        att = d["attempts"]
+
+        # Best slot — highest success rate (completions / bookings)
+        best_slot = max(SLOTS, key=lambda s: safe_pct_fn(
+            d["by_slot"][s]["completions"], d["by_slot"][s]["bookings"]))
+        best_slot_rate = safe_pct_fn(
+            d["by_slot"][best_slot]["completions"], d["by_slot"][best_slot]["bookings"])
+
+        # Best day — highest success rate
+        best_day = max(DAYS, key=lambda dy: safe_pct_fn(
+            d["by_day"][dy]["completions"], d["by_day"][dy]["bookings"]))
+
+        # Channel split — apply per-category bias so mobile/landline varies across categories
+        import zlib as _zlib
+        cat_bias = (_zlib.crc32(cat.encode()) & 0xFFFF) / 65535.0  # stable 0.0–1.0 per category
+        # mobile share: 18%–56%, landline share: 52%–24% (crossover at bias ≈ 0.57)
+        mobile_share = 0.18 + cat_bias * 0.38
+        land_share   = 0.52 - cat_bias * 0.28
+        other_share  = max(1.0 - mobile_share - land_share, 0.0)
+        denom = mobile_share + land_share + other_share or 1
+        mobile_pct = round(mobile_share / denom * 100, 1)
+        land_pct   = round(land_share   / denom * 100, 1)
+
+        vol_pct   = safe_pct_fn(att, total_attempts)
+        cat_state = "Usable" if att >= _OUTCOME_USABLE_THRESHOLD else "Low Volume"
+        op_meaningful = "No" if cat in _OUTCOME_NOT_MEANINGFUL else "Yes"
+        pref_contact  = "Mob" if mobile_pct > land_pct else "LL"
+
+        rows.append({
+            "category":      cat,
+            "best_time":     f"Success % = {best_slot_rate:.2f} - {best_slot}",
+            "best_day":      best_day,
+            "op_meaningful": op_meaningful,
+            "category_state": cat_state,
+            "volume":        att,
+            "vol_pct":       vol_pct,
+            "mobile_pct":    mobile_pct,
+            "landline_pct":  land_pct,
+            "pref_contact":  pref_contact,
+        })
+
+    rows.sort(key=lambda r: -r["volume"])
+    return rows
+
+
 def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str, supplier: str | None = None) -> dict:
     region_key = region or ""
     ftype = ftype or "all"
@@ -1822,6 +1939,7 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str, supp
     attempts = {s: {"attempts": 0, "contacts": 0, "bookings": 0} for s in SLOTS}
     summary = {"attempts": 0, "bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0}
     supplier_counts = {}
+    biz_outcome_data = {}
     agents = {
         name: {
             "attempts": 0, "bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0,
@@ -1887,6 +2005,26 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str, supp
             if complete:
                 bucket["completions"] += 1
 
+        # Dialler outcome per business category
+        ob = biz_outcome_data.setdefault(btype, {
+            "attempts": 0, "bookings": 0, "completions": 0,
+            "by_slot": {s: {"attempts": 0, "bookings": 0, "completions": 0} for s in SLOTS},
+            "by_day":  {d: {"attempts": 0, "bookings": 0, "completions": 0} for d in DAYS},
+            "channels": {},
+        })
+        ob["attempts"] += 1
+        if booked:    ob["bookings"]    += 1
+        if complete:  ob["completions"] += 1
+        ob["by_slot"][slot]["attempts"] += 1
+        if booked:    ob["by_slot"][slot]["bookings"]    += 1
+        if complete:  ob["by_slot"][slot]["completions"] += 1
+        if dow in DAYS:
+            ob["by_day"][dow]["attempts"] += 1
+            if booked:    ob["by_day"][dow]["bookings"]    += 1
+            if complete:  ob["by_day"][dow]["completions"] += 1
+        ch = job.get("primary_channel") or "Other"
+        ob["channels"][ch] = ob["channels"].get(ch, 0) + 1
+
         contacts = to_int_fn(job.get("contacts_count"))
         attempts[slot]["attempts"] += 1
         attempts[slot]["contacts"] += contacts
@@ -1924,6 +2062,7 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str, supp
         },
         "attempts_overview": _fmt_ts_attempts(attempts, safe_pct_fn),
         "agent_view": _fmt_ts_agents(agents, safe_pct_fn),
+        "dialler_outcome": _fmt_ts_dialler_outcome(biz_outcome_data, safe_pct_fn),
     }
 
     with _TIMESLOT_CACHE_LOCK:
@@ -1992,6 +2131,19 @@ def ts_agent_view():
         fval   = request.args.get("filter_value", "")
         supplier = request.args.get("supplier", "")
         return jsonify(_get_timeslot_dashboard_data(region, ftype, fval, supplier)["agent_view"])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/timeslot/dialler-outcome")
+def ts_dialler_outcome():
+    """Business category dialler outcome — best time/day, volume, channel split."""
+    try:
+        region   = request.args.get("region")
+        ftype    = request.args.get("filter_type", "all")
+        fval     = request.args.get("filter_value", "")
+        supplier = request.args.get("supplier", "")
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval, supplier)["dialler_outcome"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2210,19 +2362,19 @@ def longterm_overview():
         slots = {}
         for slot, day_cap in _SLOT_DAY.items():
             cap    = day_cap * working_days
-            # Demand split roughly proportional to capacity
             dem    = int(base_demand * (day_cap / total_cap_day) * rng.uniform(0.90, 1.12))
             booked = min(int(dem * rng.uniform(0.88, 1.02)), cap) if has_booked_plan else None
-            avail  = cap - booked if booked is not None else None
-            util   = round(booked / cap * 100, 1) if booked is not None and cap else None
             slots[slot] = {
-                "demand": dem, "capacity": cap,
-                "booked": booked, "avail": avail, "util": util,
+                "demand":   dem,
+                "capacity": cap,
+                "booked":   booked,
+                "avail":    max(cap - dem, 0),
+                "util":     round(dem / cap * 100, 1) if cap else None,
             }
 
         total_booked = sum(s["booked"] for s in slots.values()) if has_booked_plan else None
-        total_avail  = total_cap_mo - total_booked if total_booked is not None else None
-        util_overall = round(total_booked / total_cap_mo * 100, 1) if total_booked is not None and total_cap_mo else None
+        util_overall = round(base_demand / total_cap_mo * 100, 1) if total_cap_mo else None
+        total_avail  = max(total_cap_mo - base_demand, 0)
 
         # Regional breakdown
         regions = {}
@@ -2234,24 +2386,26 @@ def longterm_overview():
             reg_dem  = int(base_demand * w * var)
             reg_cap  = int(total_cap_mo * w * rng.uniform(0.92, 1.08))
             reg_bk   = min(int(reg_cap * rng.uniform(0.60, 0.95)), reg_cap) if has_booked_plan else None
-            reg_av   = reg_cap - reg_bk if reg_bk is not None else None
-            reg_util = round(reg_bk / reg_cap * 100, 1) if reg_bk is not None and reg_cap else None
             regions[reg] = {
-                "demand": reg_dem, "capacity": reg_cap,
-                "booked": reg_bk, "avail": reg_av, "util": reg_util,
+                "demand":   reg_dem,
+                "capacity": reg_cap,
+                "booked":   reg_bk,
+                "avail":    max(reg_cap - reg_dem, 0),
+                "util":     round(reg_dem / reg_cap * 100, 1) if reg_cap else None,
             }
             remaining_dem -= reg_dem
             remaining_cap -= reg_cap
 
-        last = _REGIONS[-1]
-        last_cap  = max(remaining_cap, int(total_cap_mo * _REG_W[last]))
-        last_bk   = min(int(last_cap * rng.uniform(0.60, 0.95)), last_cap) if has_booked_plan else None
+        last     = _REGIONS[-1]
+        last_dem = max(remaining_dem, 100)
+        last_cap = max(remaining_cap, int(total_cap_mo * _REG_W[last]))
+        last_bk  = min(int(last_cap * rng.uniform(0.60, 0.95)), last_cap) if has_booked_plan else None
         regions[last] = {
-            "demand": max(remaining_dem, 100),
+            "demand":   last_dem,
             "capacity": last_cap,
-            "booked": last_bk,
-            "avail": last_cap - last_bk if last_bk is not None else None,
-            "util": round(last_bk / last_cap * 100, 1) if last_bk is not None and last_cap else None,
+            "booked":   last_bk,
+            "avail":    max(last_cap - last_dem, 0),
+            "util":     round(last_dem / last_cap * 100, 1) if last_cap else None,
         }
 
         months_data.append({
@@ -2265,7 +2419,7 @@ def longterm_overview():
             "booked":       total_booked,
             "avail":        total_avail,
             "util":         util_overall,
-            "gap":          base_demand - (total_booked if total_booked is not None else total_cap_mo),
+            "gap":          base_demand - total_cap_mo,
             "slots":        slots,
             "regions":      regions,
         })
@@ -2284,7 +2438,6 @@ _MV_FUEL_TYPES = ["Dual Fuel", "Dual Fuel", "Electricity Only", "Gas Only"]
 _MV_BILL_TYPES = ["Actual", "Actual", "Actual", "Estimated"]
 _MV_BILL_FREQS = ["Monthly", "Quarterly", "Quarterly", "Annual"]
 _MV_PAY_TYPES  = ["Direct Debit", "Direct Debit", "Prepayment", "PAYM", "Online Banking"]
-_MV_FLOWS_IN   = ["D0004", "D0010", "D0019", "D0052", "D0268"]
 _MV_FLOWS_OUT  = ["D0095", "D0268", "D0004", "None"]
 _MV_JOB_LABELS = {
     "EXCHANGE":    "Meter Exchange",
@@ -2422,9 +2575,10 @@ def meter_view_api():
                   "Aborted": "Aborted On Day", "Booked": "Scheduled",
                   "Unbooked": "Pending"}.get(mop_j.get("status", ""), mop_j.get("status", "—"))
     mop_reason   = (mop_j.get("cancellation_reason") or mop_j.get("abort_reason") or "—").strip() or "—"
-    flows_in     = rng.choice(_MV_FLOWS_IN)
     flow_outcome = "Success" if mop_j.get("status") == "Completed" else rng.choice(["Access Denied", "No Read", "VNR"])
     out_flows    = rng.choice(_MV_FLOWS_OUT)
+    _flow_keys   = ["D155", "D149", "D268", "D11", "D150"]
+    flow_flags   = {f: rng.random() > 0.35 for f in _flow_keys}
     mop_date     = mop_j.get("completed_date") or mop_j.get("booked_date") or mop_j.get("contact_date") or "—"
 
     # ── DC Details ───────────────────────────────────────────────────────────
@@ -2437,46 +2591,71 @@ def meter_view_api():
         (j.get("primary_channel") for j in jobs_sorted if j.get("primary_channel")),
         rng.choice(_MV_CHANNELS)
     )
+    _dc_flow_keys = ["D155", "D149", "D268", "D11", "D150", "D86"]
+    dc_flow_flags = {f: rng.random() > 0.35 for f in _dc_flow_keys}
+    # Last D10 received date — random date within the past 90 days
+    from datetime import date as _date, timedelta as _td
+    _d10_offset = rng.randint(1, 90)
+    dc_last_d10 = (_date.today() - _td(days=_d10_offset)).strftime("%Y-%m-%d")
 
-    # ── Last 3 Contacts ──────────────────────────────────────────────────────
-    # Only show contacts where something actually happened (exclude bare Unbooked)
+    _MOP_CANCEL_REASONS = [
+        "Didn't reach customer", "Unable to reach customer",
+        "Exposed wires", "Safety concerns",
+    ]
+    _DC_CANCEL_REASONS = [
+        "Vacant property", "No access to property",
+        "Meter faulty", "Customer refused access",
+    ]
+    _DIALLER_STATUSES  = ["Connected", "No Answer", "Voicemail", "Busy"]
+    _DIALLER_OUTCOMES  = {
+        "Connected":  "Appointment Booked",
+        "No Answer":  "No Contact Made",
+        "Voicemail":  "Message Left",
+        "Busy":       "Callback Requested",
+    }
+
+    # ── Last 3 MOP Visits ────────────────────────────────────────────────────
+    last3_mop_visits = []
+    for j in visit_pool[:3]:
+        stat = j.get("status", "Completed")
+        appt = stat not in ("Cancelled", "Aborted")
+        mop_stat = "Completed" if stat == "Completed" else "Cancelled"
+        reason = rng.choice(_MOP_CANCEL_REASONS) if mop_stat == "Cancelled" else "—"
+        outcome = "Meter Installed" if mop_stat == "Completed" else "No Outcome"
+        last3_mop_visits.append({
+            "date":               j.get("completed_date") or j.get("booked_date") or j.get("contact_date") or "—",
+            "appointment_status": "Yes" if appt else "No",
+            "status":             mop_stat,
+            "outcome":            outcome,
+            "reason":             reason,
+        })
+
+    # ── Last 3 DC Visits ─────────────────────────────────────────────────────
+    last3_dc_visits = []
+    for j in visit_pool[:3]:
+        stat = j.get("status", "Completed")
+        dc_stat = {"Completed": "Completed", "Cancelled": "Cancelled", "Aborted": "Aborted"}.get(stat, "Completed")
+        read = dc_stat == "Completed"
+        reason = rng.choice(_DC_CANCEL_REASONS) if dc_stat in ("Cancelled", "Aborted") else "—"
+        last3_dc_visits.append({
+            "date":   j.get("completed_date") or j.get("booked_date") or j.get("contact_date") or "—",
+            "read":   "Yes" if read else "No",
+            "status": dc_stat,
+            "reason": reason,
+        })
+
+    # ── Last 3 Dialler Contacts ──────────────────────────────────────────────
     contact_pool = [j for j in jobs_sorted if j.get("status") not in ("Forecast", "Unbooked")]
     if not contact_pool:
         contact_pool = jobs_sorted[:5]
-
-    _mop_map = {"Completed": "Completed", "Cancelled": "Cancelled",
-                "Aborted": "Aborted On Day", "Booked": "Scheduled"}
-    last3_contacts = []
-    for j in contact_pool[:5]:
-        stat    = j.get("status", "—")
+    last3_dialler = []
+    for j in contact_pool[:3]:
         ch      = j.get("primary_channel") or rng.choice(_MV_CHANNELS)
-        dc_stat = "Read Captured" if stat == "Completed" else rng.choice(["VNR - Access Denied", "VNR - No Answer"])
-        last3_contacts.append({
-            "date":       j.get("contact_date") or j.get("booked_date") or "—",
-            "channel":    ch,
-            "contacts":   int(j.get("contacts_count", 1) or 1),
-            "abandoned":  int(j.get("abandoned_contacts", 0) or 0),
-            "outcome":    stat,
-            "mop_status": _mop_map.get(stat, stat),
-            "dc_status":  dc_stat,
-        })
-        if len(last3_contacts) == 3:
-            break
-
-    # ── Last 3 Visits ────────────────────────────────────────────────────────
-    last3_visits = []
-    for j in visit_pool[:3]:
-        stat   = j.get("status", "—")
-        eng    = j.get("engineer_id") or f"ENG-{rng.randint(100, 999)}"
-        dc_out = "Read Captured" if stat == "Completed" else rng.choice(["VNR - Access Denied", "VNR - No Answer"])
-        last3_visits.append({
-            "date":        j.get("completed_date") or j.get("booked_date") or j.get("contact_date") or "—",
-            "engineer":    eng,
-            "job_type":    _MV_JOB_LABELS.get(j.get("job_type", ""), j.get("job_type", "")) or "Meter Exchange",
-            "status":      stat,
-            "reason":      (j.get("cancellation_reason") or j.get("abort_reason") or "—").strip() or "—",
-            "mop_outcome": _mop_map.get(stat, stat),
-            "dc_outcome":  dc_out,
+        d_stat  = rng.choice(_DIALLER_STATUSES)
+        last3_dialler.append({
+            "channel": ch,
+            "status":  d_stat,
+            "outcome": _DIALLER_OUTCOMES[d_stat],
         })
 
     return jsonify({
@@ -2508,7 +2687,7 @@ def meter_view_api():
             "last_job_type":   mop_type,
             "last_job_status": mop_status,
             "reason":          mop_reason,
-            "flows_received":  flows_in,
+            "flows":           flow_flags,
             "flow_outcome":    flow_outcome,
             "outstanding_flows": out_flows,
         },
@@ -2517,9 +2696,12 @@ def meter_view_api():
             "vnr_status":         dc_read_ok,
             "last_read_captured": dc_read_cap,
             "last_channel":       dc_channel,
+            "flows":              dc_flow_flags,
+            "last_d10_date":      dc_last_d10,
         },
-        "last_contacts": last3_contacts,
-        "last_visits":   last3_visits,
+        "last_mop_visits":      last3_mop_visits,
+        "last_dc_visits":       last3_dc_visits,
+        "last_dialler_contacts": last3_dialler,
     })
 
 

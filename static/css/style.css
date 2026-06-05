@@ -9340,3 +9340,70 @@ thead .rt-col-util, tbody .rt-col-util, tfoot .rt-col-util { left: 382px;}
 .lt-ss-item  { display: flex; flex-direction: column; gap: 2px; }
 .lt-ss-label { font-size: 0.70rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
 .lt-ss-val   { font-size: 0.92rem; font-weight: 700; color: var(--text-primary); }
+
+/* ── Dialler Outcome Table ── */
+.do-table-wrap { overflow-x: auto; }
+.do-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.do-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+  background: var(--bg-card);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.do-table th.do-th-num { text-align: right; }
+.do-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.do-table tbody tr:hover { background: rgba(99,102,241,.06); }
+.do-table tbody tr:last-child td { border-bottom: none; }
+.do-td-cat { font-weight: 600; }
+.do-td-time { color: var(--text-secondary); font-size: 11px; }
+.do-td-time strong { color: var(--brand-accent); font-weight: 700; }
+.do-td-num { text-align: right; font-weight: 600; }
+.do-td-pct { text-align: right; color: var(--text-secondary); }
+.do-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+.do-badge-usable   { background: rgba(34,197,94,.15);  color: #22c55e; }
+.do-badge-lowvol   { background: rgba(245,158,11,.15); color: #f59e0b; }
+.do-badge-yes      { background: rgba(99,102,241,.15); color: #818cf8; }
+.do-badge-no       { background: rgba(100,116,139,.15); color: var(--text-muted); }
+.do-badge-ll       { background: rgba(6,182,212,.15);  color: #22d3ee; }
+.do-badge-mob      { background: rgba(249,115,22,.15); color: #fb923c; }
+.do-ch-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.do-ch-bar-track {
+  width: 60px;
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.do-ch-bar-fill-mob  { height: 100%; background: #fb923c; border-radius: 3px; }
+.do-ch-bar-fill-land { height: 100%; background: #22d3ee; border-radius: 3px; }
+.do-ch-val { font-size: 11px; font-weight: 700; min-width: 36px; text-align: right; }

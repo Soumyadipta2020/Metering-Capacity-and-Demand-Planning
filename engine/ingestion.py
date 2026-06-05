@@ -200,6 +200,8 @@ def iter_jobs_filtered(
     start: str = None,
     end: str = None,
     columns: list[str] | tuple[str, ...] | None = None,
+    supplier_name: str = None,
+    month: str = None,
 ):
     """Stream job rows using SQLite indexes when available, with CSV fallback."""
     master_path = INPUTS_DIR / "master_operations.csv"
@@ -218,6 +220,12 @@ def iter_jobs_filtered(
     if end:
         where.append("requested_date <= ?")
         params.append(end)
+    if supplier_name:
+        where.append("supplier_name = ?")
+        params.append(supplier_name)
+    if month:
+        where.append("strftime('%Y-%m', requested_date) = ?")
+        params.append(month)
 
     rows = _sqlite_iter_rows(filename, " AND ".join(where), params, columns)
     if rows is not None:
@@ -236,6 +244,10 @@ def iter_jobs_filtered(
         if start and row.get("requested_date", "")[:10] < start:
             continue
         if end and row.get("requested_date", "")[:10] > end:
+            continue
+        if supplier_name and row.get("supplier_name", "").strip() != supplier_name:
+            continue
+        if month and row.get("requested_date", "")[:7] != month:
             continue
         if columns:
             yield {column: row.get(column, "") for column in columns}

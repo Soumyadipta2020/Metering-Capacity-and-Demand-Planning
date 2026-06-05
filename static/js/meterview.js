@@ -53,8 +53,9 @@ function mvRenderAll(d) {
   mvRenderInsights(d.insights);
   mvRenderMopDetails(d.mop_details);
   mvRenderDcDetails(d.dc_details);
-  mvRenderContacts(d.last_contacts);
-  mvRenderVisits(d.last_visits);
+  mvRenderMopVisits(d.last_mop_visits);
+  mvRenderDcVisits(d.last_dc_visits);
+  mvRenderDiallerContacts(d.last_dialler_contacts);
 }
 
 // ── Panel renders ─────────────────────────────────────────────────────────────
@@ -70,10 +71,6 @@ function mvRenderMeterDetails(m) {
     ${mvRow('Region',            m.region)}
     ${mvRow('Patch',             m.patch)}
     ${mvRow('Last Read',         m.last_read + ' kWh')}
-    ${mvRow('Last Bill Type',    m.last_bill_type)}
-    ${mvRow('Last Bill Date',    mvDate(m.last_bill_date))}
-    ${mvRow('Billing Frequency', m.billing_freq)}
-    ${mvRow('Payment Type',      m.payment_type)}
   `;
 }
 
@@ -106,9 +103,7 @@ function mvRenderMopDetails(m) {
       <span class="mv-status-pill ${sc}">${m.last_job_status}</span>
     </div>
     ${m.reason !== '—' ? mvRow('Reason', m.reason) : ''}
-    ${mvRow('Industry Flows Received', m.flows_received)}
-    ${mvRow('Flow Outcome',       m.flow_outcome)}
-    ${mvRow('Outstanding Flows',  m.outstanding_flows)}
+    ${['D155','D149','D268','D11','D150'].map(f => mvRow(f, m.flows?.[f] ? 'Yes' : 'No')).join('')}
   `;
 }
 
@@ -123,45 +118,60 @@ function mvRenderDcDetails(d) {
     </div>
     ${mvRow('Last Read Captured',    d.last_read_captured !== '—' ? d.last_read_captured + ' kWh' : '—')}
     ${mvRow('Last Channel',          d.last_channel)}
+    ${['D155','D149','D268','D11','D150','D86'].map(f => mvRow(f, d.flows?.[f] ? 'Yes' : 'No')).join('')}
+    ${mvRow('Last D10 Received',     mvDate(d.last_d10_date))}
   `;
 }
 
 // ── History tables ────────────────────────────────────────────────────────────
-function mvRenderContacts(contacts) {
-  const tb = document.getElementById('mv-contacts-body');
+function mvRenderMopVisits(rows) {
+  const tb = document.getElementById('mv-mop-visits-body');
   if (!tb) return;
-  if (!contacts || !contacts.length) {
-    tb.innerHTML = '<tr><td colspan="6" class="mv-empty-td">No contact history found</td></tr>';
+  if (!rows || !rows.length) {
+    tb.innerHTML = '<tr><td colspan="5" class="mv-empty-td">No MOP visit history found</td></tr>';
     return;
   }
-  tb.innerHTML = contacts.map((c, i) => `
+  tb.innerHTML = rows.map((v, i) => `
     <tr class="${i % 2 ? 'mv-tr--alt' : ''}">
-      <td class="mv-td">${mvDate(c.date)}</td>
-      <td class="mv-td">${c.channel}</td>
-      <td class="mv-td">${c.contacts} contact${c.contacts !== 1 ? 's' : ''}${c.abandoned ? ` <span class="mv-aside">(${c.abandoned} abandoned)</span>` : ''}</td>
-      <td class="mv-td"><span class="mv-outcome ${mvOutcomeClass(c.outcome)}">${c.outcome}</span></td>
-      <td class="mv-td"><span class="mv-mini ${mvOutcomeClass(c.mop_status)}">${c.mop_status}</span></td>
-      <td class="mv-td"><span class="mv-mini ${mvDcClass(c.dc_status)}">${c.dc_status}</span></td>
+      <td class="mv-td">${mvDate(v.date)}</td>
+      <td class="mv-td"><span class="mv-mini ${v.appointment_status === 'Yes' ? 'mv-ok' : 'mv-warn'}">${v.appointment_status}</span></td>
+      <td class="mv-td"><span class="mv-outcome ${mvOutcomeClass(v.status)}">${v.status}</span></td>
+      <td class="mv-td">${v.outcome}</td>
+      <td class="mv-td mv-td--reason">${v.reason !== '—' ? v.reason : '<span class="mv-na">—</span>'}</td>
     </tr>`).join('');
 }
 
-function mvRenderVisits(visits) {
-  const tb = document.getElementById('mv-visits-body');
+function mvRenderDcVisits(rows) {
+  const tb = document.getElementById('mv-dc-visits-body');
   if (!tb) return;
-  if (!visits || !visits.length) {
-    tb.innerHTML = '<tr><td colspan="7" class="mv-empty-td">No visit history found</td></tr>';
+  if (!rows || !rows.length) {
+    tb.innerHTML = '<tr><td colspan="4" class="mv-empty-td">No DC visit history found</td></tr>';
     return;
   }
-  tb.innerHTML = visits.map((v, i) => `
+  tb.innerHTML = rows.map((v, i) => `
     <tr class="${i % 2 ? 'mv-tr--alt' : ''}">
       <td class="mv-td">${mvDate(v.date)}</td>
-      <td class="mv-td mv-td--eng">${v.engineer}</td>
-      <td class="mv-td">${v.job_type}</td>
+      <td class="mv-td"><span class="mv-mini ${v.read === 'Yes' ? 'mv-ok' : 'mv-warn'}">${v.read}</span></td>
       <td class="mv-td"><span class="mv-outcome ${mvOutcomeClass(v.status)}">${v.status}</span></td>
       <td class="mv-td mv-td--reason">${v.reason !== '—' ? v.reason : '<span class="mv-na">—</span>'}</td>
-      <td class="mv-td"><span class="mv-mini ${mvOutcomeClass(v.mop_outcome)}">${v.mop_outcome}</span></td>
-      <td class="mv-td"><span class="mv-mini ${mvDcClass(v.dc_outcome)}">${v.dc_outcome}</span></td>
     </tr>`).join('');
+}
+
+function mvRenderDiallerContacts(rows) {
+  const tb = document.getElementById('mv-dialler-body');
+  if (!tb) return;
+  if (!rows || !rows.length) {
+    tb.innerHTML = '<tr><td colspan="3" class="mv-empty-td">No dialler contact history found</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map((c, i) => {
+    const sCls = c.status === 'Connected' ? 'mv-ok' : c.status === 'No Answer' ? 'mv-warn' : 'mv-neutral';
+    return `<tr class="${i % 2 ? 'mv-tr--alt' : ''}">
+      <td class="mv-td">${c.channel}</td>
+      <td class="mv-td"><span class="mv-mini ${sCls}">${c.status}</span></td>
+      <td class="mv-td">${c.outcome}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ── HTML helpers ──────────────────────────────────────────────────────────────

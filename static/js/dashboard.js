@@ -6,9 +6,10 @@ let _lastRegionalHeatmapData = null;
 let _ukBoundaryGeoJsonPromise = null;
 
 async function loadJourneyDashboard(force = false) {
-  const region = IMSERV.getRegion();
-  const year   = IMSERV.getYear();
-  const qs     = `?region=${region}&year=${year}`;
+  const region   = IMSERV.getRegion();
+  const year     = IMSERV.getYear();
+  const supplier = document.getElementById('journey-supplier-filter')?.value || '';
+  const qs       = IMSERV.getGlobalQs(supplier ? { supplier } : {});
   refreshJourneyVisualLabels();
   const loadingTargets = [
     'journey-trend-chart',
@@ -916,9 +917,7 @@ async function loadDecompositionTree() {
   container.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
 
   try {
-    const region = IMSERV.getRegion();
-    const year = IMSERV.getYear();
-    const res = await fetch(`/api/journey/decomposition-tree?region=${region}&year=${year}`);
+    const res = await fetch(`/api/journey/decomposition-tree${IMSERV.getGlobalQs()}`);
     if (!res.ok) throw new Error('Failed to load decomposition tree');
     const data = await res.json();
     renderDecompositionTree(data, container);

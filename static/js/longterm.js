@@ -43,12 +43,11 @@ function ltSelectedRegions() {
 function ltAggregateRegionSlice(month, regions) {
   return regions.reduce((acc, code) => {
     const r = month.regions?.[code] || {};
-    acc.demand += ltNum(r.demand);
+    acc.demand   += ltNum(r.demand);
     acc.capacity += ltNum(r.capacity);
     if (ltHasValue(r.booked)) {
       acc.hasBooked = true;
       acc.booked += ltNum(r.booked);
-      acc.avail += ltNum(r.avail);
     }
     return acc;
   }, { demand: 0, capacity: 0, booked: 0, avail: 0, util: null, hasBooked: false });
@@ -57,19 +56,18 @@ function ltAggregateRegionSlice(month, regions) {
 function ltScaleSlotsToMonth(sourceMonth, totals) {
   const slots = {};
   ['morning', 'afternoon', 'evening'].forEach(slot => {
-    const source = sourceMonth.slots?.[slot] || {};
-    const demand = sourceMonth.demand ? Math.round(totals.demand * ((source.demand || 0) / sourceMonth.demand)) : 0;
+    const source   = sourceMonth.slots?.[slot] || {};
+    const demand   = sourceMonth.demand   ? Math.round(totals.demand   * ((source.demand   || 0) / sourceMonth.demand))   : 0;
     const capacity = sourceMonth.capacity ? Math.round(totals.capacity * ((source.capacity || 0) / sourceMonth.capacity)) : 0;
-    const booked = ltHasValue(sourceMonth.booked) && totals.hasBooked
+    const booked   = ltHasValue(sourceMonth.booked) && totals.hasBooked
       ? Math.round(totals.booked * (ltNum(source.booked) / sourceMonth.booked))
       : null;
-    const safeBooked = booked === null ? null : Math.min(booked, capacity);
     slots[slot] = {
       demand,
       capacity,
-      booked: safeBooked,
-      avail: safeBooked === null ? null : Math.max(capacity - safeBooked, 0),
-      util: safeBooked !== null && capacity ? Number(((safeBooked / capacity) * 100).toFixed(1)) : null,
+      booked:  booked !== null ? Math.min(booked, capacity) : null,
+      avail:   Math.max(capacity - demand, 0),
+      util:    capacity ? Number(((demand / capacity) * 100).toFixed(1)) : null,
     };
   });
   return slots;
@@ -95,14 +93,13 @@ function ltFilteredMonths() {
   if (!regions) return LT.data.months;
   return LT.data.months.map(m => {
     const r = ltAggregateRegionSlice(m, regions);
-    r.util = r.hasBooked && r.capacity ? Math.round(r.booked / r.capacity * 100) : null;
     return {
       ...m,
       demand:   r.demand,
       capacity: r.capacity,
       booked:   r.hasBooked ? r.booked : null,
-      avail:    r.hasBooked ? r.avail : null,
-      util:     r.util,
+      avail:    Math.max(r.capacity - r.demand, 0),
+      util:     r.capacity ? Math.round(r.demand / r.capacity * 100) : null,
       slots:    ltScaleSlotsToMonth(m, r),
     };
   });

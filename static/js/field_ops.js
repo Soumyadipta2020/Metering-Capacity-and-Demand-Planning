@@ -24,11 +24,11 @@ async function loadFieldOpsDashboard(force = false) {
   updateOptimisationButtons();
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
-  const qs     = `?region=${region}&year=${year}`;
+  const qs     = IMSERV.getGlobalQs();
   IMSERV.setLoading(['capacity-forecast-chart', 'resource-gap-chart', 'capacity-matrix-chart', 'patch-plan-body'], true);
 
-  // Long Term is the default active sub-tab — load it alongside main data
-  if (typeof loadLongTermPlanning === 'function') loadLongTermPlanning(force);
+  // Short Term is the default active sub-tab — load it alongside main data
+  if (typeof loadRosterTimeline === 'function') loadRosterTimeline(force);
 
   try {
     const kpis = await IMSERV.apiFetch('/api/field-ops/kpis' + qs);
@@ -317,9 +317,8 @@ async function loadPatchPlan() {
   const region = IMSERV.getRegion() || document.getElementById('patch-region-filter')?.value || 'NW';
   const selector = document.getElementById('patch-region-filter');
   if (selector && selector.value !== region) selector.value = region;
-  const year   = IMSERV.getYear();
   IMSERV.setLoading('patch-plan-body', true);
-  const data   = await IMSERV.apiFetch(`/api/field-ops/patch-plan?region=${region}&year=${year}`);
+  const data   = await IMSERV.apiFetch('/api/field-ops/patch-plan' + IMSERV.getGlobalQs());
   const body   = document.getElementById('patch-plan-body');
   if (!body || !data) {
     IMSERV.setLoading('patch-plan-body', false);
@@ -355,9 +354,7 @@ async function loadPatchPlan() {
 }
 
 async function loadEngineerPerformance() {
-  const region = IMSERV.getRegion();
-  const year   = IMSERV.getYear();
-  const data   = await IMSERV.apiFetch(`/api/field-ops/engineer-performance?region=${region}&year=${year}&top_n=20`);
+  const data   = await IMSERV.apiFetch('/api/field-ops/engineer-performance' + IMSERV.getGlobalQs({ top_n: 20 }));
   const tbody  = document.getElementById('engineer-perf-body');
   if (!tbody || !data) return;
 

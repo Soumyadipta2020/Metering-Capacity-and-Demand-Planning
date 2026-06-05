@@ -6,7 +6,7 @@ const VIEW_CONFIG = {
   cancellations: { title: 'Appointment Fallout Risk and Recovery', breadcrumb: 'IMSERV / Appointments / Risk and Recovery', loader: loadCancellationsDashboard },
   'field-ops': { title: 'Appointment and Resource Planning', breadcrumb: 'IMSERV / Planning / Contact Attempt Forecast and Capacity', loader: loadFieldOpsDashboard },
   financial: { title: 'Appointment and Resource Financial Planning', breadcrumb: 'IMSERV / Finance / Scenario Impact', loader: loadFinancialDashboard },
-  timeslot:  { title: 'Dialer Performance', breadcrumb: 'IMSERV / Appointments / Dialer Performance', loader: loadTimeslotDashboard },
+  timeslot:  { title: 'Dialler Performance', breadcrumb: 'IMSERV / Appointments / Dialler Performance', loader: loadTimeslotDashboard },
   meterview: { title: 'Single Meter View', breadcrumb: 'IMSERV / Meters / Single Meter View', loader: loadMeterViewDashboard },
 };
 
@@ -142,6 +142,41 @@ function onRegionChange() {
   }
   if (document.getElementById('pstab-longterm')?.classList.contains('pst-panel--active')) {
     if (typeof loadLongTermPlanning === 'function') loadLongTermPlanning();
+  }
+}
+
+function onMonthChange() {
+  invalidateLoadedViews();
+  refreshCurrentView();
+}
+
+function onJourneySupplierChange() {
+  if (typeof loadJourneyDashboard === 'function') loadJourneyDashboard(true);
+}
+
+async function populateGlobalFilters() {
+  try {
+    const data = await fetch('/api/filters').then(r => r.json());
+
+    const monthSel = document.getElementById('global-month');
+    (data.months || []).forEach(({ value, label }) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      monthSel.appendChild(opt);
+    });
+
+    const supplierSel = document.getElementById('journey-supplier-filter');
+    if (supplierSel) {
+      (data.suppliers || []).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        supplierSel.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    console.warn('Could not load global filters:', e);
   }
 }
 
@@ -439,5 +474,6 @@ function initChatbotWidget() {
 document.addEventListener('DOMContentLoaded', function () {
   initFluidSidebar();
   initChatbotWidget();
+  populateGlobalFilters();
   loadViewData('journey');
 });

@@ -125,7 +125,20 @@ const IMSERV = {
     gbpM: (v) => v == null ? '—' : '£' + (Number(v) / 1_000_000).toFixed(2) + 'M',
   },
 
-  getRegion: () => document.getElementById('global-region')?.value || '',
+  getRegion:   () => document.getElementById('global-region')?.value || '',
+  getMonth:    () => document.getElementById('global-month')?.value || '',
+  getGlobalQs(extra = {}) {
+    const p = new URLSearchParams();
+    const year = this.getYear();
+    if (year)                p.set('year',     year);
+    const region = this.getRegion();
+    if (region)              p.set('region',   region);
+    const month = this.getMonth();
+    if (month)               p.set('month',    month);
+    Object.entries(extra).forEach(([k, v]) => { if (v !== '' && v != null) p.set(k, v); });
+    const s = p.toString();
+    return s ? '?' + s : '';
+  },
   getYear:   () => {
     const activeView = document.querySelector('.view.active')?.id || 'view-journey';
     return ['view-forecasting', 'view-field-ops', 'view-financial'].includes(activeView) ? 2026 : 2025;

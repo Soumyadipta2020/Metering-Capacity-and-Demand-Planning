@@ -32,7 +32,7 @@
         </div>
         <div class="nav-item" data-view="timeslot" onclick="switchView('timeslot', this)">
           <span class="nav-icon">🕐</span>
-          <span class="nav-label">Dialer Performance</span>
+          <span class="nav-label">Dialler Performance</span>
         </div>
         <div class="nav-item" data-view="cancellations" onclick="switchView('cancellations', this)">
           <span class="nav-icon">❌</span>
@@ -105,6 +105,9 @@
             <option value="WAL">Wales</option>
             <option value="SCO">Scotland</option>
             <option value="YRK">Yorkshire</option>
+          </select>
+          <select class="filter-select" id="global-month" onchange="onMonthChange()">
+            <option value="">All Months</option>
           </select>
         </div>
         <div class="btn-icon" onclick="refreshCurrentView()" title="Refresh">↻</div>
@@ -205,6 +208,9 @@
               <div class="recovery-constellation-title">🏭 Supplier Performance Grid</div>
               <div class="recovery-constellation-subtitle">Top 25 suppliers ranked by volume — contribution, booking rate, success rate &amp; segment classification. Remaining suppliers grouped into Others.</div>
             </div>
+            <select class="filter-select" id="journey-supplier-filter" onchange="onJourneySupplierChange()" style="min-width:180px;">
+              <option value="">All Suppliers</option>
+            </select>
           </div>
           <div id="supplier-behaviour-grid" class="supplier-recovery-stage" style="padding: 16px;">
             <div class="loading"><span class="spinner"></span> Loading supplier data...</div>
@@ -264,6 +270,17 @@
           </div>
         </div>
 
+
+        <!-- Dialler Outcome Table -->
+        <div class="ts-section-card" id="ts-outcome-card">
+          <div class="ts-section-hd">
+            <div class="ts-section-title">📊 Dialler Outcome</div>
+            <div class="ts-section-sub">Business category performance — best contact time &amp; day, volume share, channel split and preferred contact method</div>
+          </div>
+          <div id="ts-outcome-grid">
+            <div class="loading"><span class="spinner"></span></div>
+          </div>
+        </div>
 
         <!-- 1. Channel Booking by Slot -->
         <div class="ts-section-card">
@@ -434,16 +451,16 @@
 
         <!-- Planning Sub-tab bar -->
         <div class="pst-bar">
-          <button class="pst-btn" data-tab="shortterm" onclick="switchPlanningSubtab('shortterm')">
+          <button class="pst-btn pst-btn--active" data-tab="shortterm" onclick="switchPlanningSubtab('shortterm')">
             <span class="pst-icon">⚡</span> Short Term
           </button>
-          <button class="pst-btn pst-btn--active" data-tab="longterm" onclick="switchPlanningSubtab('longterm')">
+          <button class="pst-btn" data-tab="longterm" onclick="switchPlanningSubtab('longterm')">
             <span class="pst-icon">📈</span> Long Term
           </button>
         </div>
 
         <!-- ── Short Term sub-tab ── -->
-        <div class="pst-panel" id="pstab-shortterm">
+        <div class="pst-panel pst-panel--active" id="pstab-shortterm">
 
           <!-- Roster toolbar -->
           <div class="rt-toolbar">
@@ -532,7 +549,7 @@
         </div>
 
         <!-- ── Long Term sub-tab ── -->
-        <div class="pst-panel pst-panel--active" id="pstab-longterm">
+        <div class="pst-panel" id="pstab-longterm">
 
           <!-- KPI Strip -->
           <div class="lt-kpi-strip" id="lt-kpi-strip">
@@ -708,49 +725,65 @@
 
           </div><!-- /mv-panels-grid -->
 
-          <!-- Last 3 Contacts -->
+          <!-- Last 3 MOP Visits -->
           <div class="mv-history-card">
             <div class="mv-history-header">
-              <div class="mv-history-title">Last 3 Contacts</div>
-              <div class="mv-history-sub">Most recent outbound contact attempts — channel, outcome and status in MOP and DC view</div>
-            </div>
-            <div class="mv-table-wrap">
-              <table class="mv-table">
-                <thead>
-                  <tr>
-                    <th class="mv-th">Date</th>
-                    <th class="mv-th">Channel</th>
-                    <th class="mv-th">Contacts</th>
-                    <th class="mv-th">Outcome</th>
-                    <th class="mv-th">MOP Status</th>
-                    <th class="mv-th">DC Status</th>
-                  </tr>
-                </thead>
-                <tbody id="mv-contacts-body"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Last 3 Visits -->
-          <div class="mv-history-card">
-            <div class="mv-history-header">
-              <div class="mv-history-title">Last 3 Visits</div>
-              <div class="mv-history-sub">Most recent engineer visits — job type, outcome and status in MOP and DC view</div>
+              <div class="mv-history-title">Last 3 MOP Visits</div>
+              <div class="mv-history-sub">Most recent Meter Operator visits — appointment status, outcome and cancellation reason</div>
             </div>
             <div class="mv-table-wrap">
               <table class="mv-table">
                 <thead>
                   <tr>
                     <th class="mv-th">Visit Date</th>
-                    <th class="mv-th">Engineer</th>
-                    <th class="mv-th">Job Type</th>
+                    <th class="mv-th">Appointment</th>
                     <th class="mv-th">Status</th>
+                    <th class="mv-th">Outcome</th>
                     <th class="mv-th">Reason</th>
-                    <th class="mv-th">MOP Outcome</th>
-                    <th class="mv-th">DC Outcome</th>
                   </tr>
                 </thead>
-                <tbody id="mv-visits-body"></tbody>
+                <tbody id="mv-mop-visits-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Last 3 DC Visits -->
+          <div class="mv-history-card">
+            <div class="mv-history-header">
+              <div class="mv-history-title">Last 3 DC Visits</div>
+              <div class="mv-history-sub">Most recent Data Collector visits — read captured, status and reason</div>
+            </div>
+            <div class="mv-table-wrap">
+              <table class="mv-table">
+                <thead>
+                  <tr>
+                    <th class="mv-th">Visit Date</th>
+                    <th class="mv-th">Read</th>
+                    <th class="mv-th">Status</th>
+                    <th class="mv-th">Reason</th>
+                  </tr>
+                </thead>
+                <tbody id="mv-dc-visits-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Last 3 Dialler Contacts -->
+          <div class="mv-history-card">
+            <div class="mv-history-header">
+              <div class="mv-history-title">Last 3 Dialler Contacts</div>
+              <div class="mv-history-sub">Most recent outbound dialler contact attempts — channel, status and outcome</div>
+            </div>
+            <div class="mv-table-wrap">
+              <table class="mv-table">
+                <thead>
+                  <tr>
+                    <th class="mv-th">Channel</th>
+                    <th class="mv-th">Status</th>
+                    <th class="mv-th">Outcome</th>
+                  </tr>
+                </thead>
+                <tbody id="mv-dialler-body"></tbody>
               </table>
             </div>
           </div>

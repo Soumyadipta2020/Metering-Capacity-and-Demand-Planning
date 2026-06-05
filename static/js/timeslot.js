@@ -138,14 +138,16 @@ async function loadTimeslotDashboard(force = false) {
   try {
     const dashboard = await IMSERV.apiFetch('/api/timeslot/dashboard?' + tsQs(), { force });
     _tsDashCache = dashboard;   // cache for theme-only re-renders
-    const chData  = dashboard?.channel_booking;
-    const bizData = dashboard?.business_type;
-    const attData = dashboard?.attempts_overview;
-    const agData  = dashboard?.agent_view;
-    const sumData = dashboard?.summary;
-    const supList = dashboard?.suppliers;
+    const chData   = dashboard?.channel_booking;
+    const bizData  = dashboard?.business_type;
+    const attData  = dashboard?.attempts_overview;
+    const agData   = dashboard?.agent_view;
+    const sumData  = dashboard?.summary;
+    const supList  = dashboard?.suppliers;
+    const doData   = dashboard?.dialler_outcome;
     if (supList)  tsPopulateSupplierSelect(supList);
     if (sumData)  renderTsSummaryKpis(sumData);
+    if (doData)   renderDiallerOutcome(doData);
     if (chData)   renderTsChannelGrid(chData);
     if (bizData)  renderTsBizWrap(bizData);
     if (attData)  renderTsAttemptsGrid(attData);
@@ -165,7 +167,7 @@ window.addEventListener('imserv:themechange', () => {
 });
 
 function tsSetLoading() {
-  ['ts-channel-grid','ts-biz-wrap','ts-attempts-grid','ts-agent-grid'].forEach(id => {
+  ['ts-outcome-grid','ts-channel-grid','ts-biz-wrap','ts-attempts-grid','ts-agent-grid'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
   });
@@ -180,7 +182,7 @@ function renderTsSummaryKpis(s) {
   if (bkEl) bkEl.textContent = fmt(s.bookings ?? 0);
   const bkSub = document.getElementById('ts-kpi-bookings-sub');
   if (bkSub && s.attempts) {
-    const bkRate = s.attempts > 0 ? ((s.bookings / s.attempts) * 100).toFixed(1) : '—';
+    const bkRate = s.attempts > 0 ? Math.round((s.bookings / s.attempts) * 100) : '—';
     bkSub.textContent = bkRate + '% booking rate';
     bkSub.style.color = 'var(--info)';
   }
@@ -190,7 +192,7 @@ function renderTsSummaryKpis(s) {
   if (cpEl) cpEl.textContent = fmt(s.completions ?? 0);
   const cpSub = document.getElementById('ts-kpi-completions-sub');
   if (cpSub && s.bookings) {
-    const execRate = s.bookings > 0 ? ((s.completions / s.bookings) * 100).toFixed(1) : '—';
+    const execRate = s.bookings > 0 ? Math.round((s.completions / s.bookings) * 100) : '—';
     cpSub.textContent = execRate + '% of booked';
     cpSub.style.color = 'var(--ok)';
   }
@@ -200,7 +202,7 @@ function renderTsSummaryKpis(s) {
   const rateCard = document.getElementById('ts-kpi-rate-card');
   const rateSub = document.getElementById('ts-kpi-rate-sub');
   const rate = s.success_rate ?? 0;
-  if (rateEl) rateEl.textContent = rate.toFixed(1) + '%';
+  if (rateEl) rateEl.textContent = Math.round(rate) + '%';
   if (rateCard) {
     rateCard.classList.remove('rate-ok','rate-warn','rate-crit','ok','warn','crit');
     if (rate >= 15) {
@@ -371,14 +373,14 @@ function renderTsChannelGrid(data) {
           </div>
           <div class="ts-ch-meta">
             <span class="ts-ch-num">${fmt(r.attempts)}</span>
-            <span class="ts-ch-rate" style="color:${TS_RATE_COL(r.booking_rate)};">${r.booking_rate}%</span>
+            <span class="ts-ch-rate" style="color:${TS_RATE_COL(r.booking_rate)};">${Math.round(r.booking_rate)}%</span>
           </div>
         </div>`;
     }).join('');
 
     const total    = rows.reduce((s, r) => s + r.attempts, 0);
     const totalBk  = rows.reduce((s, r) => s + r.bookings, 0);
-    const totalRate = total > 0 ? (totalBk / total * 100).toFixed(1) : '—';
+    const totalRate = total > 0 ? Math.round(totalBk / total * 100) : '—';
 
     return `
       <div class="ts-slot-panel" style="--slot-accent:${col.accent};--slot-bg:${col.bg};">
@@ -432,7 +434,7 @@ function renderTsBizWrap(data) {
       const pct  = maxSlotRate > minSlotRate ? (rate - minSlotRate) / (maxSlotRate - minSlotRate) : 0;
       const [bg, col] = heatColor(pct);
 
-      return `<td class="ts-biz-td">${fmt(bk)}</td><td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${rate}%</td>`;
+      return `<td class="ts-biz-td">${fmt(bk)}</td><td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${Math.round(rate)}%</td>`;
     }).join('');
     return `<tr><td class="ts-biz-td ts-biz-td--type">${type}</td>${cells}</tr>`;
   }).join('');
@@ -457,7 +459,7 @@ function renderTsBizWrap(data) {
       const pct  = maxDayRate > minDayRate ? (rate - minDayRate) / (maxDayRate - minDayRate) : 0;
       const [bg, col] = heatColor(pct);
 
-      return `<td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${rate}%</td>`;
+      return `<td class="ts-biz-td ts-biz-td--rate" style="background:${bg};color:${col};">${Math.round(rate)}%</td>`;
     }).join('');
     return `<tr><td class="ts-biz-td ts-biz-td--type">${type}</td>${cells}</tr>`;
   }).join('');
@@ -467,7 +469,7 @@ function renderTsBizWrap(data) {
     const rows = bySlot[slot] || [];
     const totalAtt = rows.reduce((s,r) => s + r.attempts, 0);
     const totalBk  = rows.reduce((s,r) => s + r.bookings, 0);
-    const rate = totalAtt > 0 ? +(totalBk / totalAtt * 100).toFixed(1) : 0;
+    const rate = totalAtt > 0 ? Math.round(totalBk / totalAtt * 100) : 0;
     return `<td class="ts-biz-td ts-biz-td--total">${fmt(totalBk)}</td><td class="ts-biz-td ts-biz-td--rate ts-biz-td--total" style="color:${TS_RATE_COL(rate)};">${rate}%</td>`;
   }).join('');
 
@@ -475,7 +477,7 @@ function renderTsBizWrap(data) {
     const rows = byDay[day] || [];
     const totalBk  = rows.reduce((s,r) => s + r.bookings, 0);
     const totalAtt = rows.reduce((s,r) => s + r.attempts, 0);
-    const rate = totalAtt > 0 ? +(totalBk / totalAtt * 100).toFixed(1) : 0;
+    const rate = totalAtt > 0 ? Math.round(totalBk / totalAtt * 100) : 0;
     return `<td class="ts-biz-td ts-biz-td--rate ts-biz-td--total" style="color:${TS_RATE_COL(rate)};">${rate}%</td>`;
   }).join('');
 
@@ -627,7 +629,7 @@ function renderTsAgentGrid(data) {
         <td class="ts-tbl-cell ts-tbl-cell--warn" style="text-align:center; color:#f59e0b;">${fmt(d.cancellations)}</td>
         <td class="ts-tbl-cell ts-tbl-cell--crit" style="text-align:center; color:#ef4444;">${fmt(d.aborts)}</td>
         <td class="ts-tbl-cell ts-tbl-cell--ok" style="text-align:center; color:#10b981;">${fmt(d.completions)}</td>
-        <td class="ts-tbl-cell ts-tbl-cell--rate" style="text-align:center; font-weight:600; color:${rateColor};">${d.success_rate}%</td>`;
+        <td class="ts-tbl-cell ts-tbl-cell--rate" style="text-align:center; font-weight:600; color:${rateColor};">${Math.round(d.success_rate)}%</td>`;
     }).join('');
 
     return `<tr class="ts-tbl-row${rowClass}">
@@ -656,6 +658,73 @@ function renderTsAgentGrid(data) {
           </tr>
         </thead>
         <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+/* ── Dialler Outcome Table ──────────────────────────────────────── */
+function renderDiallerOutcome(rows) {
+  const el = document.getElementById('ts-outcome-grid');
+  if (!el) return;
+  if (!rows || !rows.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-title">No outcome data available</div></div>';
+    return;
+  }
+
+  const fmt = IMSERV.fmt.num;
+
+  const tbody = rows.map(r => {
+    const stateCls = r.category_state === 'Usable' ? 'do-badge-usable' : 'do-badge-lowvol';
+    const opCls    = r.op_meaningful  === 'Yes'    ? 'do-badge-yes'    : 'do-badge-no';
+    const prefCls  = r.pref_contact   === 'LL'     ? 'do-badge-ll'     : 'do-badge-mob';
+
+    const mobW  = Math.min(r.mobile_pct  || 0, 100);
+    const landW = Math.min(r.landline_pct || 0, 100);
+
+    const [timeLabel, slotName] = r.best_time.split(' - ');
+
+    return `<tr>
+      <td class="do-td-cat">${r.category}</td>
+      <td class="do-td-time"><strong>${timeLabel}</strong> — ${slotName}</td>
+      <td>${r.best_day}</td>
+      <td><span class="do-badge ${opCls}">${r.op_meaningful}</span></td>
+      <td><span class="do-badge ${stateCls}">${r.category_state}</span></td>
+      <td class="do-td-num">${fmt(r.volume)}</td>
+      <td class="do-td-pct">${Math.round(r.vol_pct)}%</td>
+      <td>
+        <div class="do-ch-bar">
+          <div class="do-ch-bar-track"><div class="do-ch-bar-fill-mob" style="width:${mobW}%;"></div></div>
+          <span class="do-ch-val" style="color:#fb923c;">${Math.round(r.mobile_pct)}%</span>
+        </div>
+      </td>
+      <td>
+        <div class="do-ch-bar">
+          <div class="do-ch-bar-track"><div class="do-ch-bar-fill-land" style="width:${landW}%;"></div></div>
+          <span class="do-ch-val" style="color:#22d3ee;">${Math.round(r.landline_pct)}%</span>
+        </div>
+      </td>
+      <td><span class="do-badge ${prefCls}">${r.pref_contact}</span></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="do-table-wrap">
+      <table class="do-table">
+        <thead>
+          <tr>
+            <th>Business Category</th>
+            <th>Best Time to Call</th>
+            <th>Best Day to Call</th>
+            <th>Op Meaningful</th>
+            <th>Category State</th>
+            <th class="do-th-num">Volume</th>
+            <th class="do-th-num">Vol %</th>
+            <th class="do-th-num">Mobile</th>
+            <th class="do-th-num">Landline</th>
+            <th>Pref. Contact</th>
+          </tr>
+        </thead>
+        <tbody>${tbody}</tbody>
       </table>
     </div>`;
 }

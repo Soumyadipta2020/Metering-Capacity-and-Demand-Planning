@@ -3,14 +3,14 @@
 async function loadFinancialDashboard() {
   const region = IMSERV.getRegion();
   const year   = IMSERV.getYear();
-  const qs     = `?region=${region}&year=${year}`;
+  const qs     = IMSERV.getGlobalQs();
   const loadingTargets = ['fin-monthly-chart', 'fin-jobtype-chart', 'forecast-profit-chart'];
   IMSERV.setLoading(loadingTargets, true);
 
   try {
     const [kpis, forecast] = await Promise.all([
       IMSERV.apiFetch('/api/financial/kpis' + qs),
-      IMSERV.apiFetch('/api/financial/forecast-profitability' + (region ? `?region=${region}` : '')),
+      IMSERV.apiFetch('/api/financial/forecast-profitability' + qs),
     ]);
 
     if (kpis)     renderFinancialKPIs(kpis);

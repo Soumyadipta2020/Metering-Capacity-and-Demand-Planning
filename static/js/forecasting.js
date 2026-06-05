@@ -22,7 +22,7 @@ function invalidateForecastLoadState() {
 
 async function loadForecastingDashboard(force = false) {
   const region = IMSERV.getRegion();
-  const planningQs = `?region=${region}&year=2025`;
+  const planningQs = IMSERV.getGlobalQs({ year: 2025 });
   configureForecastPlanningCards();
   IMSERV.setLoading([
     'forecast-chart',
@@ -201,9 +201,8 @@ function renderChannelBreakdown(kpis) {
 }
 
 async function loadForecast() {
-  const region  = IMSERV.getRegion();
   const channel = document.getElementById('forecast-channel-filter')?.value || '';
-  const qs = `?region=${region}&channel=${channel}&weeks=52`;
+  const qs = IMSERV.getGlobalQs({ channel, weeks: 52 });
   IMSERV.setLoading(['forecast-chart', 'model-accuracy-body', 'model-comparison-chart'], true);
 
   try {
@@ -441,10 +440,8 @@ function renderModelComparison(data) {
 
 
 async function loadConversionTrend() {
-  const region = IMSERV.getRegion();
-  const year   = IMSERV.getYear();
   IMSERV.setLoading('conversion-trend-chart', true);
-  const funnel = await IMSERV.apiFetch('/api/forecasting/funnel?region=' + region + '&year=' + year);
+  const funnel = await IMSERV.apiFetch('/api/forecasting/funnel' + IMSERV.getGlobalQs());
   if (!funnel) {
     IMSERV.setLoading('conversion-trend-chart', false);
     return;
@@ -524,11 +521,9 @@ function loadActiveForecastTabData(showLoading = true, force = false) {
 }
 
 async function loadForecastingOverview(showLoading = true) {
-  const region = IMSERV.getRegion();
-  const year = IMSERV.getYear();
   if (showLoading) IMSERV.setLoading('channel-breakdown-chart', true);
   try {
-    const kpis = await IMSERV.apiFetch(`/api/forecasting/channel-kpis?region=${region}&year=${year}`);
+    const kpis = await IMSERV.apiFetch('/api/forecasting/channel-kpis' + IMSERV.getGlobalQs());
     if (kpis) renderChannelBreakdown(kpis);
     if (kpis) _forecastTabLoadKeys.set('overview', getForecastTabLoadKey('overview'));
   } finally {

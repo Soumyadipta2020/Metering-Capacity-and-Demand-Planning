@@ -3,7 +3,7 @@
 async function loadCancellationsDashboard(force = false) {
   const region = IMSERV.getRegion();
   const year = IMSERV.getYear();
-  const qs = `?region=${region}&year=${year}`;
+  const qs = IMSERV.getGlobalQs();
   const loadingTargets = ['pareto-chart', 'category-chart', 'recovery-constellation-stage', 'cancel-trend-chart', 'cancel-risk-panel'];
   IMSERV.setLoading(loadingTargets, true);
 
@@ -237,9 +237,8 @@ function renderCancelRegional(data) {
 }
 
 async function loadCancellationRisk(showLoading = true, providedData = null) {
-  const region = IMSERV.getRegion();
   if (showLoading) IMSERV.setLoading('cancel-risk-panel', true);
-  const data = providedData || await IMSERV.apiFetch('/api/cancellations/predict' + (region ? `?region=${region}` : ''));
+  const data = providedData || await IMSERV.apiFetch('/api/cancellations/predict' + IMSERV.getGlobalQs());
   const panel = document.getElementById('cancel-risk-panel');
   if (!panel || !data) {
     if (showLoading) IMSERV.setLoading('cancel-risk-panel', false);
