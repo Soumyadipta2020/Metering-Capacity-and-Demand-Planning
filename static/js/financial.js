@@ -24,8 +24,12 @@ async function loadFinancialDashboard() {
 }
 
 function hydrateScenarioDefaults(kpis) {
+  const selectedMonth = document.getElementById('global-month');
+  const periodLabel = selectedMonth?.value
+    ? selectedMonth.options[selectedMonth.selectedIndex]?.textContent
+    : 'Forecast Period';
   const fields = {
-    'sc-name': 'Base Case 2026',
+    'sc-name': `Base Case ${periodLabel}`,
     'sc-volume': Math.round(kpis.total_requests || 0),
     'sc-completion': Math.round(kpis.completion_rate || 68),
     'sc-cancel': Math.round(kpis.cancellation_rate || 15),
@@ -128,7 +132,7 @@ function renderForecastProfit(data) {
       datasets: [
         { label: 'Forecast Revenue GBP', data: mf.map(m => m.revenue), borderColor: IMSERV.colors.ok,      fill: false, tension: 0.4, pointRadius: 0, borderDash: [5,3] },
         { label: 'Forecast Cost GBP',    data: mf.map(m => m.cost),    borderColor: IMSERV.colors.crit,    fill: false, tension: 0.4, pointRadius: 0, borderDash: [5,3] },
-        { label: '2026 Margin %',   data: mf.map(m => m.margin_pct), borderColor: IMSERV.colors.accent, fill: false, tension: 0.4, pointRadius: 3, yAxisID: 'y1' },
+        { label: 'Forecast Margin %',   data: mf.map(m => m.margin_pct), borderColor: IMSERV.colors.accent, fill: false, tension: 0.4, pointRadius: 3, yAxisID: 'y1' },
       ],
     },
     options: {

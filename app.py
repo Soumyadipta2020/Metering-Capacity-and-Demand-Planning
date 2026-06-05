@@ -1362,9 +1362,10 @@ def field_ops_optimise():
 def financial_kpis():
     region = request.args.get("region")
     year   = _request_year()
+    month  = request.args.get("month") or None
     try:
         get_kpis, *_ = _get_financial_engine()
-        return jsonify(get_kpis(region, year))
+        return jsonify(get_kpis(region, year, month=month, future_only=True))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1409,9 +1410,10 @@ def financial_compare():
 @app.route("/api/financial/forecast-profitability")
 def financial_forecast():
     region = request.args.get("region")
+    month  = request.args.get("month") or None
     try:
         _, _, _, get_forecast = _get_financial_engine()
-        return jsonify(get_forecast(region))
+        return jsonify(get_forecast(region, month=month))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1619,27 +1621,57 @@ def get_regions():
 def get_filters():
     """Return available months and suppliers for global filter dropdowns."""
     import calendar
+    from engine.date_windows import month_options
     from engine.sqlite_store import query_rows
     try:
-        month_rows = query_rows("""
-            SELECT DISTINCT strftime('%Y-%m', requested_date) AS month
-            FROM master_operations
-            WHERE requested_date IS NOT NULL
-            ORDER BY month
-        """) or []
-        months = []
-        for r in month_rows:
-            m = r.get("month")
-            if m:
-                year, mo = int(m[:4]), int(m[5:7])
-                months.append({"value": m, "label": f"{calendar.month_abbr[mo]} {year}"})
+        manifest = _read_data_manifest()
+        def manifest_months(key: str) -> list:
+            period = str(manifest.get(key) or "")
+            if " to " not in period:
+                return []
+            try:
+                start_raw, end_raw = period.split(" to ", 1)
+                return month_options(date.fromisoformat(start_raw), date.fromisoformat(end_raw))
+            except (TypeError, ValueError):
+                return []
+
+        months = manifest_months("actual_period")
+        forecast_months = manifest_months("forecast_period")
+
+        if not months:
+            month_rows = query_rows("""
+                SELECT DISTINCT strftime('%Y-%m', requested_date) AS month
+                FROM master_operations
+                WHERE requested_date IS NOT NULL
+                  AND requested_date <> ''
+                  AND is_forecast = '0'
+                ORDER BY month
+            """) or []
+            for r in month_rows:
+                m = r.get("month")
+                if m:
+                    year, mo = int(m[:4]), int(m[5:7])
+                    months.append({"value": m, "label": f"{calendar.month_abbr[mo]} {year}"})
+
+        if not forecast_months:
+            month_rows = query_rows("""
+                SELECT DISTINCT printf('%04d-%02d', year, month) AS month
+                FROM financial_data
+                WHERE is_forecast = '1'
+                ORDER BY month
+            """) or []
+            for r in month_rows:
+                m = r.get("month")
+                if m:
+                    year, mo = int(m[:4]), int(m[5:7])
+                    forecast_months.append({"value": m, "label": f"{calendar.month_abbr[mo]} {year}"})
 
         supplier_rows = query_rows(
             "SELECT DISTINCT supplier_name FROM suppliers ORDER BY supplier_name"
         ) or []
         suppliers = [r["supplier_name"] for r in supplier_rows if r.get("supplier_name")]
 
-        return jsonify({"months": months, "suppliers": suppliers})
+        return jsonify({"months": months, "forecast_months": forecast_months, "suppliers": suppliers})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

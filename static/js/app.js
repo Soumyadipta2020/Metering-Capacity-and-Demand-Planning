@@ -12,6 +12,7 @@ const VIEW_CONFIG = {
 
 let _currentView = 'journey';
 let _sidebarResizeObserver = null;
+let _globalFilterOptions = { months: [], forecast_months: [] };
 const _viewLoadKeys = new Map();
 
 function getViewYear(viewName) {
@@ -19,7 +20,7 @@ function getViewYear(viewName) {
 }
 
 function getViewLoadKey(viewName) {
-  return `${viewName}|${IMSERV.getRegion()}|${getViewYear(viewName)}`;
+  return `${viewName}|${IMSERV.getRegion()}|${IMSERV.getMonth()}|${getViewYear(viewName)}`;
 }
 
 function invalidateLoadedViews() {
@@ -130,8 +131,51 @@ function switchView(viewName, navEl) {
   }
 
   _currentView = viewName;
+  updateHeaderFiltersForView(viewName);
+  refreshGlobalMonthOptions(viewName);
   loadViewData(viewName);
   if (viewName === 'field-ops') activateSidebarSubnav(viewName, typeof _activeOpsTab !== 'undefined' ? _activeOpsTab : 'capacity');
+}
+
+function updateHeaderFiltersForView(viewName) {
+  const regionSel = document.getElementById('global-region');
+  const monthSel = document.getElementById('global-month');
+  if (!regionSel && !monthSel) return;
+
+  const hideRegion = viewName === 'meterview';
+  const hideMonth = viewName === 'field-ops' || viewName === 'forecasting';
+  const clearAndToggle = (select, hidden) => {
+    if (!select) return;
+    if (hidden && select.value) select.value = '';
+    select.hidden = hidden;
+    select.disabled = hidden;
+    select.setAttribute('aria-hidden', String(hidden));
+  };
+
+  clearAndToggle(regionSel, hideRegion);
+  clearAndToggle(monthSel, hideMonth || viewName === 'meterview');
+}
+
+function monthOptionsForView(viewName) {
+  return viewName === 'financial'
+    ? (_globalFilterOptions.forecast_months || [])
+    : (_globalFilterOptions.months || []);
+}
+
+function refreshGlobalMonthOptions(viewName = _currentView) {
+  const monthSel = document.getElementById('global-month');
+  if (!monthSel) return;
+  const previous = monthSel.value;
+  const options = monthOptionsForView(viewName);
+  const allLabel = viewName === 'financial' ? 'All Future Months' : 'All Months';
+  monthSel.innerHTML = `<option value="">${allLabel}</option>`;
+  options.forEach(({ value, label }) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    monthSel.appendChild(opt);
+  });
+  monthSel.value = options.some(opt => opt.value === previous) ? previous : '';
 }
 
 function onRegionChange() {
@@ -157,14 +201,12 @@ function onJourneySupplierChange() {
 async function populateGlobalFilters() {
   try {
     const data = await fetch('/api/filters').then(r => r.json());
+    _globalFilterOptions = {
+      months: data.months || [],
+      forecast_months: data.forecast_months || data.months || [],
+    };
 
-    const monthSel = document.getElementById('global-month');
-    (data.months || []).forEach(({ value, label }) => {
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = label;
-      monthSel.appendChild(opt);
-    });
+    refreshGlobalMonthOptions(_currentView);
 
     const supplierSel = document.getElementById('journey-supplier-filter');
     if (supplierSel) {
@@ -474,6 +516,7 @@ function initChatbotWidget() {
 document.addEventListener('DOMContentLoaded', function () {
   initFluidSidebar();
   initChatbotWidget();
+  updateHeaderFiltersForView(_currentView);
   populateGlobalFilters();
   loadViewData('journey');
 });

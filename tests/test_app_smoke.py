@@ -1,5 +1,7 @@
 import os
+import json
 import unittest
+from pathlib import Path
 
 os.environ.setdefault("FLASK_ENV", "testing")
 os.environ.setdefault("ENABLE_AI_RECOMMENDATIONS", "false")
@@ -46,6 +48,34 @@ class AppSmokeTests(unittest.TestCase):
 
         self.assertIn("NW", codes)
         self.assertIn("SE", codes)
+
+    def test_global_filters_use_actual_period_months(self):
+        payload = self.assert_json_response("/api/filters")
+        months = payload["months"]
+        forecast_months = payload["forecast_months"]
+        manifest = json.loads(
+            (Path(__file__).resolve().parent.parent / "data" / "inputs" / "manifest.json").read_text()
+        )
+        actual_start, actual_end = manifest["actual_period"].split(" to ")
+        forecast_start, forecast_end = manifest["forecast_period"].split(" to ")
+
+        self.assertEqual(months[0]["value"], actual_start[:7])
+        self.assertEqual(months[-1]["value"], actual_end[:7])
+        self.assertEqual(len(months), 12)
+        self.assertEqual(forecast_months[0]["value"], forecast_start[:7])
+        self.assertEqual(forecast_months[-1]["value"], forecast_end[:7])
+        self.assertEqual(len(forecast_months), 12)
+
+    def test_financial_dashboard_uses_future_months(self):
+        payload = self.assert_json_response("/api/financial/kpis?year=2026")
+        months = [row["month"] for row in payload["monthly_trend"]]
+
+        self.assertEqual(months[0], "2026-06")
+        self.assertEqual(months[-1], "2027-05")
+        self.assertEqual(len(months), 12)
+
+        single_month = self.assert_json_response("/api/financial/kpis?year=2026&month=2026-06")
+        self.assertEqual([row["month"] for row in single_month["monthly_trend"]], ["2026-06"])
 
     def test_core_dashboard_api_endpoints(self):
         endpoints = [

@@ -128,11 +128,11 @@ def _historical_financial_assumptions(region_code: str = None) -> dict:
     }
 
 
-def _apply_2026_forecast_financials(rows: list, region_code: str = None) -> list:
+def _apply_forecast_financials(rows: list, region_code: str = None) -> list:
     assumptions = _historical_financial_assumptions(region_code)
     result = []
     for row in rows:
-        if to_int(row.get("year")) != 2026:
+        if str(row.get("is_forecast", "0")) != "1":
             result.append(row)
             continue
 
@@ -168,7 +168,8 @@ def _apply_2026_forecast_financials(rows: list, region_code: str = None) -> list
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
-def get_financial_kpis(region_code: str = None, year: int = 2025) -> dict:
+def get_financial_kpis(region_code: str = None, year: int = 2025,
+                       month: str = None, future_only: bool = False) -> dict:
     """
     Aggregated financial KPIs from historical data.
 
@@ -178,9 +179,16 @@ def get_financial_kpis(region_code: str = None, year: int = 2025) -> dict:
     rows = get_financial_data()
     if region_code:
         rows = [r for r in rows if r["region_code"] == region_code]
-    rows = [r for r in rows if to_int(r.get("year")) == year]
-    if year == 2026:
-        rows = _apply_2026_forecast_financials(rows, region_code)
+    if future_only:
+        rows = [r for r in rows if str(r.get("is_forecast", "0")) == "1"]
+    else:
+        rows = [r for r in rows if to_int(r.get("year")) == year]
+    if month:
+        rows = [
+            r for r in rows
+            if f"{r.get('year')}-{int(r.get('month', 1)):02d}" == month
+        ]
+    rows = _apply_forecast_financials(rows, region_code)
 
     total_revenue   = sum(to_float(r["revenue_gbp"])        for r in rows)
     total_cost      = sum(to_float(r["total_cost_gbp"])     for r in rows)
@@ -362,14 +370,14 @@ def compare_scenarios(scenarios: list) -> dict:
     }
 
 
-def get_forecast_profitability(region_code: str = None) -> dict:
+def get_forecast_profitability(region_code: str = None, month: str = None) -> dict:
     """
-    2026 forecast profitability based on 2026 forecast demand.
+    Forecast profitability based on the rolling future demand window.
 
     Returns:
-        dict with monthly P&L forecast for 2026
+        dict with monthly P&L forecast for future months
     """
-    forecast_kpis = get_financial_kpis(region_code, year=2026)
+    forecast_kpis = get_financial_kpis(region_code, year=2026, month=month, future_only=True)
     monthly_rows = forecast_kpis["monthly_trend"]
 
     if not monthly_rows:
