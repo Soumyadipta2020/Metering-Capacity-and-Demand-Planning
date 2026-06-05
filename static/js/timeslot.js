@@ -2,6 +2,7 @@
 
 let _tsFilterType  = 'all';
 let _tsFilterValue = '';
+let _tsSupplier    = '';
 let _tsAgentData   = null;
 let _tsLoaded      = false;
 let _tsWindow      = null;
@@ -122,7 +123,8 @@ async function tsEnsureWindow() {
 function tsQs() {
   const region = IMSERV.getRegion();
   let qs = `filter_type=${_tsFilterType}&filter_value=${encodeURIComponent(_tsFilterValue)}`;
-  if (region) qs += `&region=${region}`;
+  if (region)      qs += `&region=${region}`;
+  if (_tsSupplier) qs += `&supplier=${encodeURIComponent(_tsSupplier)}`;
   return qs;
 }
 
@@ -134,14 +136,18 @@ async function loadTimeslotDashboard(force = false) {
   tsSetLoading();
   try {
     const dashboard = await IMSERV.apiFetch('/api/timeslot/dashboard?' + tsQs(), { force });
-    const chData = dashboard?.channel_booking;
+    const chData  = dashboard?.channel_booking;
     const bizData = dashboard?.business_type;
     const attData = dashboard?.attempts_overview;
-    const agData = dashboard?.agent_view;
-    if (chData)  renderTsChannelGrid(chData);
-    if (bizData) renderTsBizWrap(bizData);
-    if (attData) renderTsAttemptsGrid(attData);
-    if (agData)  { _tsAgentData = agData; renderTsAgentGrid(agData); }
+    const agData  = dashboard?.agent_view;
+    const sumData = dashboard?.summary;
+    const supList = dashboard?.suppliers;
+    if (supList)  tsPopulateSupplierSelect(supList);
+    if (sumData)  renderTsSummaryKpis(sumData);
+    if (chData)   renderTsChannelGrid(chData);
+    if (bizData)  renderTsBizWrap(bizData);
+    if (attData)  renderTsAttemptsGrid(attData);
+    if (agData)   { _tsAgentData = agData; renderTsAgentGrid(agData); }
   } catch (e) {
     console.error('Timeslot load error', e);
   }
@@ -160,7 +166,99 @@ function tsSetLoading() {
   });
 }
 
-/* ── Filter controls ───────────────────────────────────────── */
+/* ── Summary KPI Cards ─────────────────────────────────────────── */
+function renderTsSummaryKpis(s) {
+  const fmt = IMSERV.fmt.num;
+
+  // Bookings card
+  const bkEl = document.getElementById('ts-kpi-bookings');
+  if (bkEl) bkEl.textContent = fmt(s.bookings ?? 0);
+  const bkSub = document.getElementById('ts-kpi-bookings-sub');
+  if (bkSub && s.attempts) {
+    const bkRate = s.attempts > 0 ? ((s.bookings / s.attempts) * 100).toFixed(1) : '—';
+    bkSub.textContent = bkRate + '% booking rate';
+    bkSub.style.color = 'var(--info)';
+  }
+
+  // Completions card
+  const cpEl = document.getElementById('ts-kpi-completions');
+  if (cpEl) cpEl.textContent = fmt(s.completions ?? 0);
+  const cpSub = document.getElementById('ts-kpi-completions-sub');
+  if (cpSub && s.bookings) {
+    const execRate = s.bookings > 0 ? ((s.completions / s.bookings) * 100).toFixed(1) : '—';
+    cpSub.textContent = execRate + '% of booked';
+    cpSub.style.color = 'var(--ok)';
+  }
+
+  // Success Rate card — colour by threshold
+  const rateEl = document.getElementById('ts-kpi-rate');
+  const rateCard = document.getElementById('ts-kpi-rate-card');
+  const rateSub = document.getElementById('ts-kpi-rate-sub');
+  const rate = s.success_rate ?? 0;
+  if (rateEl) rateEl.textContent = rate.toFixed(1) + '%';
+  if (rateCard) {
+    rateCard.classList.remove('rate-ok','rate-warn','rate-crit','ok','warn','crit');
+    if (rate >= 15) {
+      rateCard.classList.add('rate-ok', 'ok');
+    } else if (rate >= 10) {
+      rateCard.classList.add('rate-warn', 'warn');
+    } else {
+      rateCard.classList.add('rate-crit', 'crit');
+    }
+  }
+  if (rateSub) {
+    rateSub.textContent = rate >= 15 ? '✓ On target' : rate >= 10 ? '⚠ Below target' : '✗ Critical';
+    rateSub.style.color = rate >= 15 ? 'var(--ok)' : rate >= 10 ? 'var(--warn)' : 'var(--crit)';
+  }
+}
+
+/* ── Supplier filter ──────────────────────────────────────── */
+
+/**
+ * Populate the supplier <select> from the API supplier list.
+ * Only re-populates on the very first call (keeps the user's selection stable
+ * across filter refreshes; only resets if the list itself changed).
+ */
+let _tsSupplierListPopulated = false;
+function tsPopulateSupplierSelect(suppliers) {
+  const sel = document.getElementById('ts-supplier-select');
+  if (!sel || !Array.isArray(suppliers) || suppliers.length === 0) return;
+  if (_tsSupplierListPopulated) return;   // Don't overwrite user's selection on reload
+  _tsSupplierListPopulated = true;
+
+  // Keep the 'All Suppliers' placeholder as first option
+  sel.innerHTML = '<option value="">All Suppliers</option>';
+  suppliers.forEach(({ name }) => {
+    if (!name) return;
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === _tsSupplier) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+/**
+ * Called by the <select onchange> in index.html.
+ * Stores the chosen supplier, marks dashboard stale, and reloads.
+ */
+window.tsSetSupplier = async function(name) {
+  _tsSupplier = name || '';
+  _tsLoaded   = false;
+
+  // Keep the active-label in sync
+  const lbl = document.getElementById('ts-active-label');
+  if (lbl) {
+    const base = _tsFilterType === 'all'
+      ? (_tsWindow?.label || 'Rolling actuals')
+      : _tsFilterValue;
+    lbl.textContent = `Showing: ${base}${_tsSupplier ? ' • ' + _tsSupplier : ''}`;
+  }
+
+  loadTimeslotDashboard(true);
+};
+
+/* ── Filter controls ──────────────────────────────────────── */
 
 window.tsSetFilter = async function(ftype, fval) {
   await tsEnsureWindow();

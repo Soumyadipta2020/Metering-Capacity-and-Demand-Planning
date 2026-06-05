@@ -7004,6 +7004,46 @@ body {
   gap: 12px;
   margin-bottom: 16px;
 }
+
+/* Summary KPI cards row — 3 equal columns matching Journey tab card style */
+.ts-summary-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.ts-summary-kpis .kpi-card {
+  min-height: 130px;
+  padding: 58px 16px 18px;
+  display: flex;
+  flex-direction: column;
+}
+.ts-summary-kpis .kpi-label {
+  min-height: 0;
+  margin-bottom: 8px;
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.ts-summary-kpis .kpi-value {
+  font-size: 32px;
+  font-weight: 900;
+  margin-top: auto;
+  margin-bottom: 0;
+  line-height: 1.05;
+}
+.ts-summary-kpis .kpi-fallout {
+  margin-top: 6px;
+}
+.ts-summary-kpis .kpi-icon {
+  top: 16px;
+  left: 16px;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+}
+/* Dynamic colour for success rate card */
+.ts-summary-kpis .kpi-card.rate-ok   { --card-accent: var(--ok);   --card-accent-soft: rgba(2,129,120,0.16); border-color: rgba(2,129,120,0.36); }
+.ts-summary-kpis .kpi-card.rate-warn { --card-accent: var(--warn); --card-accent-soft: rgba(244,210,90,0.16); border-color: rgba(244,210,90,0.36); }
+.ts-summary-kpis .kpi-card.rate-crit { --card-accent: var(--crit); --card-accent-soft: rgba(251,130,129,0.16); border-color: rgba(251,130,129,0.36); }
 .ts-kpi-card {
   position: relative;
   overflow: hidden;

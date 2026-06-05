@@ -242,7 +242,27 @@
           </div>
           <div class="ts-active-label" id="ts-active-label">Showing: Rolling actuals</div>
         </div>
-
+        <!-- Summary KPI Cards -->
+        <div class="kpi-grid ts-summary-kpis" id="ts-summary-kpis">
+          <div class="kpi-card info">
+            <div class="kpi-icon">📋</div>
+            <div class="kpi-label">Appointments Booked</div>
+            <div class="kpi-value" id="ts-kpi-bookings">—</div>
+            <div class="kpi-fallout" id="ts-kpi-bookings-sub"></div>
+          </div>
+          <div class="kpi-card ok">
+            <div class="kpi-icon">✅</div>
+            <div class="kpi-label">Executed Successfully</div>
+            <div class="kpi-value" id="ts-kpi-completions">—</div>
+            <div class="kpi-fallout" id="ts-kpi-completions-sub"></div>
+          </div>
+          <div class="kpi-card" id="ts-kpi-rate-card">
+            <div class="kpi-icon">📈</div>
+            <div class="kpi-label">Success Rate</div>
+            <div class="kpi-value" id="ts-kpi-rate">—</div>
+            <div class="kpi-fallout" id="ts-kpi-rate-sub"></div>
+          </div>
+        </div>
 
 
         <!-- 1. Channel Booking by Slot -->
@@ -965,7 +985,7 @@
 <script src="/static/js/cancellations.js?v=4"></script>
 <script src="/static/js/field_ops.js?v=2"></script>
 <script src="/static/js/financial.js?v=2"></script>
-<script src="/static/js/timeslot.js?v=6"></script>
+<script src="/static/js/timeslot.js?v=8"></script>
 <script src="/static/js/fieldscorecard.js?v=1"></script>
 <script src="/static/js/roster.js?v=8"></script>
 <script src="/static/js/longterm.js?v=2"></script>
