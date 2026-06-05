@@ -265,7 +265,7 @@ function onMonthChange() {
 }
 
 function onJourneySupplierChange() {
-  if (typeof loadJourneyDashboard === 'function') loadJourneyDashboard(true);
+  if (typeof loadJourneySuppliersOnly === 'function') loadJourneySuppliersOnly(true);
 }
 
 async function populateGlobalFilters() {

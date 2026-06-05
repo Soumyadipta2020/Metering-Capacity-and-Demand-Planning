@@ -9,7 +9,7 @@ async function loadJourneyDashboard(force = false) {
   const region   = IMSERV.getRegion();
   const year     = IMSERV.getYear();
   const supplier = document.getElementById('journey-supplier-filter')?.value || '';
-  const qs       = IMSERV.getGlobalQs(supplier ? { supplier } : {});
+  const qs       = IMSERV.getGlobalQs();
   refreshJourneyVisualLabels();
   const loadingTargets = [
     'journey-trend-chart',
@@ -36,7 +36,11 @@ async function loadJourneyDashboard(force = false) {
 
     if (trend) renderJourneyTrend(trend);
 
-    if (suppliers) renderSupplierBehaviour(suppliers);
+    if (supplier) {
+      await loadJourneySuppliersOnly(force);
+    } else if (suppliers) {
+      renderSupplierBehaviour(suppliers);
+    }
 
     const treeContainer = document.getElementById('decomposition-tree-container');
     if (decomposition && treeContainer) renderDecompositionTree(decomposition, treeContainer);
@@ -49,6 +53,18 @@ async function loadJourneyDashboard(force = false) {
     if (ai?.recommendations) updateAiTriggerState(ai.recommendations);
     if (ai?.summary) document.getElementById('journey-ai-text').textContent = ai.summary || '';
   }, 250);
+}
+
+async function loadJourneySuppliersOnly(force = false) {
+  const supplier = document.getElementById('journey-supplier-filter')?.value || '';
+  const qs = IMSERV.getGlobalQs({ top_n: 25, ...(supplier ? { supplier } : {}) });
+  IMSERV.setLoading('supplier-behaviour-grid', true);
+  try {
+    const suppliers = await IMSERV.apiFetch('/api/journey/suppliers' + qs, { force });
+    if (suppliers) renderSupplierBehaviour(suppliers);
+  } finally {
+    IMSERV.setLoading('supplier-behaviour-grid', false);
+  }
 }
 
 function refreshJourneyVisualLabels() {
