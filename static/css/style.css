@@ -6989,6 +6989,66 @@ body {
   font-weight: 600;
   color: var(--text-muted);
 }
+.ts-filter-group--supplier {
+  min-width: 280px;
+}
+.ts-supplier-select {
+  min-width: 220px;
+  max-width: 360px;
+}
+
+/* Dialer KPI cards */
+.ts-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ts-kpi-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 92px;
+  padding: 16px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.ts-kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--brand-primary);
+}
+.ts-kpi-card--attempts::before { background: #06b6d4; }
+.ts-kpi-card--bookings::before { background: #f59e0b; }
+.ts-kpi-card--success::before { background: #10b981; }
+.ts-kpi-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.ts-kpi-value {
+  font-size: 26px;
+  line-height: 1.1;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+.ts-kpi-note {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Section card */
 .ts-section-card {
@@ -7401,6 +7461,48 @@ body {
   text-align: center;
   white-space: nowrap;
 }
+.ts-ag-table--agent-summary {
+  min-width: 840px;
+}
+.ts-ag-table--agent-summary .ts-tbl-total-hd {
+  text-align: right;
+}
+.ts-tbl-cell--metric {
+  min-width: 150px;
+}
+.ts-agent-metric {
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) 52px;
+  align-items: center;
+  gap: 10px;
+}
+.ts-agent-metric-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--scene-track);
+  overflow: hidden;
+}
+.ts-agent-metric-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #06b6d4;
+}
+.ts-tbl-cell--bookings .ts-agent-metric-fill {
+  background: #f59e0b;
+}
+.ts-agent-metric span,
+.ts-tbl-cell--count {
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  color: var(--text-primary);
+}
+.ts-tbl-cell--count {
+  min-width: 104px;
+}
+.ts-tbl-cell--warn { color: #f59e0b; }
+.ts-tbl-cell--crit { color: #ef4444; }
+.ts-tbl-cell--ok { color: #10b981; }
 .ts-tbl-row { border-bottom: 1px solid var(--scene-grid); }
 .ts-tbl-row:hover td { background: var(--scene-grid) !important; }
 .ts-tbl-row--alt td { background: rgba(0,0,0,0.018); }
@@ -7409,6 +7511,9 @@ body {
 /* Responsive */
 @media (max-width: 900px) {
   .ts-slots-3 { grid-template-columns: 1fr; }
+  .ts-kpi-strip { grid-template-columns: 1fr; }
+  .ts-filter-group--supplier,
+  .ts-supplier-select { min-width: 100%; max-width: 100%; }
   .ts-biz-split { grid-template-columns: 1fr; }
   .ts-biz-half { border-right: none; border-bottom: 1px solid var(--border); }
   .ts-ag-name { width: 100px; }

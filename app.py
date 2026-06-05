@@ -1754,29 +1754,48 @@ def _fmt_ts_attempts(data: dict, safe_pct_fn) -> dict:
     }
 
 def _fmt_ts_agents(agents: dict, safe_pct_fn) -> dict:
-    ranked = sorted(
-        agents.items(),
-        key=lambda x: -sum(x[1][s]["attempts"] for s in SLOTS),
-    )
-    result = {s: [] for s in SLOTS}
-    for agent, slotdata in ranked:
-        for slot in SLOTS:
-            d = slotdata[slot]
-            result[slot].append({
-                "agent": agent,
-                "attempts": d["attempts"],
-                "bookings": d["bookings"],
-                "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
-            })
-    for slot in SLOTS:
-        result[slot].sort(key=lambda x: -x["attempts"])
-    return result
+    rows = []
+    for agent, d in sorted(agents.items(), key=lambda x: (-x[1]["attempts"], x[0])):
+        slots_data = {}
+        for s, sd in d["slots"].items():
+            slots_data[s] = {
+                "attempts": sd["attempts"],
+                "bookings": sd["bookings"],
+                "cancellations": sd["cancellations"],
+                "aborts": sd["aborts"],
+                "completions": sd["completions"],
+                "success_rate": safe_pct_fn(sd["completions"], sd["bookings"]),
+                "booking_rate": safe_pct_fn(sd["bookings"], sd["attempts"]),
+            }
+        rows.append({
+            "agent": agent,
+            "attempts": d["attempts"],
+            "bookings": d["bookings"],
+            "cancellations": d["cancellations"],
+            "aborts": d["aborts"],
+            "completions": d["completions"],
+            "success_rate": safe_pct_fn(d["completions"], d["bookings"]),
+            "booking_rate": safe_pct_fn(d["bookings"], d["attempts"]),
+            "slots": slots_data
+        })
+    return rows[:30]
 
-def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> dict:
+def _fmt_ts_summary(summary: dict, safe_pct_fn) -> dict:
+    return {
+        "attempts": summary["attempts"],
+        "bookings": summary["bookings"],
+        "cancellations": summary["cancellations"],
+        "aborts": summary["aborts"],
+        "completions": summary["completions"],
+        "success_rate": safe_pct_fn(summary["completions"], summary["bookings"]),
+    }
+
+def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str, supplier: str | None = None) -> dict:
     region_key = region or ""
     ftype = ftype or "all"
     fval = fval or ""
-    cache_key = (_timeslot_source_signature(), region_key, ftype, fval)
+    supplier_key = (supplier or "").strip()
+    cache_key = (_timeslot_source_signature(), region_key, ftype, fval, supplier_key)
     with _TIMESLOT_CACHE_LOCK:
         cached = _TIMESLOT_CACHE.get(cache_key)
         if cached is not None:
@@ -1792,6 +1811,7 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> d
         "region_code",
         "requested_date",
         "primary_channel",
+        "supplier_name",
         "booked_date",
         "status",
         "contacts_count",
@@ -1800,8 +1820,13 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> d
     by_slot = {s: {} for s in SLOTS}
     by_day = {d: {} for d in DAYS}
     attempts = {s: {"attempts": 0, "contacts": 0, "bookings": 0} for s in SLOTS}
+    summary = {"attempts": 0, "bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0}
+    supplier_counts = {}
     agents = {
-        name: {s: {"attempts": 0, "bookings": 0} for s in SLOTS}
+        name: {
+            "attempts": 0, "bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0,
+            "slots": {s: {"attempts": 0, "bookings": 0, "cancellations": 0, "aborts": 0, "completions": 0} for s in SLOTS}
+        }
         for name in _VOICE_AGENTS
     }
 
@@ -1821,9 +1846,28 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> d
         if not _ts_filter_date(requested, ftype, fval):
             continue
 
+        supplier_name = (job.get("supplier_name") or "Unassigned Supplier").strip() or "Unassigned Supplier"
+        supplier_counts[supplier_name] = supplier_counts.get(supplier_name, 0) + 1
+        if supplier_key and supplier_name != supplier_key:
+            continue
+
         job_ref = job.get("job_ref", "")
         booked = bool(job.get("booked_date"))
+        status = job.get("status", "")
+        complete = status == "Completed"
+        cancelled = status == "Cancelled"
+        aborted = status == "Aborted"
         slot = _job_time_slot(job_ref, booked)
+
+        summary["attempts"] += 1
+        if booked:
+            summary["bookings"] += 1
+        if complete:
+            summary["completions"] += 1
+        if cancelled:
+            summary["cancellations"] += 1
+        if aborted:
+            summary["aborts"] += 1
 
         channel = job.get("primary_channel") or "Unknown"
         channel_bucket = channel_data[slot].setdefault(channel, {"attempts": 0, "bookings": 0})
@@ -1832,7 +1876,6 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> d
             channel_bucket["bookings"] += 1
 
         btype = _job_biz_category(job_ref)
-        complete = job.get("status") == "Completed"
         dow = requested.strftime("%a") if requested else None
         for store, key in ((by_slot, slot), (by_day, dow)):
             if key not in store:
@@ -1851,11 +1894,29 @@ def _get_timeslot_dashboard_data(region: str | None, ftype: str, fval: str) -> d
             attempts[slot]["bookings"] += 1
 
         agent = _job_voice_agent(job_ref)
-        agents[agent][slot]["attempts"] += 1
+        agents[agent]["attempts"] += 1
+        agents[agent]["slots"][slot]["attempts"] += 1
         if booked:
-            agents[agent][slot]["bookings"] += 1
+            agents[agent]["bookings"] += 1
+            agents[agent]["slots"][slot]["bookings"] += 1
+        if complete:
+            agents[agent]["completions"] += 1
+            agents[agent]["slots"][slot]["completions"] += 1
+        if cancelled:
+            agents[agent]["cancellations"] += 1
+            agents[agent]["slots"][slot]["cancellations"] += 1
+        if aborted:
+            agents[agent]["aborts"] += 1
+            agents[agent]["slots"][slot]["aborts"] += 1
+
+    suppliers = [
+        {"name": name, "count": count}
+        for name, count in sorted(supplier_counts.items(), key=lambda x: (-x[1], x[0]))
+    ]
 
     result = {
+        "summary": _fmt_ts_summary(summary, safe_pct_fn),
+        "suppliers": suppliers,
         "channel_booking": _fmt_ts_channel(channel_data, safe_pct_fn),
         "business_type": {
             "by_slot": _fmt_ts_business(by_slot, safe_pct_fn),
@@ -1878,7 +1939,8 @@ def ts_dashboard():
         region = request.args.get("region")
         ftype = request.args.get("filter_type", "all")
         fval = request.args.get("filter_value", "")
-        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval))
+        supplier = request.args.get("supplier", "")
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval, supplier))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1889,7 +1951,8 @@ def ts_channel_booking():
         region  = request.args.get("region")
         ftype   = request.args.get("filter_type", "all")
         fval    = request.args.get("filter_value", "")
-        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval)["channel_booking"])
+        supplier = request.args.get("supplier", "")
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval, supplier)["channel_booking"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1901,7 +1964,8 @@ def ts_business_type():
         region = request.args.get("region")
         ftype  = request.args.get("filter_type", "all")
         fval   = request.args.get("filter_value", "")
-        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval)["business_type"])
+        supplier = request.args.get("supplier", "")
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval, supplier)["business_type"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1913,19 +1977,21 @@ def ts_attempts_overview():
         region = request.args.get("region")
         ftype  = request.args.get("filter_type", "all")
         fval   = request.args.get("filter_value", "")
-        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval)["attempts_overview"])
+        supplier = request.args.get("supplier", "")
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval, supplier)["attempts_overview"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/timeslot/agent-view")
 def ts_agent_view():
-    """Individual voice agent (30 agents) attempts vs bookings by time slot."""
+    """Individual voice agent (30 agents) attempts, bookings and fallout."""
     try:
         region = request.args.get("region")
         ftype  = request.args.get("filter_type", "all")
         fval   = request.args.get("filter_value", "")
-        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval)["agent_view"])
+        supplier = request.args.get("supplier", "")
+        return jsonify(_get_timeslot_dashboard_data(region, ftype, fval, supplier)["agent_view"])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2680,6 +2746,11 @@ def data_status_api():
         "auto_generate_enabled": _auto_generate_data_enabled(),
         "windows": profile
     })
+
+@app.route("/api/data/actual-window")
+def data_actual_window_api():
+    from engine.date_windows import actual_window_payload
+    return jsonify(actual_window_payload())
 
 # ─────────────────────────────────────────────────────────────────────────────
 

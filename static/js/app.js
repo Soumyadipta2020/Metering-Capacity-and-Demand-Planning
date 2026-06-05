@@ -6,7 +6,7 @@ const VIEW_CONFIG = {
   cancellations: { title: 'Appointment Fallout Risk and Recovery', breadcrumb: 'IMSERV / Appointments / Risk and Recovery', loader: loadCancellationsDashboard },
   'field-ops': { title: 'Appointment and Resource Planning', breadcrumb: 'IMSERV / Planning / Contact Attempt Forecast and Capacity', loader: loadFieldOpsDashboard },
   financial: { title: 'Appointment and Resource Financial Planning', breadcrumb: 'IMSERV / Finance / Scenario Impact', loader: loadFinancialDashboard },
-  timeslot:  { title: 'Time-Slot Booking Analysis', breadcrumb: 'IMSERV / Appointments / Time-Slot Analysis', loader: loadTimeslotDashboard },
+  timeslot:  { title: 'Dialer Performance', breadcrumb: 'IMSERV / Appointments / Dialer Performance', loader: loadTimeslotDashboard },
   meterview: { title: 'Single Meter View', breadcrumb: 'IMSERV / Meters / Single Meter View', loader: loadMeterViewDashboard },
 };
 

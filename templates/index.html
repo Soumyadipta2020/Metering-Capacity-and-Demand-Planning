@@ -32,7 +32,7 @@
         </div>
         <div class="nav-item" data-view="timeslot" onclick="switchView('timeslot', this)">
           <span class="nav-icon">🕐</span>
-          <span class="nav-label">Time-Slot Analysis</span>
+          <span class="nav-label">Dialer Performance</span>
         </div>
         <div class="nav-item" data-view="cancellations" onclick="switchView('cancellations', this)">
           <span class="nav-icon">❌</span>
@@ -215,12 +215,18 @@
 
 
       <!-- ════════════════════════════════════════════════════
-           MODULE — TIME-SLOT ANALYSIS
+           MODULE — DIALER PERFORMANCE
       ════════════════════════════════════════════════════════ -->
       <div class="view" id="view-timeslot">
 
         <!-- Filter bar -->
         <div class="ts-filter-bar">
+          <div class="ts-filter-group ts-filter-group--supplier">
+            <span class="ts-filter-label">Supplier</span>
+            <select class="ts-picker-select ts-supplier-select" id="ts-supplier-select" onchange="tsSetSupplier(this.value)">
+              <option value="">All Suppliers</option>
+            </select>
+          </div>
           <div class="ts-filter-group">
             <span class="ts-filter-label">Period</span>
             <div class="ts-period-toggle">
@@ -236,6 +242,8 @@
           </div>
           <div class="ts-active-label" id="ts-active-label">Showing: Rolling actuals</div>
         </div>
+
+
 
         <!-- 1. Channel Booking by Slot -->
         <div class="ts-section-card">
@@ -274,7 +282,7 @@
         <div class="ts-section-card">
           <div class="ts-section-hd">
             <div class="ts-section-title">Voice Agent Level View — 30 Agents</div>
-            <div class="ts-section-sub">Individual agent attempts vs bookings converted across Morning, Afternoon and Evening — ranked by total volume</div>
+            <div class="ts-section-sub">Individual agent attempts, bookings, cancellations, aborts and completed visit success rate across Morning, Afternoon and Evening — ranked by total volume</div>
           </div>
           <div id="ts-agent-grid">
             <div class="loading"><span class="spinner"></span></div>
@@ -957,7 +965,7 @@
 <script src="/static/js/cancellations.js?v=4"></script>
 <script src="/static/js/field_ops.js?v=2"></script>
 <script src="/static/js/financial.js?v=2"></script>
-<script src="/static/js/timeslot.js?v=4"></script>
+<script src="/static/js/timeslot.js?v=6"></script>
 <script src="/static/js/fieldscorecard.js?v=1"></script>
 <script src="/static/js/roster.js?v=8"></script>
 <script src="/static/js/longterm.js?v=2"></script>

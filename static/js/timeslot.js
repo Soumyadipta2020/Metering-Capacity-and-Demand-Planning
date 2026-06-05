@@ -475,89 +475,82 @@ function renderTsAgentGrid(data) {
   if (!container) return;
 
   const fmt = IMSERV.fmt.num;
-
-  // Collect all unique agent names preserving rank order (by Morning total as proxy)
-  const agentNames = (data['Morning'] || []).map(r => r.agent);
-
-  // Build per-agent lookup: agentName → {Morning, Afternoon, Evening}
-  const lookup = {};
-  TS_SLOTS.forEach(slot => {
-    (data[slot] || []).forEach(r => {
-      if (!lookup[r.agent]) lookup[r.agent] = {};
-      lookup[r.agent][slot] = r;
-    });
-  });
-
-  // Re-rank by total attempts across all slots
-  const ranked = agentNames
-    .map(name => ({
-      name,
-      total: TS_SLOTS.reduce((s, sl) => s + (lookup[name]?.[sl]?.attempts || 0), 0),
-    }))
-    .sort((a, b) => b.total - a.total);
+  const rowsData = Array.isArray(data) ? data : [];
+  if (!rowsData.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-title">No voice agent data available</div></div>';
+    return;
+  }
 
   // Column max per slot (for bar scaling)
   const slotMax = {};
   TS_SLOTS.forEach(slot => {
-    slotMax[slot] = Math.max(...(data[slot] || []).map(r => r.attempts), 1);
+    slotMax[slot] = Math.max(...rowsData.map(r => (r.slots && r.slots[slot]) ? r.slots[slot].attempts : 0), 1);
   });
 
   // Slot header
   const slotHeaders = TS_SLOTS.map(slot => {
     const col = TS_SLOT_COLORS[slot];
-    return `<th class="ts-tbl-slot-hd" colspan="3" style="border-bottom:3px solid ${col.accent};">
+    return `<th class="ts-tbl-slot-hd" colspan="6" style="border-bottom:3px solid ${col.accent}; text-align:center;">
       ${TS_SLOT_ICONS[slot]} ${slot}
     </th>`;
   }).join('');
 
   const subHeaders = TS_SLOTS.map(() =>
-    `<th class="ts-tbl-sub">Attempts</th><th class="ts-tbl-sub">Bookings</th><th class="ts-tbl-sub">Rate</th>`
+    `<th class="ts-tbl-sub" style="text-align:left;">Attempts</th><th class="ts-tbl-sub">Bookings</th><th class="ts-tbl-sub">Cancel</th><th class="ts-tbl-sub">Abort</th><th class="ts-tbl-sub">Comp</th><th class="ts-tbl-sub">Rate</th>`
   ).join('');
 
-  const rows = ranked.map(({ name, total }, idx) => {
+  const rows = rowsData.map((row, idx) => {
+    const name = row.agent || 'Unassigned Agent';
+    const total = row.attempts || 0;
+    const overallRate = row.success_rate || 0;
+    const rowClass = idx % 2 === 0 ? '' : ' ts-tbl-row--alt';
+
     const cells = TS_SLOTS.map(slot => {
       const col = TS_SLOT_COLORS[slot];
-      const d   = lookup[name]?.[slot] || { attempts: 0, bookings: 0, booking_rate: 0 };
+      const d = (row.slots && row.slots[slot]) ? row.slots[slot] : { attempts: 0, bookings: 0, cancellations: 0, aborts: 0, completions: 0, success_rate: 0 };
       const barW = (d.attempts / slotMax[slot] * 100).toFixed(1);
-      const rateColor = TS_RATE_COL(d.booking_rate);
+      const rateColor = TS_RATE_COL(d.success_rate);
+
       return `
-        <td class="ts-tbl-cell">
-          <div class="ts-tbl-bar-wrap">
-            <div class="ts-tbl-bar-track">
-              <div class="ts-tbl-bar-att" style="width:${barW}%;background:${col.accent};"></div>
-              <div class="ts-tbl-bar-bk"  style="width:${(d.booking_rate)}%;background:${col.accent};opacity:0.9;"></div>
+        <td class="ts-tbl-cell" style="padding: 12px 8px;">
+          <div class="ts-tbl-bar-wrap" style="display:flex; align-items:center; gap:8px;">
+            <div class="ts-tbl-bar-track" style="flex:1; height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;">
+              <div class="ts-tbl-bar-att" style="height:100%; width:${barW}%; background:${col.accent};"></div>
             </div>
-            <span class="ts-tbl-num">${fmt(d.attempts)}</span>
+            <span class="ts-tbl-num" style="min-width:30px; text-align:right;">${fmt(d.attempts)}</span>
           </div>
         </td>
-        <td class="ts-tbl-cell ts-tbl-cell--bk">${fmt(d.bookings)}</td>
-        <td class="ts-tbl-cell ts-tbl-cell--rate" style="color:${rateColor};">${d.booking_rate}%</td>`;
+        <td class="ts-tbl-cell ts-tbl-cell--bk" style="text-align:center; color:#9ca3af;">${fmt(d.bookings)}</td>
+        <td class="ts-tbl-cell ts-tbl-cell--warn" style="text-align:center; color:#f59e0b;">${fmt(d.cancellations)}</td>
+        <td class="ts-tbl-cell ts-tbl-cell--crit" style="text-align:center; color:#ef4444;">${fmt(d.aborts)}</td>
+        <td class="ts-tbl-cell ts-tbl-cell--ok" style="text-align:center; color:#10b981;">${fmt(d.completions)}</td>
+        <td class="ts-tbl-cell ts-tbl-cell--rate" style="text-align:center; font-weight:600; color:${rateColor};">${d.success_rate}%</td>`;
     }).join('');
 
-    const totalBookings = TS_SLOTS.reduce((s, sl) => s + (lookup[name]?.[sl]?.bookings || 0), 0);
-    const overallRate   = total > 0 ? (totalBookings / total * 100).toFixed(1) : '0.0';
-    const rowClass      = idx % 2 === 0 ? '' : ' ts-tbl-row--alt';
-
     return `<tr class="ts-tbl-row${rowClass}">
-      <td class="ts-tbl-rank">#${idx + 1}</td>
-      <td class="ts-tbl-name" title="${name}">${name}</td>
+      <td class="ts-tbl-rank" style="padding:12px 16px; color:#6b7280;">#${idx + 1}</td>
+      <td class="ts-tbl-name" title="${name}" style="padding:12px 16px; font-weight:500; white-space:nowrap;">${name}</td>
       ${cells}
-      <td class="ts-tbl-total">${fmt(total)}</td>
-      <td class="ts-tbl-total-rate" style="color:${TS_RATE_COL(parseFloat(overallRate))};">${overallRate}%</td>
+      <td class="ts-tbl-total" style="padding:12px 16px; text-align:right; font-weight:600;">${fmt(total)}</td>
+      <td class="ts-tbl-total-rate" style="padding:12px 16px; text-align:right; font-weight:700; color:${TS_RATE_COL(overallRate)};">${overallRate}%</td>
     </tr>`;
   }).join('');
 
   container.innerHTML = `
-    <div class="ts-ag-table-wrap">
-      <table class="ts-ag-table">
+    <div class="ts-ag-table-wrap" style="overflow-x:auto;">
+      <table class="ts-ag-table" style="width:100%; border-collapse:collapse; min-width: 1400px;">
         <thead>
           <tr>
-            <th class="ts-tbl-rank-hd" rowspan="2">#</th>
-            <th class="ts-tbl-name-hd" rowspan="2">Agent</th>
+            <th class="ts-tbl-rank-hd" rowspan="2" style="padding:12px 16px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.1);">#</th>
+            <th class="ts-tbl-name-hd" rowspan="2" style="padding:12px 16px; text-align:left; border-bottom:1px solid rgba(255,255,255,0.1);">Agent</th>
             ${slotHeaders}
-            <th class="ts-tbl-total-hd" colspan="2">Total</th>
+            <th class="ts-tbl-total-hd" colspan="2" style="padding:12px 16px; text-align:center; border-bottom:3px solid #6b7280;">Total</th>
           </tr>
-          <tr>${subHeaders}<th class="ts-tbl-sub">Attempts</th><th class="ts-tbl-sub">Rate</th></tr>
+          <tr>
+            ${subHeaders}
+            <th class="ts-tbl-sub" style="padding:12px 8px; text-align:right; color:#9ca3af; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.1);">Attempts</th>
+            <th class="ts-tbl-sub" style="padding:12px 8px; text-align:right; color:#9ca3af; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; border-bottom:1px solid rgba(255,255,255,0.1);">Success</th>
+          </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
