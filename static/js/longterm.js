@@ -43,12 +43,15 @@ function ltSelectedRegions() {
 function ltAggregateRegionSlice(month, regions) {
   return regions.reduce((acc, code) => {
     const r = month.regions?.[code] || {};
-    acc.demand += r.demand || 0;
-    acc.capacity += r.capacity || 0;
-    acc.booked += r.booked || 0;
-    acc.avail += r.avail || 0;
+    acc.demand += ltNum(r.demand);
+    acc.capacity += ltNum(r.capacity);
+    if (ltHasValue(r.booked)) {
+      acc.hasBooked = true;
+      acc.booked += ltNum(r.booked);
+      acc.avail += ltNum(r.avail);
+    }
     return acc;
-  }, { demand: 0, capacity: 0, booked: 0, avail: 0, util: 0 });
+  }, { demand: 0, capacity: 0, booked: 0, avail: 0, util: null, hasBooked: false });
 }
 
 function ltScaleSlotsToMonth(sourceMonth, totals) {
@@ -57,14 +60,16 @@ function ltScaleSlotsToMonth(sourceMonth, totals) {
     const source = sourceMonth.slots?.[slot] || {};
     const demand = sourceMonth.demand ? Math.round(totals.demand * ((source.demand || 0) / sourceMonth.demand)) : 0;
     const capacity = sourceMonth.capacity ? Math.round(totals.capacity * ((source.capacity || 0) / sourceMonth.capacity)) : 0;
-    const booked = sourceMonth.booked ? Math.round(totals.booked * ((source.booked || 0) / sourceMonth.booked)) : 0;
-    const safeBooked = Math.min(booked, capacity);
+    const booked = ltHasValue(sourceMonth.booked) && totals.hasBooked
+      ? Math.round(totals.booked * (ltNum(source.booked) / sourceMonth.booked))
+      : null;
+    const safeBooked = booked === null ? null : Math.min(booked, capacity);
     slots[slot] = {
       demand,
       capacity,
       booked: safeBooked,
-      avail: Math.max(capacity - safeBooked, 0),
-      util: capacity ? Number(((safeBooked / capacity) * 100).toFixed(1)) : 0,
+      avail: safeBooked === null ? null : Math.max(capacity - safeBooked, 0),
+      util: safeBooked !== null && capacity ? Number(((safeBooked / capacity) * 100).toFixed(1)) : null,
     };
   });
   return slots;
@@ -90,13 +95,13 @@ function ltFilteredMonths() {
   if (!regions) return LT.data.months;
   return LT.data.months.map(m => {
     const r = ltAggregateRegionSlice(m, regions);
-    r.util = r.capacity ? Math.round(r.booked / r.capacity * 100) : 0;
+    r.util = r.hasBooked && r.capacity ? Math.round(r.booked / r.capacity * 100) : null;
     return {
       ...m,
       demand:   r.demand,
       capacity: r.capacity,
-      booked:   r.booked,
-      avail:    r.avail,
+      booked:   r.hasBooked ? r.booked : null,
+      avail:    r.hasBooked ? r.avail : null,
       util:     r.util,
       slots:    ltScaleSlotsToMonth(m, r),
     };
@@ -108,13 +113,18 @@ function ltRenderKPIs(months) {
   const strip = document.getElementById('lt-kpi-strip');
   if (!strip) return;
 
-  const totalDemand = months.reduce((s, m) => s + m.demand, 0);
-  const totalCap    = months.reduce((s, m) => s + m.capacity, 0);
-  const totalBooked = months.reduce((s, m) => s + m.booked, 0);
-  const avgUtil     = totalCap ? Math.round(totalBooked / totalCap * 100) : 0;
-  const peakM       = months.reduce((a, b) => b.util > a.util ? b : a, months[0]);
+  const bookedMonths = months.filter(m => ltHasValue(m.booked));
+  const utilMonths   = months.filter(m => ltHasValue(m.util));
+  const totalDemand  = months.reduce((s, m) => s + ltNum(m.demand), 0);
+  const totalCap     = months.reduce((s, m) => s + ltNum(m.capacity), 0);
+  const bookedCap    = bookedMonths.reduce((s, m) => s + ltNum(m.capacity), 0);
+  const totalBooked  = bookedMonths.reduce((s, m) => s + ltNum(m.booked), 0);
+  const avgUtil      = bookedCap ? Math.round(totalBooked / bookedCap * 100) : null;
+  const peakM        = utilMonths.length
+    ? utilMonths.reduce((a, b) => b.util > a.util ? b : a, utilMonths[0])
+    : null;
   const shortfall   = months.filter(m => m.demand > m.capacity).length;
-  const totalGap    = totalBooked > 0 ? totalDemand - totalBooked : 0;
+  const totalGap    = months.reduce((s, m) => s + Math.max(ltNum(m.demand) - ltNum(m.capacity), 0), 0);
 
   const kpis = [
     {
@@ -133,10 +143,10 @@ function ltRenderKPIs(months) {
     },
     {
       label: 'Avg Utilisation',
-      value: avgUtil + '%',
+      value: avgUtil === null ? '—' : avgUtil + '%',
       icon: '⚡',
-      cls: avgUtil >= 88 ? 'warn' : avgUtil >= 70 ? 'ok' : 'info',
-      sub: 'Booked / total capacity',
+      cls: avgUtil !== null && avgUtil >= 88 ? 'warn' : avgUtil !== null && avgUtil >= 70 ? 'ok' : 'info',
+      sub: bookedMonths.length ? `Booked / capacity (${bookedMonths.length} months)` : 'No booked horizon',
     },
     {
       label: 'Peak Month',
@@ -177,6 +187,18 @@ function ltChartColors() {
     text: dark ? '#a0a8b8' : '#6b7280',
   };
 }
+function ltHasValue(value) {
+  return value !== null && value !== undefined && Number.isFinite(Number(value));
+}
+function ltNum(value) {
+  return ltHasValue(value) ? Number(value) : 0;
+}
+function ltFmt(value) {
+  return ltHasValue(value) ? Number(value).toLocaleString() : '—';
+}
+function ltFmtPct(value) {
+  return ltHasValue(value) ? `${value}%` : '—';
+}
 function ltDestroyChart(key) {
   if (LT.charts[key]) { LT.charts[key].destroy(); LT.charts[key] = null; }
 }
@@ -189,10 +211,10 @@ function ltRenderTrendChart(months) {
 
   const { grid, text } = ltChartColors();
   const labels   = months.map(m => m.label || `${m.short} ${m.year || ''}`.trim());
-  const capacity = months.map(m => m.capacity);
-  const booked   = months.map(m => m.booked);
-  const demand   = months.map(m => m.demand);
-  const util     = months.map(m => m.util);
+  const capacity = months.map(m => ltNum(m.capacity));
+  const booked   = months.map(m => ltHasValue(m.booked) ? Number(m.booked) : null);
+  const demand   = months.map(m => ltNum(m.demand));
+  const util     = months.map(m => ltHasValue(m.util) ? Number(m.util) : null);
 
   LT.charts.trend = new Chart(ctx, {
     type: 'bar',
@@ -260,6 +282,7 @@ function ltRenderTrendChart(months) {
           callbacks: {
             label(ctx) {
               const v = ctx.raw;
+              if (!ltHasValue(v)) return ` ${ctx.dataset.label}: —`;
               return ctx.dataset.label === 'Utilisation %'
                 ? ` ${ctx.dataset.label}: ${v}%`
                 : ` ${ctx.dataset.label}: ${Number(v).toLocaleString()}`;
@@ -300,8 +323,8 @@ function ltRenderRegionChart() {
   _LT_REGIONS.forEach(r => { regionDemand[r] = 0; regionBooked[r] = 0; });
   LT.data.months.forEach(m => {
     _LT_REGIONS.forEach(r => {
-      regionDemand[r] += (m.regions[r]?.demand || 0);
-      regionBooked[r] += (m.regions[r]?.booked || 0);
+      regionDemand[r] += ltNum(m.regions[r]?.demand);
+      regionBooked[r] += ltNum(m.regions[r]?.booked);
     });
   });
 
@@ -347,7 +370,7 @@ function ltRenderRegionChart() {
         },
         tooltip: {
           callbacks: {
-            label: ctx => ` ${ctx.dataset.label}: ${Number(ctx.raw).toLocaleString()}`,
+            label: ctx => ` ${ctx.dataset.label}: ${ltFmt(ctx.raw)}`,
           },
         },
       },
@@ -374,20 +397,20 @@ function ltRenderSlotCharts(months) {
     if (!ctx) return;
     ltDestroyChart(cfg.key);
 
-    const cap    = months.map(m => m.slots?.[cfg.key]?.capacity || 0);
-    const booked = months.map(m => m.slots?.[cfg.key]?.booked   || 0);
-    const demand = months.map(m => m.slots?.[cfg.key]?.demand   || 0);
-    const util   = months.map(m => m.slots?.[cfg.key]?.util     || 0);
+    const cap    = months.map(m => ltNum(m.slots?.[cfg.key]?.capacity));
+    const booked = months.map(m => ltHasValue(m.slots?.[cfg.key]?.booked) ? Number(m.slots[cfg.key].booked) : null);
+    const demand = months.map(m => ltNum(m.slots?.[cfg.key]?.demand));
+    const util   = months.map(m => ltHasValue(m.slots?.[cfg.key]?.util) ? Number(m.slots[cfg.key].util) : null);
 
-    const totalCap    = cap.reduce((s, v) => s + v, 0);
-    const totalBooked = booked.reduce((s, v) => s + v, 0);
-    const avgUtil     = totalCap ? Math.round(totalBooked / totalCap * 100) : 0;
+    const bookedCap    = cap.reduce((s, v, i) => s + (booked[i] === null ? 0 : v), 0);
+    const totalBooked  = booked.reduce((s, v) => s + ltNum(v), 0);
+    const avgUtil      = bookedCap ? Math.round(totalBooked / bookedCap * 100) : null;
 
     const utilEl = document.getElementById(cfg.utilId);
     if (utilEl) {
-      utilEl.textContent = avgUtil + '% avg util';
+      utilEl.textContent = avgUtil === null ? '— avg util' : avgUtil + '% avg util';
       utilEl.className = 'lt-slot-util ' + (
-        avgUtil >= 88 ? 'lt-util--hi' : avgUtil >= 68 ? 'lt-util--mid' : 'lt-util--lo'
+        avgUtil !== null && avgUtil >= 88 ? 'lt-util--hi' : avgUtil !== null && avgUtil >= 68 ? 'lt-util--mid' : 'lt-util--lo'
       );
     }
 
@@ -456,6 +479,7 @@ function ltRenderSlotCharts(months) {
             callbacks: {
               label(ctx) {
                 const v = ctx.raw;
+                if (!ltHasValue(v)) return ` ${ctx.dataset.label}: —`;
                 return ctx.dataset.label === 'Utilisation %'
                   ? ` ${ctx.dataset.label}: ${v}%`
                   : ` ${ctx.dataset.label}: ${Number(v).toLocaleString()}`;
@@ -490,12 +514,12 @@ function ltRenderMonthNav(months = ltFilteredMonths()) {
 
   nav.innerHTML = months.map((m, i) => {
     const util    = m.util;
-    const pillCls = util >= 88 ? 'lt-mpill--hi' : util >= 70 ? 'lt-mpill--mid' : 'lt-mpill--lo';
+    const pillCls = ltHasValue(util) && util >= 88 ? 'lt-mpill--hi' : ltHasValue(util) && util >= 70 ? 'lt-mpill--mid' : 'lt-mpill--lo';
     const active  = i === LT.selectedMonth ? ' lt-mpill--active' : '';
     return `<button class="lt-mpill ${pillCls}${active}" onclick="ltSelectMonth(${i})">
       <span class="lt-mpill-mo">${m.short}</span>
       <span class="lt-mpill-yr">${m.year}</span>
-      <span class="lt-mpill-util">${util}%</span>
+      <span class="lt-mpill-util">${ltFmtPct(util)}</span>
     </button>`;
   }).join('');
 }
@@ -517,9 +541,10 @@ function ltRenderMonthDetail(idx, filteredMonths = ltFilteredMonths()) {
   if (!rawMonth || !m) return;
 
   function utilCls(u) {
-    return u >= 88 ? 'lt-rag--red' : u >= 70 ? 'lt-rag--amber' : 'lt-rag--green';
+    return ltHasValue(u) && u >= 88 ? 'lt-rag--red' : ltHasValue(u) && u >= 70 ? 'lt-rag--amber' : 'lt-rag--green';
   }
   function barRow(booked, cap) {
+    if (!ltHasValue(booked)) return '<div class="lt-bar-wrap"></div>';
     const pct = cap > 0 ? Math.min(Math.round(booked / cap * 100), 100) : 0;
     const color = pct >= 88 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#22c55e';
     return `<div class="lt-bar-wrap"><div class="lt-bar" style="width:${pct}%;background:${color}"></div></div>`;
@@ -537,11 +562,11 @@ function ltRenderMonthDetail(idx, filteredMonths = ltFilteredMonths()) {
         <span class="rt-region">${r}</span>
         <span class="lt-reg-full">${_LT_REG_NAMES[r]}</span>
       </td>
-      <td class="lt-dt-cell lt-dt-num">${(d.demand   ||0).toLocaleString()}</td>
-      <td class="lt-dt-cell lt-dt-num">${(d.capacity ||0).toLocaleString()}</td>
-      <td class="lt-dt-cell lt-dt-num">${(d.booked   ||0).toLocaleString()}</td>
-      <td class="lt-dt-cell lt-dt-bar">${barRow(d.booked||0, d.capacity||1)} ${(d.avail||0).toLocaleString()}</td>
-      <td class="lt-dt-cell lt-dt-num"><span class="lt-rag ${utilCls(d.util||0)}">${d.util||0}%</span></td>
+      <td class="lt-dt-cell lt-dt-num">${ltFmt(d.demand)}</td>
+      <td class="lt-dt-cell lt-dt-num">${ltFmt(d.capacity)}</td>
+      <td class="lt-dt-cell lt-dt-num">${ltFmt(d.booked)}</td>
+      <td class="lt-dt-cell lt-dt-bar">${barRow(d.booked, d.capacity)} ${ltFmt(d.avail)}</td>
+      <td class="lt-dt-cell lt-dt-num"><span class="lt-rag ${utilCls(d.util)}">${ltFmtPct(d.util)}</span></td>
     </tr>`;
   }).join('');
 
@@ -555,11 +580,11 @@ function ltRenderMonthDetail(idx, filteredMonths = ltFilteredMonths()) {
     const d = m.slots?.[s.key] || {};
     return `<tr>
       <td class="lt-dt-cell lt-dt-reg" style="color:${s.color};font-weight:600">${s.label}</td>
-      <td class="lt-dt-cell lt-dt-num">${(d.demand   ||0).toLocaleString()}</td>
-      <td class="lt-dt-cell lt-dt-num">${(d.capacity ||0).toLocaleString()}</td>
-      <td class="lt-dt-cell lt-dt-num">${(d.booked   ||0).toLocaleString()}</td>
-      <td class="lt-dt-cell lt-dt-bar">${barRow(d.booked||0, d.capacity||1)} ${(d.avail||0).toLocaleString()}</td>
-      <td class="lt-dt-cell lt-dt-num"><span class="lt-rag ${utilCls(d.util||0)}">${d.util||0}%</span></td>
+      <td class="lt-dt-cell lt-dt-num">${ltFmt(d.demand)}</td>
+      <td class="lt-dt-cell lt-dt-num">${ltFmt(d.capacity)}</td>
+      <td class="lt-dt-cell lt-dt-num">${ltFmt(d.booked)}</td>
+      <td class="lt-dt-cell lt-dt-bar">${barRow(d.booked, d.capacity)} ${ltFmt(d.avail)}</td>
+      <td class="lt-dt-cell lt-dt-num"><span class="lt-rag ${utilCls(d.util)}">${ltFmtPct(d.util)}</span></td>
     </tr>`;
   }).join('');
 
@@ -590,19 +615,19 @@ function ltRenderMonthDetail(idx, filteredMonths = ltFilteredMonths()) {
         <div class="lt-summary-strip">
           <div class="lt-ss-item">
             <span class="lt-ss-label">Total Demand</span>
-            <span class="lt-ss-val">${m.demand.toLocaleString()}</span>
+            <span class="lt-ss-val">${ltFmt(m.demand)}</span>
           </div>
           <div class="lt-ss-item">
             <span class="lt-ss-label">Total Capacity</span>
-            <span class="lt-ss-val">${m.capacity.toLocaleString()}</span>
+            <span class="lt-ss-val">${ltFmt(m.capacity)}</span>
           </div>
           <div class="lt-ss-item">
             <span class="lt-ss-label">Total Booked</span>
-            <span class="lt-ss-val">${m.booked.toLocaleString()}</span>
+            <span class="lt-ss-val">${ltFmt(m.booked)}</span>
           </div>
           <div class="lt-ss-item">
             <span class="lt-ss-label">Overall Util</span>
-            <span class="lt-ss-val lt-rag ${utilCls(m.util)}">${m.util}%</span>
+            <span class="lt-ss-val lt-rag ${utilCls(m.util)}">${ltFmtPct(m.util)}</span>
           </div>
         </div>
       </div>

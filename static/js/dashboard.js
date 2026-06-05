@@ -880,7 +880,6 @@ function renderSupplierBehaviour(data) {
           </div>
         </div>
         <div class="sup-footer">
-          ${r.dominant_channel && !isOthers ? `<span class="sup-tag sup-tag--ch">${journeyEscapeHtml(r.dominant_channel)}</span>` : ''}
           ${r.dominant_job_type && !isOthers ? `<span class="sup-tag sup-tag--jt">${journeyEscapeHtml(r.dominant_job_type)}</span>` : ''}
           <span class="sup-tag sup-tag--ct">Contacts: ${fmt(r.contacts)}</span>
         </div>

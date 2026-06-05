@@ -15,6 +15,7 @@
     html.setAttribute('data-theme', next);
     localStorage.setItem('imserv-theme', next);
     window.IMSERV?.applyChartTheme?.(next);
+    window.dispatchEvent(new CustomEvent('imserv:themechange', { detail: { theme: next } }));
 
     const icon = document.getElementById('theme-icon');
     if (icon && window.IMSERV?.setElementIcon) {

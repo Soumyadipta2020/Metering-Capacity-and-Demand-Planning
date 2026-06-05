@@ -24,8 +24,25 @@ const TS_MONTHS = [
 
 const TS_RATE_COL = v => v >= 80 ? '#10b981' : v >= 60 ? '#f59e0b' : '#ef4444';
 
+function tsIsDarkTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+
 // Returns [bgColor, textColor] — discrete 6-tier palette matching UK map tier colours
 function heatColor(pct) {
+  if (tsIsDarkTheme()) {
+    const darkTiers = [
+      { bg: 'rgba(248,113,113,0.50)', col: '#fff1f2' },
+      { bg: 'rgba(252,165,165,0.46)', col: '#fff1f2' },
+      { bg: 'rgba(245,158, 11,0.48)', col: '#fffbeb' },
+      { bg: 'rgba(250,204, 21,0.46)', col: '#fffbeb' },
+      { bg: 'rgba( 52,211,153,0.40)', col: '#ecfdf5' },
+      { bg: 'rgba( 34,197, 94,0.46)', col: '#f0fdf4' },
+    ];
+    const idx = Math.min(5, Math.floor(pct * 6));
+    return [darkTiers[idx].bg, darkTiers[idx].col];
+  }
+
   const tiers = [
     { bg: 'rgba(183, 28,  28, 0.45)', col: '#7f0000' },  // tier6 — dark red   (worst)
     { bg: 'rgba(229,115, 115, 0.45)', col: '#7f0000' },  // tier5 — light red
@@ -129,6 +146,12 @@ async function loadTimeslotDashboard(force = false) {
     console.error('Timeslot load error', e);
   }
 }
+
+window.addEventListener('imserv:themechange', () => {
+  if (_tsLoaded && document.getElementById('view-timeslot')?.classList.contains('active')) {
+    loadTimeslotDashboard(true);
+  }
+});
 
 function tsSetLoading() {
   ['ts-channel-grid','ts-biz-wrap','ts-attempts-grid','ts-agent-grid'].forEach(id => {

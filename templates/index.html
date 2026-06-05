@@ -6,7 +6,7 @@
   <title>IMSERV - Smart Meter Appointment and Resource Planning</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=3" />
+  <link rel="stylesheet" href="/static/css/style.css?v=10" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -442,13 +442,16 @@
             <div class="pt-lp">
               <div class="pt-lh">
                 <table class="pt-lt">
+                  <colgroup>
+                    <col class="pt-col-id"><col class="pt-col-name"><col class="pt-col-reg"><col class="pt-col-shift"><col class="pt-col-util">
+                  </colgroup>
                   <thead>
                     <tr id="pt-lhead-row">
                       <th class="pt-lth pt-c-id">Eng ID</th>
                       <th class="pt-lth pt-c-name">Name</th>
                       <th class="pt-lth pt-c-reg">Region</th>
                       <th class="pt-lth pt-c-shift">Shift</th>
-                      <th class="pt-lth pt-c-util">21d Util</th>
+                      <th class="pt-lth pt-c-util">60d Util</th>
                     </tr>
                     <tr id="pt-lslot-spacer">
                       <th class="pt-lth-spacer" colspan="5"></th>
@@ -458,11 +461,17 @@
               </div>
               <div class="pt-lb" id="pt-lb">
                 <table class="pt-lt">
+                  <colgroup>
+                    <col class="pt-col-id"><col class="pt-col-name"><col class="pt-col-reg"><col class="pt-col-shift"><col class="pt-col-util">
+                  </colgroup>
                   <tbody id="pt-lbody"><tr><td colspan="5" class="loading" style="padding:40px;text-align:center"><span class="spinner"></span></td></tr></tbody>
                 </table>
               </div>
               <div class="pt-lf" id="pt-lf">
                 <table class="pt-lt">
+                  <colgroup>
+                    <col class="pt-col-id"><col class="pt-col-name"><col class="pt-col-reg"><col class="pt-col-shift"><col class="pt-col-util">
+                  </colgroup>
                   <tfoot id="pt-lfoot"></tfoot>
                 </table>
               </div>
@@ -941,17 +950,17 @@
 <!-- ──────────────────────────────────────────────────────────
      JAVASCRIPT MODULES
 ────────────────────────────────────────────────────────────── -->
-<script src="/static/js/theme.js?v=2"></script>
+<script src="/static/js/theme.js?v=3"></script>
 <script src="/static/js/config.js?v=2"></script>
-<script src="/static/js/dashboard.js?v=4"></script>
+<script src="/static/js/dashboard.js?v=6"></script>
 <script src="/static/js/forecasting.js?v=2"></script>
 <script src="/static/js/cancellations.js?v=4"></script>
 <script src="/static/js/field_ops.js?v=2"></script>
 <script src="/static/js/financial.js?v=2"></script>
-<script src="/static/js/timeslot.js?v=2"></script>
+<script src="/static/js/timeslot.js?v=4"></script>
 <script src="/static/js/fieldscorecard.js?v=1"></script>
-<script src="/static/js/roster.js?v=1"></script>
-<script src="/static/js/longterm.js?v=1"></script>
+<script src="/static/js/roster.js?v=8"></script>
+<script src="/static/js/longterm.js?v=2"></script>
 <script src="/static/js/meterview.js?v=1"></script>
 <script src="/static/js/app.js?v=2"></script>
 

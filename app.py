@@ -1983,7 +1983,7 @@ def roster_timeline():
     import random as _rnd
 
     today = date.today()
-    days  = [today + timedelta(days=i) for i in range(21)]
+    days  = [today + timedelta(days=i) for i in range(60)]
 
     day_headers = []
     for d in days:
@@ -2138,23 +2138,25 @@ def longterm_overview():
             demand_pct *= 0.94
         base_demand = int(total_cap_mo * demand_pct)
 
+        has_booked_plan = i < 2
+
         # Per-slot capacity and demand
         slots = {}
         for slot, day_cap in _SLOT_DAY.items():
             cap    = day_cap * working_days
             # Demand split roughly proportional to capacity
             dem    = int(base_demand * (day_cap / total_cap_day) * rng.uniform(0.90, 1.12))
-            booked = min(int(dem * rng.uniform(0.88, 1.02)), cap)
-            avail  = cap - booked
-            util   = round(booked / cap * 100, 1) if cap else 0.0
+            booked = min(int(dem * rng.uniform(0.88, 1.02)), cap) if has_booked_plan else None
+            avail  = cap - booked if booked is not None else None
+            util   = round(booked / cap * 100, 1) if booked is not None and cap else None
             slots[slot] = {
                 "demand": dem, "capacity": cap,
                 "booked": booked, "avail": avail, "util": util,
             }
 
-        total_booked = sum(s["booked"] for s in slots.values())
-        total_avail  = total_cap_mo - total_booked
-        util_overall = round(total_booked / total_cap_mo * 100, 1) if total_cap_mo else 0.0
+        total_booked = sum(s["booked"] for s in slots.values()) if has_booked_plan else None
+        total_avail  = total_cap_mo - total_booked if total_booked is not None else None
+        util_overall = round(total_booked / total_cap_mo * 100, 1) if total_booked is not None and total_cap_mo else None
 
         # Regional breakdown
         regions = {}
@@ -2165,9 +2167,9 @@ def longterm_overview():
             var      = rng.uniform(0.88, 1.14)
             reg_dem  = int(base_demand * w * var)
             reg_cap  = int(total_cap_mo * w * rng.uniform(0.92, 1.08))
-            reg_bk   = min(int(reg_cap * rng.uniform(0.60, 0.95)), reg_cap)
-            reg_av   = reg_cap - reg_bk
-            reg_util = round(reg_bk / reg_cap * 100, 1) if reg_cap else 0.0
+            reg_bk   = min(int(reg_cap * rng.uniform(0.60, 0.95)), reg_cap) if has_booked_plan else None
+            reg_av   = reg_cap - reg_bk if reg_bk is not None else None
+            reg_util = round(reg_bk / reg_cap * 100, 1) if reg_bk is not None and reg_cap else None
             regions[reg] = {
                 "demand": reg_dem, "capacity": reg_cap,
                 "booked": reg_bk, "avail": reg_av, "util": reg_util,
@@ -2177,13 +2179,13 @@ def longterm_overview():
 
         last = _REGIONS[-1]
         last_cap  = max(remaining_cap, int(total_cap_mo * _REG_W[last]))
-        last_bk   = min(int(last_cap * rng.uniform(0.60, 0.95)), last_cap)
+        last_bk   = min(int(last_cap * rng.uniform(0.60, 0.95)), last_cap) if has_booked_plan else None
         regions[last] = {
             "demand": max(remaining_dem, 100),
             "capacity": last_cap,
             "booked": last_bk,
-            "avail": last_cap - last_bk,
-            "util": round(last_bk / last_cap * 100, 1) if last_cap else 0.0,
+            "avail": last_cap - last_bk if last_bk is not None else None,
+            "util": round(last_bk / last_cap * 100, 1) if last_bk is not None and last_cap else None,
         }
 
         months_data.append({
@@ -2197,7 +2199,7 @@ def longterm_overview():
             "booked":       total_booked,
             "avail":        total_avail,
             "util":         util_overall,
-            "gap":          base_demand - total_booked,
+            "gap":          base_demand - (total_booked if total_booked is not None else total_cap_mo),
             "slots":        slots,
             "regions":      regions,
         })

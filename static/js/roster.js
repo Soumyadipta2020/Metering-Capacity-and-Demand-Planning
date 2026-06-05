@@ -1,7 +1,18 @@
 /* IMSERV — 21-Day Roster Pivot Table (split-panel) */
 
-const RT = { data: null, search: '' };
+const RT = { data: null, search: '', expandedRegions: new Set() };
 const SLOTS = ['morning', 'afternoon', 'evening'];
+const RT_REGION_NAMES = {
+  EM: 'East Midlands',
+  MID: 'Midlands',
+  NE: 'North East',
+  NW: 'North West',
+  SE: 'South East',
+  SW: 'South West',
+  WM: 'West Midlands',
+  Y: 'Yorkshire',
+  YRK: 'Yorkshire',
+};
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadRosterTimeline(force) {
@@ -18,6 +29,19 @@ async function loadRosterTimeline(force) {
 }
 
 function rtSetSearch(q) { RT.search = q.toLowerCase().trim(); rtRenderPivot(); }
+
+function rtRegionName(code) {
+  return RT_REGION_NAMES[code] || code;
+}
+
+function rtToggleRegion(region) {
+  if (RT.expandedRegions.has(region)) {
+    RT.expandedRegions.delete(region);
+  } else {
+    RT.expandedRegions.add(region);
+  }
+  rtRenderPivot();
+}
 
 function rtEscapeAttr(value) {
   return String(value ?? '')
@@ -96,6 +120,8 @@ function rtBuildRightHeader() {
     const lsRow = document.getElementById('pt-lslot-spacer');
     const rdRow = document.getElementById('pt-rdays');
     const lhRow = document.getElementById('pt-lhead-row');
+    const lh = document.getElementById('pt-lh') || document.querySelector('.pt-lh');
+    const rh = document.getElementById('pt-rh');
     if (rsRow && lsRow) {
       const h = rsRow.getBoundingClientRect().height;
       lsRow.style.height = h + 'px';
@@ -104,6 +130,9 @@ function rtBuildRightHeader() {
     }
     if (rdRow && lhRow) {
       lhRow.style.height = rdRow.getBoundingClientRect().height + 'px';
+    }
+    if (lh && rh) {
+      lh.style.height = `${rh.getBoundingClientRect().height}px`;
     }
   });
 }
@@ -120,7 +149,102 @@ function rtApplyTableWidths() {
   });
 }
 
+function rtSyncRows(leftSelector, rightSelector) {
+  const leftRows = Array.from(document.querySelectorAll(leftSelector));
+  const rightRows = Array.from(document.querySelectorAll(rightSelector));
+  leftRows.forEach((leftRow, i) => {
+    const rightRow = rightRows[i];
+    if (!rightRow) return;
+    leftRow.style.height = '';
+    rightRow.style.height = '';
+    leftRow.querySelectorAll('td,th').forEach(cell => { cell.style.height = ''; });
+    rightRow.querySelectorAll('td,th').forEach(cell => { cell.style.height = ''; });
+    const height = Math.ceil(Math.max(
+      leftRow.getBoundingClientRect().height,
+      rightRow.getBoundingClientRect().height,
+    ));
+    leftRow.style.height = `${height}px`;
+    rightRow.style.height = `${height}px`;
+    leftRow.querySelectorAll('td,th').forEach(cell => { cell.style.height = `${height}px`; });
+    rightRow.querySelectorAll('td,th').forEach(cell => { cell.style.height = `${height}px`; });
+  });
+}
+
+function rtSyncSplitRowHeights() {
+  rtSyncRows('#pt-lbody tr', '#pt-rbody tr');
+  rtSyncRows('#pt-lfoot tr', '#pt-rfoot tr');
+}
+
 // ── Render left and right body/footer ─────────────────────────────────────────
+function rtRegionSummary(region, engineers, days) {
+  const totals = { cap: 0, booked: 0 };
+  const dayTotals = {};
+  days.forEach(day => {
+    dayTotals[day.date] = {
+      morning: { cap: 0, booked: 0, avail: 0, status: 'low', jobs: {} },
+      afternoon: { cap: 0, booked: 0, avail: 0, status: 'low', jobs: {} },
+      evening: { cap: 0, booked: 0, avail: 0, status: 'low', jobs: {} },
+    };
+  });
+
+  engineers.forEach(eng => {
+    eng.days.forEach(day => {
+      SLOTS.forEach(slot => {
+        const s = day[slot];
+        if (!s || s.status === 'leave' || s.status === 'off') return;
+        const t = dayTotals[day.date]?.[slot];
+        if (!t) return;
+        t.cap += s.cap || 0;
+        t.booked += s.booked || 0;
+        t.avail += s.avail || 0;
+        totals.cap += s.cap || 0;
+        totals.booked += s.booked || 0;
+        Object.entries(s.jobs || {}).forEach(([kind, count]) => {
+          t.jobs[kind] = (t.jobs[kind] || 0) + count;
+        });
+      });
+    });
+  });
+
+  days.forEach(day => {
+    SLOTS.forEach(slot => {
+      const t = dayTotals[day.date][slot];
+      const pct = t.cap ? t.booked / t.cap : 0;
+      t.status = pct >= 1 ? 'full' : pct >= 0.67 ? 'high' : pct >= 0.34 ? 'mid' : 'low';
+    });
+  });
+
+  const util = totals.cap ? Number(((totals.booked / totals.cap) * 100).toFixed(1)) : 0;
+  return {
+    id: `REG-${region}`,
+    name: rtRegionName(region),
+    region,
+    shift: `${engineers.length} engineers`,
+    util,
+    days: days.map(day => ({
+      date: day.date,
+      morning: dayTotals[day.date].morning,
+      afternoon: dayTotals[day.date].afternoon,
+      evening: dayTotals[day.date].evening,
+    })),
+  };
+}
+
+function rtGroupEngineers(engineers, days) {
+  const groups = new Map();
+  engineers.forEach(eng => {
+    if (!groups.has(eng.region)) groups.set(eng.region, []);
+    groups.get(eng.region).push(eng);
+  });
+  return [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([region, list]) => ({
+      region,
+      engineers: list.sort((a, b) => a.id.localeCompare(b.id)),
+      summary: rtRegionSummary(region, list, days),
+    }));
+}
+
 function rtRenderPivot() {
   if (!RT.data) return;
 
@@ -148,20 +272,48 @@ function rtRenderPivot() {
     lb = `<tr><td colspan="5" class="pt-empty">No engineers match the filter</td></tr>`;
     rb = `<tr><td colspan="${NCOLS}" class="pt-empty"> </td></tr>`;
   } else {
-    engs.forEach((eng, ri) => {
-      const alt = ri % 2 ? ' pt-row--alt' : '';
+    let rowIndex = 0;
+    rtGroupEngineers(engs, days).forEach(group => {
+      const expanded = Boolean(RT.search) || RT.expandedRegions.has(group.region);
+      const alt = rowIndex % 2 ? ' pt-row--alt' : '';
+      const caret = expanded ? '▾' : '▸';
+      const regionName = rtRegionName(group.region);
+      const toggleTitle = `${expanded ? 'Collapse' : 'Expand'} ${regionName} engineers`;
+      const escapedRegion = rtEscapeAttr(group.region);
 
-      lb += `<tr class="pt-row${alt}">
-        <td class="pt-ltd pt-c-id">${eng.id}</td>
-        <td class="pt-ltd pt-c-name">${eng.name}</td>
-        <td class="pt-ltd pt-c-reg"><span class="rt-region">${eng.region}</span></td>
-        <td class="pt-ltd pt-c-shift"><span class="pt-shift ${shiftCls[eng.shift] || ''}">${eng.shift}</span></td>
-        <td class="pt-ltd pt-c-util"><span class="rt-util ${utilCls(eng.util)}">${eng.util}%</span></td>
+      lb += `<tr class="pt-row pt-row--region${alt}" onclick="rtToggleRegion('${escapedRegion}')" title="${rtEscapeAttr(toggleTitle)}">
+        <td class="pt-ltd pt-region-cell" colspan="5">
+          <button type="button" class="pt-region-toggle" aria-expanded="${expanded}">
+            <span class="pt-region-caret">${caret}</span>
+            <span class="pt-region-title">${regionName}</span>
+            <span class="pt-region-name">${group.engineers.length} engineers</span>
+            <span class="rt-util ${utilCls(group.summary.util)}">${group.summary.util}%</span>
+          </button>
+        </td>
       </tr>`;
 
-      rb += `<tr class="pt-row${alt}">
-        ${eng.days.map(day => rtSlotCells(day)).join('')}
+      rb += `<tr class="pt-row pt-row--region${alt}" onclick="rtToggleRegion('${escapedRegion}')" title="${rtEscapeAttr(toggleTitle)}">
+        ${group.summary.days.map(day => rtSlotCells(day, true)).join('')}
       </tr>`;
+      rowIndex += 1;
+
+      if (expanded) {
+        group.engineers.forEach(eng => {
+          const engAlt = rowIndex % 2 ? ' pt-row--alt' : '';
+          lb += `<tr class="pt-row pt-row--engineer${engAlt}">
+            <td class="pt-ltd pt-c-id">${eng.id}</td>
+            <td class="pt-ltd pt-c-name">${eng.name}</td>
+            <td class="pt-ltd pt-c-reg"><span class="pt-region-full" title="${rtEscapeAttr(eng.region)}">${rtRegionName(eng.region)}</span></td>
+            <td class="pt-ltd pt-c-shift"><span class="pt-shift ${shiftCls[eng.shift] || ''}">${eng.shift}</span></td>
+            <td class="pt-ltd pt-c-util"><span class="rt-util ${utilCls(eng.util)}">${eng.util}%</span></td>
+          </tr>`;
+
+          rb += `<tr class="pt-row pt-row--engineer${engAlt}">
+            ${eng.days.map(day => rtSlotCells(day)).join('')}
+          </tr>`;
+          rowIndex += 1;
+        });
+      }
     });
   }
 
@@ -173,6 +325,7 @@ function rtRenderPivot() {
 
   // Re-apply table widths in case the body table was rebuilt
   rtApplyTableWidths();
+  requestAnimationFrame(rtSyncSplitRowHeights);
 }
 
 // ── Footer: total capacity / booked / remaining per day-slot ─────────────────
@@ -198,7 +351,8 @@ function rtRenderFooter(days, engs) {
     });
   });
 
-  const regionLabel = document.getElementById('global-region')?.selectedOptions?.[0]?.textContent || 'All Regions';
+  const selectedRegionText = document.getElementById('global-region')?.selectedOptions?.[0]?.textContent || '';
+  const regionLabel = selectedRegionText && selectedRegionText !== 'All Regions' ? selectedRegionText : 'National';
   const metrics = [
     { label: 'Capacity', key: 'cap',    cls: () => 'pt-fc--cap' },
     { label: 'Booked',   key: 'booked', cls: () => 'pt-fc--booked' },
@@ -206,6 +360,12 @@ function rtRenderFooter(days, engs) {
         const pct = t.cap > 0 ? v / t.cap : 0;
         return pct >= 0.40 ? 'pt-fc--hi' : pct >= 0.15 ? 'pt-fc--md' : 'pt-fc--lo';
       }
+    },
+    { label: 'Utilisation %', key: 'util', cls: (_v, t) => {
+        const pct = t.cap > 0 ? Math.round((t.booked / t.cap) * 100) : 0;
+        return pct >= 85 ? 'pt-fc--util-hi' : pct >= 65 ? 'pt-fc--util-md' : 'pt-fc--util-lo';
+      },
+      value: (t) => t.cap > 0 ? `${Math.round((t.booked / t.cap) * 100)}%` : '—',
     },
   ];
 
@@ -216,7 +376,7 @@ function rtRenderFooter(days, engs) {
     days.forEach(d => {
       SLOTS.forEach((slot, si) => {
         const t   = totals[d.date][slot];
-        const val = t[m.key];
+        const val = m.value ? m.value(t) : t[m.key];
         const ec  = si === 2 ? ' pt-fce' : '';
         const sc  = ['pt-fc-m','pt-fc-a','pt-fc-e'][si];
         const vc  = m.cls(val, t);
@@ -225,10 +385,8 @@ function rtRenderFooter(days, engs) {
     });
 
     lf += `<tr class="pt-foot-row">
-      <td class="pt-ltd pt-c-id pt-fl-label">${mi === 0 ? regionLabel : ''}</td>
-      <td class="pt-ltd pt-c-name pt-fl-label">${mi === 0 ? 'Summary' : ''}</td>
-      <td class="pt-ltd pt-c-reg"></td>
-      <td class="pt-ltd pt-c-shift pt-fl-label"></td>
+      <td class="pt-ltd pt-fl-label pt-fl-region" colspan="2">${mi === 0 ? regionLabel : ''}</td>
+      <td class="pt-ltd pt-fl-label pt-fl-summary" colspan="2">${mi === 0 ? 'Summary' : ''}</td>
       <td class="pt-ltd pt-c-util pt-fl-label">${m.label}</td>
     </tr>`;
     rf += `<tr class="pt-foot-row">${fcells}</tr>`;
@@ -239,7 +397,7 @@ function rtRenderFooter(days, engs) {
 }
 
 // ── 3 slot cells for one day ──────────────────────────────────────────────────
-function rtSlotCells(day) {
+function rtSlotCells(day, isSummary = false) {
   return SLOTS.map((slot, si) => {
     const sc  = ['pt-sc-m','pt-sc-a','pt-sc-e'][si];
     const ec  = si === 2 ? ' pt-sc--edge' : '';
@@ -253,9 +411,11 @@ function rtSlotCells(day) {
     const jobText = jobEntries.length
       ? jobEntries.map(([kind, count]) => `- ${kind}: ${count}`).join('\n')
       : '- No booked jobs';
-    const tip = `${slot}: ${s.booked}/${s.cap} booked, ${s.avail} free\nBooked job types:\n${jobText}`;
+    const pct = s.cap ? Math.round((s.booked / s.cap) * 100) : 0;
+    const tipPrefix = isSummary ? `${slot} region summary` : slot;
+    const tip = `${tipPrefix}: ${s.booked}/${s.cap} booked, ${s.avail} free\nBooked job types:\n${jobText}`;
     return `<td class="pt-sc ${sc} ${fill}${ec}" title="${rtEscapeAttr(tip)}">
-      <span class="pt-bk">${s.booked}</span><span class="pt-div">/</span><span class="pt-cp">${s.cap}</span>
+      <span class="pt-util-pct">${pct}%</span>
     </td>`;
   }).join('');
 }
