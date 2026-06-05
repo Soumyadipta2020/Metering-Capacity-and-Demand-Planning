@@ -1668,8 +1668,16 @@ def get_filters():
 
         supplier_rows = query_rows(
             "SELECT DISTINCT supplier_name FROM suppliers ORDER BY supplier_name"
-        ) or []
-        suppliers = [r["supplier_name"] for r in supplier_rows if r.get("supplier_name")]
+        )
+        if supplier_rows:
+            suppliers = sorted({r["supplier_name"].strip() for r in supplier_rows if r.get("supplier_name")})
+        else:
+            from engine.ingestion import iter_csv
+            suppliers = sorted({
+                (r.get("supplier_name") or "").strip()
+                for r in iter_csv("suppliers.csv")
+                if (r.get("supplier_name") or "").strip()
+            })
 
         return jsonify({"months": months, "forecast_months": forecast_months, "suppliers": suppliers})
     except Exception as e:

@@ -2,6 +2,7 @@ import os
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("FLASK_ENV", "testing")
 os.environ.setdefault("ENABLE_AI_RECOMMENDATIONS", "false")
@@ -76,6 +77,13 @@ class AppSmokeTests(unittest.TestCase):
 
         single_month = self.assert_json_response("/api/financial/kpis?year=2026&month=2026-06")
         self.assertEqual([row["month"] for row in single_month["monthly_trend"]], ["2026-06"])
+
+    def test_filters_supplier_list_falls_back_to_csv_without_sqlite(self):
+        with patch("engine.sqlite_store.query_rows", return_value=None):
+            payload = self.assert_json_response("/api/filters")
+
+        self.assertGreater(len(payload["suppliers"]), 0)
+        self.assertIn("Octopus Energy Limited", payload["suppliers"])
 
     def test_core_dashboard_api_endpoints(self):
         endpoints = [
