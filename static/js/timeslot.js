@@ -4,6 +4,7 @@ let _tsFilterType  = 'all';
 let _tsFilterValue = '';
 let _tsSupplier    = '';
 let _tsAgentData   = null;
+let _tsDashCache   = null;   // last fetched dashboard payload — used for theme-only re-renders
 let _tsLoaded      = false;
 let _tsWindow      = null;
 
@@ -136,6 +137,7 @@ async function loadTimeslotDashboard(force = false) {
   tsSetLoading();
   try {
     const dashboard = await IMSERV.apiFetch('/api/timeslot/dashboard?' + tsQs(), { force });
+    _tsDashCache = dashboard;   // cache for theme-only re-renders
     const chData  = dashboard?.channel_booking;
     const bizData = dashboard?.business_type;
     const attData = dashboard?.attempts_overview;
@@ -153,9 +155,12 @@ async function loadTimeslotDashboard(force = false) {
   }
 }
 
+// On theme change — ONLY re-render the heatmap (the one section with theme-dependent
+// inline background/color styles baked in). Everything else is pure CSS and updates
+// automatically via [data-theme="dark"] selectors — no API call, no spinners.
 window.addEventListener('imserv:themechange', () => {
-  if (_tsLoaded && document.getElementById('view-timeslot')?.classList.contains('active')) {
-    loadTimeslotDashboard(true);
+  if (_tsLoaded && _tsDashCache?.business_type) {
+    renderTsBizWrap(_tsDashCache.business_type);
   }
 });
 
