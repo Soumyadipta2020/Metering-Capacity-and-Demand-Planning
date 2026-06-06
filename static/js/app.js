@@ -1,5 +1,7 @@
 /* ABC - Main Application Controller */
 
+let _activePlanningSubtab = 'shortterm';
+
 const VIEW_CONFIG = {
   journey: { title: 'Smart Meter Appointment Journey Overview', breadcrumb: 'ABC / Appointments / Appointment Journey', loader: loadJourneyDashboard },
   forecasting: { title: 'Appointment and Resource Planning', breadcrumb: 'ABC / Planning / Contact Attempt Forecast and Capacity', loader: loadFieldOpsDashboard },
@@ -162,12 +164,14 @@ function updateSidebarControls() {
 }
 
 function switchPlanningSubtab(tab) {
+  _activePlanningSubtab = tab;
   document.querySelectorAll('.pst-panel').forEach(p => p.classList.remove('pst-panel--active'));
   document.querySelectorAll('.pst-btn').forEach(b => b.classList.remove('pst-btn--active'));
   const panel = document.getElementById('pstab-' + tab);
   if (panel) panel.classList.add('pst-panel--active');
   const btn = document.querySelector(`.pst-btn[data-tab="${tab}"]`);
   if (btn) btn.classList.add('pst-btn--active');
+  activateSidebarSubnav('field-ops', tab);
   if (tab === 'shortterm') loadRosterTimeline();
   if (tab === 'longterm')  loadLongTermPlanning();
 }
@@ -204,7 +208,7 @@ function switchView(viewName, navEl) {
   updateHeaderFiltersForView(viewName);
   refreshGlobalMonthOptions(viewName);
   loadViewData(viewName);
-  if (viewName === 'field-ops') activateSidebarSubnav(viewName, typeof _activeOpsTab !== 'undefined' ? _activeOpsTab : 'capacity');
+  if (viewName === 'field-ops') activateSidebarSubnav(viewName, _activePlanningSubtab);
 }
 
 function updateHeaderFiltersForView(viewName) {
