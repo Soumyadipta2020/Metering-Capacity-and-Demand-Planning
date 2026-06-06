@@ -6,7 +6,7 @@
   <title>ABC - Smart Meter Appointment and Resource Planning</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=10" />
+  <link rel="stylesheet" href="/static/css/style.css?v=11" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -48,8 +48,8 @@
           <span class="nav-label">Planning</span>
         </div>
         <div class="nav-submenu" data-parent="field-ops">
-          <button type="button" class="nav-subitem active" data-parent="field-ops" data-subtab="shortterm" onclick="switchView('field-ops'); switchPlanningSubtab('shortterm')">Short Term</button>
-          <button type="button" class="nav-subitem" data-parent="field-ops" data-subtab="longterm" onclick="switchView('field-ops'); switchPlanningSubtab('longterm')">Long Term</button>
+          <button type="button" class="nav-subitem active" data-parent="field-ops" data-subtab="shortterm" onclick="openPlanningSubtab('shortterm')">Short Term</button>
+          <button type="button" class="nav-subitem" data-parent="field-ops" data-subtab="longterm" onclick="openPlanningSubtab('longterm')">Long Term</button>
         </div>
       </div>
 
@@ -1017,7 +1017,7 @@
      JAVASCRIPT MODULES
 ────────────────────────────────────────────────────────────── -->
 <script src="/static/js/theme.js?v=3"></script>
-<script src="/static/js/config.js?v=2"></script>
+<script src="/static/js/config.js?v=3"></script>
 <script src="/static/js/dashboard.js?v=6"></script>
 <script src="/static/js/forecasting.js?v=2"></script>
 <script src="/static/js/cancellations.js?v=4"></script>
@@ -1028,7 +1028,7 @@
 <script src="/static/js/roster.js?v=8"></script>
 <script src="/static/js/longterm.js?v=2"></script>
 <script src="/static/js/meterview.js?v=1"></script>
-<script src="/static/js/app.js?v=2"></script>
+<script src="/static/js/app.js?v=3"></script>
 
 </body>
 </html>

@@ -1,6 +1,32 @@
 /* ABC - Main Application Controller */
 
-let _activePlanningSubtab = 'shortterm';
+const UI_STATE_KEYS = {
+  sidebarCollapsed: 'abc-sidebar-collapsed',
+  planningSubtab: 'abc-planning-subtab',
+};
+const PLANNING_SUBTABS = new Set(['shortterm', 'longterm']);
+
+function readUiState(key, fallback = '') {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeUiState(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Storage can be unavailable in private contexts; the UI still works.
+  }
+}
+
+function normalisePlanningSubtab(tab) {
+  return PLANNING_SUBTABS.has(tab) ? tab : 'shortterm';
+}
+
+let _activePlanningSubtab = normalisePlanningSubtab(readUiState(UI_STATE_KEYS.planningSubtab, 'shortterm'));
 
 const VIEW_CONFIG = {
   journey: { title: 'Smart Meter Appointment Journey Overview', breadcrumb: 'ABC / Appointments / Appointment Journey', loader: loadJourneyDashboard },
@@ -128,6 +154,9 @@ function syncSidebarWidth() {
 function initFluidSidebar() {
   const sidebar = document.getElementById('sidebar');
   if (!sidebar) return;
+  sidebar.classList.toggle('collapsed', readUiState(UI_STATE_KEYS.sidebarCollapsed) === 'true');
+  hydrateSidebarTooltips();
+  activateSidebarSubnav('field-ops', _activePlanningSubtab);
   updateSidebarControls();
   syncSidebarWidth();
   if ('ResizeObserver' in window) {
@@ -139,6 +168,24 @@ function initFluidSidebar() {
   document.fonts?.ready?.then(syncSidebarWidth);
 }
 
+function hydrateSidebarTooltips() {
+  const sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  sidebar.querySelectorAll('.nav-item').forEach(item => {
+    const label = item.querySelector('.nav-label')?.textContent?.trim() || item.getAttribute('title') || '';
+    if (!label) return;
+    item.dataset.tooltip = label;
+    item.setAttribute('aria-label', label);
+  });
+  sidebar.querySelectorAll('.nav-subitem').forEach(item => {
+    const label = item.textContent.trim();
+    if (!label) return;
+    item.dataset.tooltip = label;
+    item.setAttribute('aria-label', label);
+    item.setAttribute('title', label);
+  });
+}
+
 function updateSidebarControls() {
   const sidebar = document.getElementById('sidebar');
   const collapsed = sidebar?.classList.contains('collapsed') || false;
@@ -148,6 +195,8 @@ function updateSidebarControls() {
   document.querySelectorAll('#sidebar-toggle, #sidebar-header-toggle').forEach(control => {
     control.setAttribute('aria-expanded', String(!collapsed));
     control.setAttribute('title', label);
+    control.dataset.tooltip = label;
+    control.setAttribute('aria-label', label);
   });
 
   document.querySelectorAll('.sidebar-toggle-label').forEach(el => {
@@ -164,16 +213,27 @@ function updateSidebarControls() {
 }
 
 function switchPlanningSubtab(tab) {
-  _activePlanningSubtab = tab;
+  _activePlanningSubtab = normalisePlanningSubtab(tab);
+  writeUiState(UI_STATE_KEYS.planningSubtab, _activePlanningSubtab);
   document.querySelectorAll('.pst-panel').forEach(p => p.classList.remove('pst-panel--active'));
   document.querySelectorAll('.pst-btn').forEach(b => b.classList.remove('pst-btn--active'));
-  const panel = document.getElementById('pstab-' + tab);
+  const panel = document.getElementById('pstab-' + _activePlanningSubtab);
   if (panel) panel.classList.add('pst-panel--active');
-  const btn = document.querySelector(`.pst-btn[data-tab="${tab}"]`);
+  const btn = document.querySelector(`.pst-btn[data-tab="${_activePlanningSubtab}"]`);
   if (btn) btn.classList.add('pst-btn--active');
-  activateSidebarSubnav('field-ops', tab);
-  if (tab === 'shortterm') loadRosterTimeline();
-  if (tab === 'longterm')  loadLongTermPlanning();
+  activateSidebarSubnav('field-ops', _activePlanningSubtab);
+  if (_activePlanningSubtab === 'shortterm') loadRosterTimeline();
+  if (_activePlanningSubtab === 'longterm')  loadLongTermPlanning();
+}
+
+function openPlanningSubtab(tab) {
+  _activePlanningSubtab = normalisePlanningSubtab(tab);
+  writeUiState(UI_STATE_KEYS.planningSubtab, _activePlanningSubtab);
+  if (_currentView !== 'field-ops') {
+    switchView('field-ops');
+    return;
+  }
+  switchPlanningSubtab(_activePlanningSubtab);
 }
 
 function activateSidebarSubnav(viewName, tabName) {
@@ -208,7 +268,7 @@ function switchView(viewName, navEl) {
   updateHeaderFiltersForView(viewName);
   refreshGlobalMonthOptions(viewName);
   loadViewData(viewName);
-  if (viewName === 'field-ops') activateSidebarSubnav(viewName, _activePlanningSubtab);
+  if (viewName === 'field-ops') switchPlanningSubtab(_activePlanningSubtab);
 }
 
 function updateHeaderFiltersForView(viewName) {
@@ -320,7 +380,10 @@ function exportCurrentView() {
 
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
-  if (sidebar) sidebar.classList.toggle('collapsed');
+  if (sidebar) {
+    sidebar.classList.toggle('collapsed');
+    writeUiState(UI_STATE_KEYS.sidebarCollapsed, String(sidebar.classList.contains('collapsed')));
+  }
   updateSidebarControls();
   requestAnimationFrame(syncSidebarWidth);
   window.setTimeout(syncSidebarWidth, 280);

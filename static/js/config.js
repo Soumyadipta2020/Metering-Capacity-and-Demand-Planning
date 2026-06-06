@@ -177,13 +177,23 @@ const ABC = {
 
       if (isLoading) {
         if (el.querySelector(':scope > .visual-loading-overlay')) return;
-        el.classList.add('visual-loading-host', 'is-loading');
+        el.classList.add('visual-loading-host', 'is-loading', 'has-skeleton-loading');
         const overlay = document.createElement('div');
         overlay.className = 'visual-loading-overlay';
-        overlay.innerHTML = `<div class="loading"><span class="spinner"></span>${label ? ` ${label}` : ''}</div>`;
+        const safeLabel = String(label || 'Loading').replace(/[&<>"']/g, ch => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[ch]));
+        overlay.innerHTML = `
+          <div class="skeleton-loading" role="status" aria-live="polite" aria-label="${safeLabel}">
+            <span class="skeleton-line skeleton-line--wide"></span>
+            <span class="skeleton-line"></span>
+            <span class="skeleton-line skeleton-line--short"></span>
+            ${label ? `<span class="skeleton-label">${safeLabel}</span>` : ''}
+          </div>
+        `;
         el.appendChild(overlay);
       } else {
-        el.classList.remove('is-loading');
+        el.classList.remove('is-loading', 'has-skeleton-loading');
         el.querySelectorAll(':scope > .visual-loading-overlay').forEach(node => node.remove());
       }
     });
@@ -246,6 +256,7 @@ Object.assign(ABC, {
       panelLeftOpen: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m13 9 3 3-3 3"/>',
       percent: '<path d="M19 5 5 19"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/>',
       phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1A19.5 19.5 0 0 1 5.2 13 19.8 19.8 0 0 1 2 4.3 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L7.8 9.7a16 16 0 0 0 6.5 6.5l1.3-1.3a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 1.9Z"/>',
+      search: '<path d="m21 21-4.3-4.3"/><circle cx="11" cy="11" r="8"/>',
       refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
       send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
       settings: '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V22a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 18l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 8A2 2 0 1 1 7 5.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.6V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.6 1h.1a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z"/>',
@@ -321,7 +332,7 @@ Object.assign(ABC, {
       const view = el.closest('.nav-item')?.dataset.view;
       const icon = el.id === 'theme-icon'
         ? ((document.documentElement.dataset.theme || 'light') === 'dark' ? 'moon' : 'sun')
-        : ({ journey: 'barChart', forecasting: 'trendingUp', cancellations: 'xCircle', 'field-ops': 'wrench', financial: 'wallet' }[view] || 'settings');
+        : ({ journey: 'barChart', timeslot: 'phone', forecasting: 'trendingUp', cancellations: 'xCircle', 'field-ops': 'wrench', meterview: 'search', financial: 'wallet' }[view] || 'settings');
       this.setElementIcon(el, icon);
     });
 
