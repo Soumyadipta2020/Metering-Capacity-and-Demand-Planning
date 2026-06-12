@@ -4,6 +4,13 @@ ABC is a Flask-based planning and analytics application for smart meter appointm
 
 The repository is self-contained: it includes the Flask API, the single-page frontend, analytics engines, synthetic operational datasets, SQLite cache support, Docker/Render deployment files, and smoke tests.
 
+## Demo Video
+
+<video src="demo_video/abc_smart_meter_demo_3min.mp4" controls poster="demo_video\assets\01_journey_overview.png" width="100%">
+</video>
+
+Watch the 3-minute product walkthrough: [ABC Smart Meter Demo](demo_video/abc_smart_meter_demo_3min.mp4).
+
 ## What This App Does
 
 - Tracks the journey from customer contact through booking, completion, cancellation, and abort outcomes.
